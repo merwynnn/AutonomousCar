@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 
 namespace awake_slam {
@@ -436,6 +437,22 @@ void SlamCore::set_global_relocalization_enabled(bool enabled) {
     global_relocalization_enabled_ = enabled;
 }
 
+void SlamCore::set_mcl_params(const MclParams& params) {
+    mcl_params_ = params;
+    mcl_params_.particles = std::max(50, std::min(2000, mcl_params_.particles));
+    mcl_params_.rank_keep = std::max(0.1, std::min(1.0, mcl_params_.rank_keep));
+    mcl_params_.ess_resample_ratio =
+        std::max(0.1, std::min(1.0, mcl_params_.ess_resample_ratio));
+    mcl_params_.score_stride = std::max(1, std::min(12, mcl_params_.score_stride));
+    mcl_params_.softmax = std::max(1.0, std::min(100.0, mcl_params_.softmax));
+    mcl_params_.beam_weight = std::max(0.0, std::min(1.0, mcl_params_.beam_weight));
+    mcl_params_.odom_prior_xy = std::max(0.01, mcl_params_.odom_prior_xy);
+    mcl_params_.odom_prior_theta = std::max(0.01, mcl_params_.odom_prior_theta);
+    mcl_initialized_ = false;
+    mcl_particles_.clear();
+    mcl_weights_.clear();
+}
+
 void SlamCore::request_global_relocalization() {
     relocalize_requested_ = true;
 }
@@ -444,10 +461,66 @@ void SlamCore::set_map_frozen(bool frozen) {
     map_frozen_ = frozen;
 }
 
+void SlamCore::rank_and_prune_particles() {
+    const int count = static_cast<int>(mcl_particles_.size());
+    if (count == 0) return;
+    std::vector<int> order(static_cast<std::size_t>(count));
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        return mcl_weights_[a] > mcl_weights_[b];
+    });
+    const int keep = std::max(10, static_cast<int>(count * mcl_params_.rank_keep));
+    double sum = 0.0;
+    for (int i = 0; i < keep; ++i) sum += mcl_weights_[order[i]];
+    if (sum <= 0.0) {
+        mcl_weights_.assign(static_cast<std::size_t>(count), 1.0 / count);
+        return;
+    }
+    for (int i = 0; i < keep; ++i) {
+        mcl_weights_[order[i]] /= sum;
+    }
+    for (int i = keep; i < count; ++i) {
+        mcl_weights_[order[i]] = 0.0;
+    }
+}
+
+double SlamCore::beam_consistency(const Pose2& pose,
+                                  const std::vector<float>& local_x,
+                                  const std::vector<float>& local_y) const {
+    if (local_x.empty()) return 0.0;
+    const std::vector<float>& log_odds = grid_.log_odds();
+    const double c = std::cos(pose.theta);
+    const double s = std::sin(pose.theta);
+    const double start_x = pose.x + c * lidar_offset_x_ - s * lidar_offset_y_;
+    const double start_y = pose.y + s * lidar_offset_x_ + c * lidar_offset_y_;
+    const int width = grid_.width();
+    const int height = grid_.height();
+    int samples = 0;
+    int blocked = 0;
+    for (std::size_t i = 0; i < local_x.size(); i += 4) {
+        const double end_x = pose.x + c * local_x[i] - s * local_y[i];
+        const double end_y = pose.y + s * local_x[i] + c * local_y[i];
+        for (double t : {0.2, 0.4, 0.6, 0.8}) {
+            const double x = start_x + t * (end_x - start_x);
+            const double y = start_y + t * (end_y - start_y);
+            const int gx = static_cast<int>(
+                std::floor((x - grid_.origin_x()) / grid_.resolution()));
+            const int gy = static_cast<int>(
+                std::floor((y - grid_.origin_y()) / grid_.resolution()));
+            ++samples;
+            if (gx < 0 || gx >= width || gy < 0 || gy >= height) continue;
+            if (log_odds[static_cast<std::size_t>(gy) * width + gx] > 0.5f) {
+                ++blocked;
+            }
+        }
+    }
+    return samples > 0 ? 1.0 - static_cast<double>(blocked) / samples : 0.0;
+}
+
 void SlamCore::mcl_global_relocalize(const std::vector<float>& local_x,
                                      const std::vector<float>& local_y,
                                      const Pose2& odometry) {
-    constexpr int particle_count = 400;
+    const int particle_count = mcl_params_.particles;
     const std::vector<float>& log_odds = grid_.log_odds();
     std::vector<std::pair<double, double>> free_cells;
     for (int y = 0; y < grid_.height(); ++y) {
@@ -464,8 +537,8 @@ void SlamCore::mcl_global_relocalize(const std::vector<float>& local_x,
         // Not enough map yet: fall back to a local cloud around the current pose.
         mcl_particles_.resize(particle_count);
         mcl_weights_.assign(particle_count, 1.0 / particle_count);
-        std::normal_distribution<double> nxy(0.0, 0.15);
-        std::normal_distribution<double> nth(0.0, 0.08);
+        std::normal_distribution<double> nxy(0.0, mcl_params_.init_xy);
+        std::normal_distribution<double> nth(0.0, mcl_params_.init_theta);
         for (Pose2& particle : mcl_particles_) {
             particle.x = pose_.x + nxy(mcl_rng_);
             particle.y = pose_.y + nxy(mcl_rng_);
@@ -485,7 +558,8 @@ void SlamCore::mcl_global_relocalize(const std::vector<float>& local_x,
         }
         std::vector<float> sub_x;
         std::vector<float> sub_y;
-        for (std::size_t i = 0; i < local_x.size(); i += 3) {
+        for (std::size_t i = 0; i < local_x.size();
+             i += static_cast<std::size_t>(mcl_params_.score_stride)) {
             sub_x.push_back(local_x[i]);
             sub_y.push_back(local_y[i]);
         }
@@ -494,12 +568,17 @@ void SlamCore::mcl_global_relocalize(const std::vector<float>& local_x,
         for (int round = 0; round < 4; ++round) {
             std::vector<double> scores(particle_count, 0.0);
             for (int i = 0; i < particle_count; ++i) {
-                scores[i] = grid_.score_local(sub_x, sub_y, mcl_particles_[i]);
+                const double endpoint =
+                    grid_.score_local(sub_x, sub_y, mcl_particles_[i]);
+                const double free =
+                    beam_consistency(mcl_particles_[i], local_x, local_y);
+                scores[i] = (1.0 - mcl_params_.beam_weight) * endpoint +
+                            mcl_params_.beam_weight * free;
             }
             const double max_score = *std::max_element(scores.begin(), scores.end());
             double sum = 0.0;
             for (int i = 0; i < particle_count; ++i) {
-                mcl_weights_[i] = std::exp(12.0 * (scores[i] - max_score));
+                mcl_weights_[i] = std::exp(mcl_params_.softmax * (scores[i] - max_score));
                 sum += mcl_weights_[i];
             }
             if (sum <= 0.0) {
@@ -507,6 +586,7 @@ void SlamCore::mcl_global_relocalize(const std::vector<float>& local_x,
             } else {
                 for (double& weight : mcl_weights_) weight /= sum;
             }
+            rank_and_prune_particles();
             double sum_sq = 0.0;
             for (double weight : mcl_weights_) sum_sq += weight * weight;
             mcl_ess_ = sum_sq > 0.0 ? 1.0 / sum_sq : 0.0;
@@ -566,12 +646,12 @@ void SlamCore::mcl_update(const std::vector<float>& local_x,
                           const Pose2& odometry) {
     if (!mcl_enabled_ || local_x.empty()) return;
 
-    constexpr int particle_count = 400;
+    const int particle_count = mcl_params_.particles;
     if (!mcl_initialized_) {
         mcl_particles_.resize(particle_count);
         mcl_weights_.assign(particle_count, 1.0 / particle_count);
-        std::normal_distribution<double> nxy(0.0, 0.15);
-        std::normal_distribution<double> nth(0.0, 0.08);
+        std::normal_distribution<double> nxy(0.0, mcl_params_.init_xy);
+        std::normal_distribution<double> nth(0.0, mcl_params_.init_theta);
         for (Pose2& particle : mcl_particles_) {
             particle.x = pose_.x + nxy(mcl_rng_);
             particle.y = pose_.y + nxy(mcl_rng_);
@@ -580,7 +660,7 @@ void SlamCore::mcl_update(const std::vector<float>& local_x,
         mcl_pose_ = pose_;
         last_mcl_odom_ = odometry;
         mcl_ess_ = particle_count;
-        mcl_spread_ = 0.15;
+        mcl_spread_ = mcl_params_.init_xy;
         mcl_initialized_ = true;
         return;
     }
@@ -590,27 +670,42 @@ void SlamCore::mcl_update(const std::vector<float>& local_x,
     }
 
     const Pose2 delta = relative(last_mcl_odom_, odometry);
+    const Pose2 prediction = compose(mcl_pose_, delta);
     std::vector<float> sub_x;
     std::vector<float> sub_y;
-    for (std::size_t i = 0; i < local_x.size(); i += 3) {
+    for (std::size_t i = 0; i < local_x.size();
+         i += static_cast<std::size_t>(mcl_params_.score_stride)) {
         sub_x.push_back(local_x[i]);
         sub_y.push_back(local_y[i]);
     }
 
-    std::normal_distribution<double> nxy(0.0, 0.015);
-    std::normal_distribution<double> nth(0.0, 0.012);
+    std::normal_distribution<double> nxy(0.0, mcl_params_.motion_xy);
+    std::normal_distribution<double> nth(0.0, mcl_params_.motion_theta);
     std::vector<double> scores(particle_count, 0.0);
     for (int i = 0; i < particle_count; ++i) {
         const Pose2 motion{delta.x + nxy(mcl_rng_), delta.y + nxy(mcl_rng_),
                            wrap_angle(delta.theta + nth(mcl_rng_))};
         mcl_particles_[i] = compose(mcl_particles_[i], motion);
-        scores[i] = grid_.score_local(sub_x, sub_y, mcl_particles_[i]);
+        const double endpoint =
+            grid_.score_local(sub_x, sub_y, mcl_particles_[i]);
+        const double free =
+            beam_consistency(mcl_particles_[i], local_x, local_y);
+        const double dx = mcl_particles_[i].x - prediction.x;
+        const double dy = mcl_particles_[i].y - prediction.y;
+        const double dth = wrap_angle(mcl_particles_[i].theta - prediction.theta);
+        const double prior =
+            0.5 * (dx * dx / (mcl_params_.odom_prior_xy * mcl_params_.odom_prior_xy) +
+                   dy * dy / (mcl_params_.odom_prior_xy * mcl_params_.odom_prior_xy) +
+                   dth * dth /
+                       (mcl_params_.odom_prior_theta * mcl_params_.odom_prior_theta));
+        scores[i] = (1.0 - mcl_params_.beam_weight) * endpoint +
+                    mcl_params_.beam_weight * free - prior;
     }
 
     double max_score = *std::max_element(scores.begin(), scores.end());
     double weight_sum = 0.0;
     for (int i = 0; i < particle_count; ++i) {
-        const double weight = std::exp(10.0 * (scores[i] - max_score));
+        const double weight = std::exp(mcl_params_.softmax * (scores[i] - max_score));
         mcl_weights_[i] = weight;
         weight_sum += weight;
     }
@@ -623,7 +718,9 @@ void SlamCore::mcl_update(const std::vector<float>& local_x,
     for (double weight : mcl_weights_) sum_sq += weight * weight;
     mcl_ess_ = sum_sq > 0.0 ? 1.0 / sum_sq : 0.0;
 
-    if (mcl_ess_ < 0.5 * particle_count) {
+    if (mcl_ess_ < mcl_params_.ess_resample_ratio * particle_count) {
+        // Rank before dropping: keep the best particles, then resample.
+        rank_and_prune_particles();
         std::vector<Pose2> resampled(particle_count);
         std::uniform_real_distribution<double> uniform(0.0, 1.0 / particle_count);
         double cursor = uniform(mcl_rng_);

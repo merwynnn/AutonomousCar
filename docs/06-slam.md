@@ -28,9 +28,11 @@
 MCL tracks the map but cannot correct map drift; the map is still the limiting
 factor.
 
-**Five-lap sensor-only result:** with a frozen one-lap map (8.3 cm seam), MCL
-completes 5/5 laps at **0.9 m/s**, 134.08 s total, MCL ATE 24.7 cm mean /
-54.0 cm max, global relocalization off. At 1.2 m/s it still sticks near the seam.
+**Five-lap sensor-only result:** with a frozen one-lap map, MCL completes 5/5
+laps at **0.9 m/s**, 134.32 s total, MCL ATE 23.3 cm mean / 60.8 cm max, global
+relocalization off. Tuned MCL: 400 particles, rank_keep 0.99, stride 3,
+softmax 10. Aggressive rank pruning 0.95/0.9 improved one lap but failed the
+five-lap run. At 1.2 m/s the car still sticks near the seam.
 See [`experiments/EXP-0005-map-and-race.md`](experiments/EXP-0005-map-and-race.md).
 
 **Honest status:** the front-end tracks locally but drifts under realistic wheel
@@ -163,6 +165,12 @@ Global relocalization is implemented: particles are spread over free map cells,
 scored against the scan, resampled for four rounds, and the mean pose is used.
 It is triggered manually or when the stuck recovery fires; it does not run
 automatically on every confidence dip. It still cannot correct a distorted map.
+
+Particles are ranked by weight before resampling. The reliable setting is
+`rank_keep = 0.99`; only the bottom 1% is dropped when resampling is needed.
+A beam/occlusion consistency term and an odometry-prior term were prototyped;
+both worsened ATE on this track and are disabled by default (`beam_weight = 0`,
+large prior sigmas).
 
 ## 3. C++ API
 

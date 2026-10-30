@@ -4,6 +4,7 @@
 #include "awake_slam/slam_core.hpp"
 
 namespace py = pybind11;
+using awake_slam::MclParams;
 using awake_slam::Pose2;
 using awake_slam::Scan;
 using awake_slam::SlamCore;
@@ -55,6 +56,21 @@ PYBIND11_MODULE(_awake_slam, m) {
         .def_readonly("global_relocalizations", &SlamResult::global_relocalizations)
         .def_readonly("relocalized_this_scan", &SlamResult::relocalized_this_scan);
 
+    py::class_<MclParams>(m, "MclParams")
+        .def(py::init<>())
+        .def_readwrite("particles", &MclParams::particles)
+        .def_readwrite("init_xy", &MclParams::init_xy)
+        .def_readwrite("init_theta", &MclParams::init_theta)
+        .def_readwrite("motion_xy", &MclParams::motion_xy)
+        .def_readwrite("motion_theta", &MclParams::motion_theta)
+        .def_readwrite("softmax", &MclParams::softmax)
+        .def_readwrite("rank_keep", &MclParams::rank_keep)
+        .def_readwrite("ess_resample_ratio", &MclParams::ess_resample_ratio)
+        .def_readwrite("score_stride", &MclParams::score_stride)
+        .def_readwrite("beam_weight", &MclParams::beam_weight)
+        .def_readwrite("odom_prior_xy", &MclParams::odom_prior_xy)
+        .def_readwrite("odom_prior_theta", &MclParams::odom_prior_theta);
+
     py::class_<SlamCore>(m, "SlamCore")
         .def(py::init<double, int, int, double, double, double, double, double>(),
              py::arg("map_resolution") = 0.05,
@@ -72,6 +88,8 @@ PYBIND11_MODULE(_awake_slam, m) {
         .def("set_global_relocalization_enabled", &SlamCore::set_global_relocalization_enabled, py::arg("enabled"))
         .def("request_global_relocalization", &SlamCore::request_global_relocalization)
         .def("set_map_frozen", &SlamCore::set_map_frozen, py::arg("frozen"))
+        .def("set_mcl_params", &SlamCore::set_mcl_params, py::arg("params"))
+        .def_property_readonly("mcl_params", &SlamCore::mcl_params)
         .def_property_readonly("mcl_enabled", &SlamCore::mcl_enabled)
         .def_property_readonly("loop_closure_enabled", &SlamCore::loop_closure_enabled)
         .def_property_readonly("global_relocalization_enabled", &SlamCore::global_relocalization_enabled)

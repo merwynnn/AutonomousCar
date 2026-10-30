@@ -80,6 +80,21 @@ struct Keyframe {
     Scan scan;
 };
 
+struct MclParams {
+    int particles = 400;
+    double init_xy = 0.15;
+    double init_theta = 0.08;
+    double motion_xy = 0.015;
+    double motion_theta = 0.012;
+    double softmax = 10.0;
+    double rank_keep = 0.99;       // keep top fraction when resampling
+    double ess_resample_ratio = 0.5;
+    int score_stride = 3;          // use every Nth scan point
+    double beam_weight = 0.00;     // experimental; beam/prior prototypes hurt
+    double odom_prior_xy = 1000.0; // experimental; off
+    double odom_prior_theta = 1000.0;
+};
+
 /// 2D lidar SLAM: deskew, scan matching, occupancy grid, keyframes, SE(2) pose
 /// graph and loop closure.
 class SlamCore {
@@ -100,7 +115,9 @@ public:
     void set_loop_closure_enabled(bool enabled);
     void set_global_relocalization_enabled(bool enabled);
     void request_global_relocalization();
+    void set_mcl_params(const MclParams& params);
     void set_map_frozen(bool frozen);
+    MclParams mcl_params() const { return mcl_params_; }
     bool mcl_enabled() const { return mcl_enabled_; }
     bool loop_closure_enabled() const { return loop_closure_enabled_; }
     bool global_relocalization_enabled() const { return global_relocalization_enabled_; }
@@ -142,6 +159,10 @@ private:
     void mcl_global_relocalize(const std::vector<float>& local_x,
                                const std::vector<float>& local_y,
                                const Pose2& odometry);
+    void rank_and_prune_particles();
+    double beam_consistency(const Pose2& pose,
+                            const std::vector<float>& local_x,
+                            const std::vector<float>& local_y) const;
 
     OccupancyGrid grid_;
     PoseGraph graph_;
@@ -173,6 +194,7 @@ private:
     bool mcl_initialized_ = false;
     Pose2 mcl_pose_{};
     Pose2 last_mcl_odom_{};
+    MclParams mcl_params_{};
     std::vector<Pose2> mcl_particles_;
     std::vector<double> mcl_weights_;
     double mcl_ess_ = 0.0;

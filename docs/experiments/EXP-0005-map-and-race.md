@@ -21,10 +21,11 @@ and no ground truth in the control loop?
 | One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
 | Race speed | 0.9 m/s |
 | Global relocalization | off |
+| MCL tuning | 400 particles, rank_keep 0.99, stride 3, softmax 10 |
 | 5-lap attempt: completed | **5 / 5** |
-| 5-lap attempt: total | **134.08 s** |
-| 5-lap attempt: lap times | 26.95, 26.73, 26.87, 26.90, 26.62 s |
-| 5-lap attempt: MCL ATE mean / max | 24.7 / 54.0 cm |
+| 5-lap attempt: total | **134.32 s** |
+| 5-lap attempt: lap times | 27.12, 26.62, 27.13, 26.80, 26.65 s |
+| 5-lap attempt: MCL ATE mean / max | 23.3 / 60.8 cm |
 | 5-lap attempt: status | **OK** |
 
 ## Interpretation
@@ -36,8 +37,11 @@ and no ground truth in the control loop?
   in the 5-lap attempt). Without a global correction, particles slowly lock onto
   the drifting local map.
 - At 1.2 m/s the car got stuck on lap 2. At **0.9 m/s** all five laps completed,
-  with MCL ATE 24.7 cm mean / 54.0 cm max. Speed is currently the safety margin
+  with MCL ATE 23.3 cm mean / 60.8 cm max. Speed is currently the safety margin
   that keeps MCL tracking through the seam.
+- Tuning result: aggressive rank pruning (0.95/0.9) improved one lap but failed
+  the 5-lap run. A mild **rank_keep 0.99** with 400 particles and stride 3 is the
+  reliable setting. Ranking is applied only when resampling is triggered.
 - Global relocalization was tested and made the run worse on this symmetric
   track: the scan-only scatter can converge to the wrong place. It is now
   experimental, off by default, and triggered only manually or when stuck.

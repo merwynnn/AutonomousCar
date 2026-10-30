@@ -194,6 +194,14 @@ class SlamPipeline:
     def request_global_relocalization(self) -> None:
         self.impl.request_global_relocalization()
 
+    def set_mcl_params(self, **kwargs: float | int) -> None:
+        params = core.MclParams()
+        for key, value in kwargs.items():
+            if not hasattr(params, key):
+                raise TypeError(f"unknown MCL parameter: {key}")
+            setattr(params, key, value)
+        self.impl.set_mcl_params(params)
+
     def set_map_frozen(self, frozen: bool) -> None:
         self.impl.set_map_frozen(frozen)
 

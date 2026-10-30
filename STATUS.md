@@ -26,9 +26,10 @@ slower than GT at this conservative speed. Odometry-only fails.
 | Map seam (start vs end pose) | 8.3 cm |
 | One-lap MCL race | 20.15 s |
 | One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
-| 5-lap race at 0.9 m/s | **5/5, 134.08 s** |
+| 5-lap race at 0.9 m/s | **5/5, 134.32 s** |
 | 5-lap best lap | 26.62 s |
-| 5-lap MCL ATE mean / max | 24.7 / 54.0 cm |
+| 5-lap MCL ATE mean / max | 23.3 / 60.8 cm |
+| Tuned MCL | 400 particles, rank_keep 0.99, stride 3 |
 
 Mapping and racing are both sensor-only (MCL, no GT). The five-lap race
 **completes at 0.9 m/s** with global relocalization off. At 1.2 m/s it still

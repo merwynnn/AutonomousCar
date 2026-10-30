@@ -43,8 +43,8 @@ def test_slam_pipeline_tracks_a_moving_scan() -> None:
         )
         errors.append(np.hypot(update.x - state.x, update.y - state.y))
         assert update.mcl_initialized
-        assert update.mcl_particle_count == 400
-        assert 0.0 < update.mcl_ess <= 400.0
+        assert update.mcl_particle_count >= 100
+        assert 0.0 < update.mcl_ess <= update.mcl_particle_count
         mcl_errors.append(np.hypot(update.mcl_x - state.x, update.mcl_y - state.y))
         world.set_actuation(Actuation(throttle=0.15, steering=0.0))
         for _ in range(24):

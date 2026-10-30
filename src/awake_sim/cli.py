@@ -229,6 +229,16 @@ def map_and_race(
     sim.pure_pursuit.speed_limit = sim.speed_limit
     sim.controller.base_speed = sim.speed_limit
     assert sim.slam is not None
+    # Mapping quality first: stable, no rank dropping for the map-building lap.
+    sim.slam.set_mcl_params(
+        particles=400,
+        rank_keep=1.0,
+        softmax=10.0,
+        score_stride=3,
+        beam_weight=0.0,
+        odom_prior_xy=1000.0,
+        odom_prior_theta=1000.0,
+    )
     sim.slam.set_mcl_enabled(True)
     sim.slam.set_loop_closure_enabled(False)
     sim.paused = False
@@ -258,6 +268,15 @@ def map_and_race(
     sim.reset(keep_map=True)
     sim.localization_mode = "mcl"
     sim.slam_mcl_enabled = True
+    sim.slam.set_mcl_params(
+        particles=400,
+        rank_keep=0.99,
+        softmax=10.0,
+        score_stride=3,
+        beam_weight=0.0,
+        odom_prior_xy=1000.0,
+        odom_prior_theta=1000.0,
+    )
     sim.slam.set_mcl_enabled(True)
     sim.slam_global_relocalization_enabled = global_relocalization
     sim.slam.set_global_relocalization_enabled(global_relocalization)
