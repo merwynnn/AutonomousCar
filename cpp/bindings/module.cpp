@@ -46,7 +46,12 @@ PYBIND11_MODULE(_awake_slam, m) {
         .def_readonly("loop_candidate", &SlamResult::loop_candidate)
         .def_readonly("loop_match_x", &SlamResult::loop_match_x)
         .def_readonly("loop_match_y", &SlamResult::loop_match_y)
-        .def_readonly("loop_match_theta", &SlamResult::loop_match_theta);
+        .def_readonly("loop_match_theta", &SlamResult::loop_match_theta)
+        .def_readonly("mcl_pose", &SlamResult::mcl_pose)
+        .def_readonly("mcl_initialized", &SlamResult::mcl_initialized)
+        .def_readonly("mcl_ess", &SlamResult::mcl_ess)
+        .def_readonly("mcl_spread", &SlamResult::mcl_spread)
+        .def_readonly("mcl_particle_count", &SlamResult::mcl_particle_count);
 
     py::class_<SlamCore>(m, "SlamCore")
         .def(py::init<double, int, int, double, double, double, double, double>(),
@@ -60,6 +65,11 @@ PYBIND11_MODULE(_awake_slam, m) {
              py::arg("max_range") = 12.0)
         .def("process", &SlamCore::process, py::arg("scan"), py::arg("odometry"))
         .def("reset", &SlamCore::reset)
+        .def("set_mcl_enabled", &SlamCore::set_mcl_enabled, py::arg("enabled"))
+        .def("set_loop_closure_enabled", &SlamCore::set_loop_closure_enabled, py::arg("enabled"))
+        .def_property_readonly("mcl_enabled", &SlamCore::mcl_enabled)
+        .def_property_readonly("loop_closure_enabled", &SlamCore::loop_closure_enabled)
+        .def("mcl_particles", &SlamCore::mcl_particles)
         .def("map_log_odds", &SlamCore::map_log_odds)
         .def_property_readonly("pose", &SlamCore::pose)
         .def_property_readonly("scan_count", &SlamCore::scan_count)

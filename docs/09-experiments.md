@@ -16,7 +16,7 @@ A/B comparison:
 ```bash
 uv run awake-sim compare --laps 5
 uv run awake-sim race --controller pure_pursuit --laps 5
-uv run awake-sim slam-bench --duration 20
+uv run awake-sim slam-bench --duration 20 --mcl
 ```
 
 Repeat a run with different seeds when the result is noisy, and record the

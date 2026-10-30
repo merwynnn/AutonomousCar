@@ -59,13 +59,13 @@
 - Measurable lap-time improvement over the baseline.
 - Crash/penalty rates reported, not just lap times.
 
-## M3 — SLAM (front-end done; reliable loop closure/MCL pending)
+## M3 — SLAM (front-end + local MCL done; reliable loop closure/global MCL pending)
 
 **Deliverables**
 
 - C++17 SLAM core: preprocessing/deskew, CSM, occupancy grid, pose graph.
 - Reliable place recognition and loop-closure verification.
-- MCL / global relocalization.
+- MCL local localization ✅; global relocalization pending.
 - pybind11 bindings + Python reference implementation.
 - Live SLAM visualizations and diagnostics.
 - Evaluation: ATE/RPE, map IoU, loop closure, runtime.

@@ -502,6 +502,25 @@ input[type='range'] {
   font-size: 14px;
 }
 
+.debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+
+.debug-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.debug-toggle input {
+  accent-color: var(--accent);
+}
+
 .sensor-row {
   display: flex;
   justify-content: space-between;

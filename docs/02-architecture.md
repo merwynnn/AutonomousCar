@@ -55,8 +55,9 @@ This keeps results reproducible and lets the same simulation run headless for
 ### 3.2 C++ core (`cpp/`)
 
 - `awake_slam::OccupancyGrid` — log-odds grid, Bresenham, chamfer likelihood.
-- `awake_slam::SlamCore` — deskew, coarse/fine correlative matching, map update.
-- Pose graph/loop closure and MCL — designed, not implemented yet (M3b).
+- `awake_slam::SlamCore` — deskew, coarse/fine correlative matching, map update,
+  keyframes, pose graph and local MCL.
+- Reliable loop-closure detection and global MCL relocalization — pending.
 
 Bindings are exposed through `src/awake_sim/_awake_slam*.so` and imported by
 `awake_sim.slam`. A pure-Python reference implementation is kept for tests and

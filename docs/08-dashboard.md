@@ -35,6 +35,9 @@ Everything needed to debug perception, SLAM and control:
 - planned path, racing line, speed heatmap;
 - charts: speed, steering, yaw, acceleration, lap/sector times, latency,
   sensor rates, SLAM timing/ATE;
+- debug layers: map, SLAM ghost/trail, MCL ghost/trail/particles, odometry
+  ghost/trail, GT trail;
+- localization toggles: MCL off/on, experimental loop closure off/on, reset MCL;
 - sensor health panel with warnings (e.g., lidar above wall height).
 
 ### Strategy view
@@ -62,11 +65,11 @@ Everything needed to debug perception, SLAM and control:
 | Car | Simple 1/10 car mesh with wheels; orientation axes |
 | Lidar | `THREE.Points` for hits + optional ray lines |
 | Ultrasonic | Cone meshes + hit markers |
-| Occupancy map | DataTexture on the floor, log-odds colour map |
+| Occupancy map | CanvasTexture on the floor, log-odds colour map |
 | Trajectories | Lines: GT, odometry, SLAM, planned path |
+| Ghost poses | Blue = SLAM, green = MCL, grey = odometry |
 | Racing line | Thick line with speed colour |
-| Covariance | Ellipse at the estimated pose |
-| Particles | Small points for MCL |
+| Particles | Green points for MCL |
 | Collisions | Flash/marker at contact point |
 | Start line | Checkered strip |
 
@@ -82,14 +85,31 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 - Realism preset (`ideal`, `realistic`, `harsh`).
 - Seed.
 - Controller gains and speed limit (applied by restarting the run).
+- MCL off/on and reset MCL.
+- Loop closure off/on (experimental; default off).
+- Debug layer toggles: map, SLAM, MCL, particles, odometry, GT trail.
 
 ## 5. WebSocket protocol
 
 ### Transport
 
-- REST for CRUD/config/results.
+- REST for status/config.
 - WebSocket `/ws/telemetry` for run state, commands and telemetry.
-- JSON for control/state; binary frames for arrays.
+- Current implementation uses JSON; binary frames are a planned optimisation.
+
+### Commands
+
+```json
+{"type": "run.start"}
+{"type": "run.pause"}
+{"type": "run.reset"}
+{"type": "run.set_speed", "speed": 2.4}
+{"type": "control.mode", "mode": "auto"}
+{"type": "control.controller", "controller": "pure_pursuit"}
+{"type": "drive.command", "throttle": 0.4, "steering": 0.1}
+{"type": "slam.set_options", "mcl_enabled": true, "loop_closure_enabled": false}
+{"type": "slam.reset_mcl"}
+```
 
 ### Binary frame layout
 
@@ -115,9 +135,9 @@ JSON messages:
 
 - `hello`
 - `state`
-- `metrics`
-- `event`
-- `slam`
+- `scan`
+- `slam` — SLAM pose/ATE, odometry, loop-closure counters, options, MCL
+  pose/ATE/ESS/spread/particles, and a periodic occupancy map.
 - `error`
 
 ### Throttling

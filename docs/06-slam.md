@@ -10,10 +10,19 @@
 - ✅ Benchmark: 2.89 cm mean ATE, 5.27 cm max, 14.2 ms mean / 18.9 ms p95
   (8 s, 81 scans, low-noise odometry).
 - ✅ SE(2) pose graph with keyframes, sequential edges and a tested optimizer.
+- ✅ 400-particle MCL on the occupancy map, with ESS/spread diagnostics and a
+  runtime on/off switch.
+- ✅ Dashboard debug layers: map, SLAM, MCL, particles, odometry, GT trail.
 - ⏳ Reliable loop-closure detection. **Disabled**: scan-only place recognition
   produced false positives on repetitive pipe walls. No forced start-pose reset.
-- ⏳ MCL / global relocalization.
+- ⏳ MCL global relocalization / kidnapped-robot recovery.
 - ⏳ Pi benchmark.
+
+**MCL benchmark:** 12 s pure-pursuit run with drifting odometry: SLAM ATE
+22.6 cm mean, MCL ATE 22.0 cm mean, MCL max 41.1 cm, ESS 281/400, spread
+0.20 m. See [`experiments/EXP-0003-mcl.md`](experiments/EXP-0003-mcl.md).
+MCL tracks the map but cannot correct map drift; the map is still the limiting
+factor.
 
 **Honest status:** the front-end tracks locally but drifts under realistic wheel
 odometry. The pose graph is ready; the missing piece is a trustworthy place
@@ -130,12 +139,20 @@ is re-enabled.
 Two modes:
 
 - **Scan matching against the map** for local tracking;
-- **Monte Carlo localization (MCL)** with a particle filter for global
-  relocalization and recovery.
+- **MCL** with 400 particles for map-based localization.
 
-Particles are propagated with odometry + IMU, weighted by the likelihood field,
-and resampled with low-variance sampling. Covariance and particle cloud are
-exported for visualization.
+MCL implementation:
+
+- initialized around the current SLAM pose (local localization);
+- particles propagated with the odometry increment + noise;
+- weights from the occupancy likelihood field;
+- low-variance resampling when ESS < 200;
+- weighted mean pose and particle spread exported to the dashboard;
+- runtime on/off switch and reset command.
+
+Global relocalization (spread particles over the whole map) and kidnapped-robot
+recovery are not implemented yet. MCL cannot correct a drifting map; it follows
+whatever map the front-end has built.
 
 ## 3. C++ API
 

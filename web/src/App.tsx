@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { TrackScene } from './scene/TrackScene';
-import type { HelloMessage, ScanMessage, SlamMessage, StateMessage } from './types';
+import type {
+  DebugLayers,
+  HelloMessage,
+  ScanMessage,
+  SlamMessage,
+  StateMessage,
+} from './types';
 import { useTelemetry, type ConnectionStatus, type SpeedSample } from './useTelemetry';
 
 function formatTime(seconds: number | null | undefined): string {
@@ -102,12 +108,14 @@ function TrackCanvas({
   scan,
   slam,
   cameraMode,
+  layers,
 }: {
   hello: HelloMessage | null;
   state: StateMessage | null;
   scan: ScanMessage | null;
   slam: SlamMessage | null;
   cameraMode: 'orbit' | 'top';
+  layers: DebugLayers;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<TrackScene | null>(null);
@@ -142,6 +150,10 @@ function TrackCanvas({
     sceneRef.current?.setCamera(cameraMode);
   }, [cameraMode]);
 
+  useEffect(() => {
+    sceneRef.current?.setLayerVisibility(layers);
+  }, [layers]);
+
   return <div ref={containerRef} className="canvas-host" />;
 }
 
@@ -153,8 +165,26 @@ export default function App() {
   const [autoController, setAutoController] = useState<'wall_follow' | 'pure_pursuit'>(
     'wall_follow',
   );
+  const [mclEnabled, setMclEnabled] = useState(false);
+  const [loopClosureEnabled, setLoopClosureEnabled] = useState(false);
+  const [layers, setLayers] = useState<DebugLayers>({
+    map: true,
+    slam: true,
+    mcl: true,
+    particles: true,
+    odom: false,
+    gtTrail: true,
+  });
   const keysRef = useRef({ w: false, a: false, s: false, d: false });
   const slamReady = hello?.slam_cpp ?? null;
+
+  useEffect(() => {
+    send({
+      type: 'slam.set_options',
+      mcl_enabled: mclEnabled,
+      loop_closure_enabled: loopClosureEnabled,
+    });
+  }, [mclEnabled, loopClosureEnabled, send]);
 
   useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
@@ -292,6 +322,82 @@ export default function App() {
         </div>
 
         <div className="sidebar-section">
+          <div className="section-label">Localization</div>
+          <div className="segmented">
+            <button
+              type="button"
+              className={mclEnabled ? '' : 'active'}
+              onClick={() => setMclEnabled(false)}
+            >
+              MCL off
+            </button>
+            <button
+              type="button"
+              className={mclEnabled ? 'active' : ''}
+              onClick={() => setMclEnabled(true)}
+            >
+              MCL on
+            </button>
+          </div>
+          <div className="segmented" style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              className={loopClosureEnabled ? '' : 'active'}
+              onClick={() => setLoopClosureEnabled(false)}
+            >
+              Loop off
+            </button>
+            <button
+              type="button"
+              className={loopClosureEnabled ? 'active' : ''}
+              onClick={() => setLoopClosureEnabled(true)}
+            >
+              Loop on
+            </button>
+          </div>
+          <button
+            type="button"
+            className="ghost wide"
+            style={{ marginTop: 8 }}
+            onClick={() => send({ type: 'slam.reset_mcl' })}
+          >
+            Reset MCL
+          </button>
+          <p className="small-note">
+            {loopClosureEnabled
+              ? 'Loop closure is experimental: the pipe walls are repetitive and false matches can corrupt the map.'
+              : 'Loop closure is off. Enable it only for experiments.'}
+          </p>
+        </div>
+
+        <div className="sidebar-section">
+          <div className="section-label">Debug layers</div>
+          <div className="debug-grid">
+            {(
+              [
+                ['map', 'Map'],
+                ['slam', 'SLAM'],
+                ['mcl', 'MCL'],
+                ['particles', 'Particles'],
+                ['odom', 'Odometry'],
+                ['gtTrail', 'GT trail'],
+              ] as Array<[keyof DebugLayers, string]>
+            ).map(([key, label]) => (
+              <label className="debug-toggle" key={key}>
+                <input
+                  type="checkbox"
+                  checked={layers[key]}
+                  onChange={(event) =>
+                    setLayers((current) => ({ ...current, [key]: event.target.checked }))
+                  }
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div className="sidebar-section">
           <div className="section-label">Run control</div>
           <div className="button-row">
             <button
@@ -405,6 +511,7 @@ export default function App() {
             scan={scan}
             slam={slam}
             cameraMode={cameraMode}
+            layers={layers}
           />
           <div className="viewport-badge">
             <span className="live-dot" /> {controlMode.toUpperCase()} ·{' '}
@@ -554,10 +661,45 @@ export default function App() {
                 <span>Scans</span>
                 <strong>{slam.scan_count}</strong>
               </div>
+              <div className="sensor-row">
+                <span>Odom drift</span>
+                <strong>{(slam.odom_drift_m * 100).toFixed(0)} cm</strong>
+              </div>
+              <div className="sensor-row">
+                <span>Loop closures</span>
+                <strong>{slam.loop_closures}</strong>
+              </div>
+              <div className="sensor-row">
+                <span>Graph nodes / edges</span>
+                <strong>
+                  {slam.graph_nodes} / {slam.graph_edges}
+                </strong>
+              </div>
+              {mclEnabled ? (
+                <>
+                  <div className="sensor-row">
+                    <span>MCL ATE</span>
+                    <strong>
+                      {slam.mcl?.initialized
+                        ? `${(slam.mcl.ate_m * 100).toFixed(1)} cm`
+                        : 'initializing…'}
+                    </strong>
+                  </div>
+                  <div className="sensor-row">
+                    <span>MCL ESS / spread</span>
+                    <strong>
+                      {slam.mcl?.initialized
+                        ? `${slam.mcl.ess.toFixed(0)} / ${slam.mcl.spread_m.toFixed(2)} m`
+                        : '—'}
+                    </strong>
+                  </div>
+                </>
+              ) : null}
               <p className="small-note">
-                Blue ghost and trail = SLAM pose; amber/orange floor = mapped walls.
-                Front-end only: loop-closure detection is disabled until place
-                recognition is reliable on the repetitive walls.
+                Blue = SLAM, green = MCL, grey = odometry, amber floor = map.
+                {loopClosureEnabled
+                  ? ' Loop closure is experimental and may accept false matches.'
+                  : ' Loop closure is off; enable it in Localization to experiment.'}
               </p>
             </>
           ) : (
@@ -598,11 +740,12 @@ export default function App() {
             <span className="mini-badge">M3</span>
           </div>
           <p className="small-note">
-            C++ SLAM front-end live: occupancy map, ghost pose/trail and ATE. Next: loop
-            closure, MCL and a deployable pure-pursuit result.
+            SLAM front-end + MCL + debug layers are live. MCL and experimental loop
+            closure can be toggled independently. Next: reliable place recognition and a
+            deployable pure-pursuit result.
           </p>
           <div className="progress">
-            <div className="progress-bar" style={{ width: '72%' }} />
+            <div className="progress-bar" style={{ width: '78%' }} />
           </div>
           <div className="small-note">Docs: docs/02-architecture.md · docs/04-sensors.md</div>
         </div>

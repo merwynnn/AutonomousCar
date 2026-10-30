@@ -201,6 +201,10 @@ def compare(
 def slam_bench(
     duration: float = typer.Option(20.0, min=2.0, max=120.0, help="Simulated seconds"),
     controller: str = typer.Option("pure_pursuit", help="wall_follow or pure_pursuit"),
+    mcl: bool = typer.Option(False, "--mcl", help="Enable particle-filter MCL"),
+    loop_closure: bool = typer.Option(
+        False, "--loop-closure", help="Enable experimental loop closure"
+    ),
 ) -> None:
     """Run the live SLAM front-end against ground truth."""
 
@@ -214,7 +218,13 @@ def slam_bench(
     sim = PyBulletSimulation(enable_slam=True)
     sim.auto_controller = controller
     sim.paused = False
+    sim.slam_mcl_enabled = mcl
+    sim.slam_loop_enabled = loop_closure
+    assert sim.slam is not None
+    sim.slam.set_mcl_enabled(mcl)
+    sim.slam.set_loop_closure_enabled(loop_closure)
     ates: list[float] = []
+    mcl_ates: list[float] = []
     scan_times: list[float] = []
     last_scan = 0
     while sim.sim_time < duration and not sim.finished:
@@ -223,6 +233,8 @@ def slam_bench(
             last_scan = sim.slam_scan_count
             ates.append(sim.slam_ate)
             scan_times.append(sim.slam_scan_ms)
+            if mcl and sim.slam_mcl_pose is not None:
+                mcl_ates.append(sim.slam_mcl_ate)
     occupancy = sim.slam.map_array() if sim.slam is not None else None
     sim.world.close()
     if not ates:
@@ -239,6 +251,11 @@ def slam_bench(
     table.add_row("Loop closures", str(sim.slam_loop_closures))
     table.add_row("Graph nodes", str(sim.slam_graph_nodes))
     table.add_row("Odom drift (m)", f"{sim.odom_drift_m:.3f}")
+    if mcl_ates:
+        table.add_row("MCL ATE mean (cm)", f"{float(np.mean(mcl_ates)) * 100:.2f}")
+        table.add_row("MCL ATE max (cm)", f"{float(np.max(mcl_ates)) * 100:.2f}")
+        table.add_row("MCL ESS (last)", f"{sim.slam_mcl_ess:.0f}")
+        table.add_row("MCL spread (m)", f"{sim.slam_mcl_spread:.2f}")
     if occupancy is not None:
         table.add_row("Occupied cells", str(int(np.count_nonzero(occupancy > 0.5))))
         table.add_row("Free cells", str(int(np.count_nonzero(occupancy < -0.2))))

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <random>
 #include <vector>
 
 #include "awake_slam/pose_graph.hpp"
@@ -22,6 +23,11 @@ struct SlamResult {
     double loop_match_x = 0.0;
     double loop_match_y = 0.0;
     double loop_match_theta = 0.0;
+    Pose2 mcl_pose;
+    bool mcl_initialized = false;
+    double mcl_ess = 0.0;
+    double mcl_spread = 0.0;
+    int mcl_particle_count = 0;
 };
 
 /// Log-odds occupancy grid with a chamfer likelihood field for scan matching.
@@ -88,6 +94,12 @@ public:
     SlamResult process(const Scan& scan, const Pose2& odometry);
     void reset();
 
+    void set_mcl_enabled(bool enabled);
+    void set_loop_closure_enabled(bool enabled);
+    bool mcl_enabled() const { return mcl_enabled_; }
+    bool loop_closure_enabled() const { return loop_closure_enabled_; }
+    std::vector<Pose2> mcl_particles() const { return mcl_particles_; }
+
     Pose2 pose() const { return pose_; }
     int scan_count() const { return scan_count_; }
     double map_resolution() const { return grid_.resolution(); }
@@ -117,6 +129,9 @@ private:
     bool try_loop_closure(const std::vector<float>& local_x,
                           const std::vector<float>& local_y);
     void rebuild_map();
+    void mcl_update(const std::vector<float>& local_x,
+                    const std::vector<float>& local_y,
+                    const Pose2& odometry);
 
     OccupancyGrid grid_;
     PoseGraph graph_;
@@ -137,6 +152,17 @@ private:
     double keyframe_distance_m_ = 0.45;
     double loop_min_distance_m_ = 2.0;
     int loop_min_index_gap_ = 12;
+
+    bool mcl_enabled_ = false;
+    bool loop_closure_enabled_ = false;
+    bool mcl_initialized_ = false;
+    Pose2 mcl_pose_{};
+    Pose2 last_mcl_odom_{};
+    std::vector<Pose2> mcl_particles_;
+    std::vector<double> mcl_weights_;
+    double mcl_ess_ = 0.0;
+    double mcl_spread_ = 0.0;
+    std::mt19937 mcl_rng_{0x5A17u};
 };
 
 }  // namespace awake_slam

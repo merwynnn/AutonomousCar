@@ -5,9 +5,10 @@ mini autonomous vehicle: realistic non-ideal sensors, from-scratch 2D lidar SLAM
 and a browser dashboard for live monitoring and strategy comparison.
 
 > Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line,
-> pure pursuit and a live C++ SLAM front-end are working. Pure pursuit runs
-> 5 laps in 46.12 s (GT upper bound) vs 148.34 s for wall-follow; SLAM tracks at
-> 2.89 cm mean ATE and 14.2 ms/scan. See [`STATUS.md`](STATUS.md).
+> pure pursuit and a live C++ SLAM front-end are working. MCL and experimental
+> loop closure can be toggled in the dashboard, along with GT/odometry/SLAM/MCL
+> debug layers. Pure pursuit runs 5 laps in 46.12 s (GT upper bound) vs 148.34 s
+> for wall-follow. See [`STATUS.md`](STATUS.md).
 
 ![AWAKE simulator dashboard](docs/assets/2026-10-30-m3-slam.png)
 
@@ -32,10 +33,10 @@ wheel odometry. This project lets the team:
 |---|---|
 | Simulation | PyBullet 3D, generic 1/10 4WD Ackermann car, fixed 240 Hz physics, track walls and obstacles |
 | Sensors | LD06-class 2D lidar, 3 ultrasonic, IMU, encoders, steering sensor; non-ideal by default |
-| SLAM | C++17 deskew + correlative matching + occupancy grid; live map/ATE. Pose graph, loop closure and MCL next |
+| SLAM | C++17 deskew + correlative matching + occupancy grid + 400-particle MCL; live map/ATE and toggles. Loop closure detector experimental |
 | Strategies | Wall-follow, pure pursuit, racing line, time-optimal speed profile |
 | Race analysis | Headless `race` / `compare` commands, lap-time and penalty metrics, experiment reports |
-| Dashboard | Live 3D, sensor views, SLAM map, charts, controller switch, speed and camera controls |
+| Dashboard | Live 3D, sensor views, SLAM/MCL map, charts, controller switch, MCL/loop toggles, debug layers |
 | Docs | `AGENTS.md`, `STATUS.md`, architecture, requirements traceability, devlog, ADRs, runbook |
 
 ## Documentation

@@ -26,8 +26,10 @@ def test_slam_pipeline_tracks_a_moving_scan() -> None:
     world = PyBulletWorld(track, vehicle)
     lidar = LidarModel(sensors.lidar, world, seed=5)
     pipeline = SlamPipeline()
+    pipeline.set_mcl_enabled(True)
     rng = np.random.default_rng(11)
     errors = []
+    mcl_errors = []
     for index in range(8):
         state = world.state()
         scan = lidar.scan(state, index * 0.1, realism_scale=1.0)
@@ -40,11 +42,16 @@ def test_slam_pipeline_tracks_a_moving_scan() -> None:
             state.yaw_rate,
         )
         errors.append(np.hypot(update.x - state.x, update.y - state.y))
+        assert update.mcl_initialized
+        assert update.mcl_particle_count == 400
+        assert 0.0 < update.mcl_ess <= 400.0
+        mcl_errors.append(np.hypot(update.mcl_x - state.x, update.mcl_y - state.y))
         world.set_actuation(Actuation(throttle=0.15, steering=0.0))
         for _ in range(24):
             world.step()
     world.close()
     assert max(errors) < 0.25
+    assert max(mcl_errors) < 0.5
     occupancy = pipeline.map_array()
     assert np.count_nonzero(occupancy > 0.5) > 100
     payload = pipeline.map_payload()

@@ -27,6 +27,13 @@ class SlamUpdate:
     loop_match_x: float = 0.0
     loop_match_y: float = 0.0
     loop_match_theta: float = 0.0
+    mcl_x: float = 0.0
+    mcl_y: float = 0.0
+    mcl_theta: float = 0.0
+    mcl_initialized: bool = False
+    mcl_ess: float = 0.0
+    mcl_spread: float = 0.0
+    mcl_particle_count: int = 0
 
 
 def deskew_scan(
@@ -160,7 +167,24 @@ class SlamPipeline:
             loop_match_x=float(result.loop_match_x),
             loop_match_y=float(result.loop_match_y),
             loop_match_theta=float(result.loop_match_theta),
+            mcl_x=float(result.mcl_pose.x),
+            mcl_y=float(result.mcl_pose.y),
+            mcl_theta=float(result.mcl_pose.theta),
+            mcl_initialized=bool(result.mcl_initialized),
+            mcl_ess=float(result.mcl_ess),
+            mcl_spread=float(result.mcl_spread),
+            mcl_particle_count=int(result.mcl_particle_count),
         )
+
+    def set_mcl_enabled(self, enabled: bool) -> None:
+        self.impl.set_mcl_enabled(enabled)
+
+    def set_loop_closure_enabled(self, enabled: bool) -> None:
+        self.impl.set_loop_closure_enabled(enabled)
+
+    def mcl_particles(self) -> list[tuple[float, float, float]]:
+        particles = self.impl.mcl_particles()
+        return [(float(p.x), float(p.y), float(p.theta)) for p in particles]
 
     def map_array(self) -> np.ndarray:
         values = np.asarray(self.impl.map_log_odds(), dtype=np.float32)

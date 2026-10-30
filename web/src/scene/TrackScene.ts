@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type {
+  DebugLayers,
   ScanMessage,
   SlamMessage,
+  SlamPose,
   StateMessage,
   TrackInfo,
   Vec2,
@@ -38,6 +40,25 @@ export class TrackScene {
   private slamMap: THREE.Mesh | null = null;
   private slamTexture: THREE.CanvasTexture | null = null;
   private slamCanvas: HTMLCanvasElement | null = null;
+  private odomGhost = new THREE.Group();
+  private odomTrail: THREE.Line | null = null;
+  private odomTrailPositions = new Float32Array(600 * 3);
+  private odomTrailCount = 0;
+  private mclGhost = new THREE.Group();
+  private mclTrail: THREE.Line | null = null;
+  private mclTrailPositions = new Float32Array(600 * 3);
+  private mclTrailCount = 0;
+  private mclParticles: THREE.Points | null = null;
+  private mclParticleGeometry: THREE.BufferGeometry | null = null;
+  private mclParticlePositions: Float32Array = new Float32Array(400 * 3);
+  private layers: DebugLayers = {
+    map: true,
+    slam: true,
+    mcl: true,
+    particles: true,
+    odom: false,
+    gtTrail: true,
+  };
   private walls: THREE.InstancedMesh | null = null;
   private startLine: THREE.Mesh | null = null;
   private centerline: THREE.Line | null = null;
@@ -85,6 +106,10 @@ export class TrackScene {
     this.buildTrail();
     this.buildSlamGhost();
     this.buildSlamTrail();
+    this.buildOdomGhost();
+    this.buildMclGhost();
+    this.buildMclTrail();
+    this.buildMclParticles();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -224,6 +249,81 @@ export class TrackScene {
     this.slamTrail = new THREE.Line(geometry, material);
     this.slamTrail.frustumCulled = false;
     this.scene.add(this.slamTrail);
+  }
+
+  private buildOdomGhost(): void {
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.10, 0.21),
+      new THREE.MeshBasicMaterial({
+        color: 0x9aa7b4,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.5,
+      }),
+    );
+    body.position.y = 0.12;
+    this.odomGhost.add(body);
+    this.odomGhost.visible = false;
+    this.scene.add(this.odomGhost);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.odomTrailPositions, 3));
+    geometry.setDrawRange(0, 0);
+    this.odomTrail = new THREE.Line(
+      geometry,
+      new THREE.LineBasicMaterial({ color: 0x9aa7b4, transparent: true, opacity: 0.5 }),
+    );
+    this.odomTrail.frustumCulled = false;
+    this.odomTrail.visible = false;
+    this.scene.add(this.odomTrail);
+  }
+
+  private buildMclGhost(): void {
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.10, 0.21),
+      new THREE.MeshBasicMaterial({
+        color: 0x56f09f,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.8,
+      }),
+    );
+    body.position.y = 0.12;
+    this.mclGhost.add(body);
+    this.mclGhost.visible = false;
+    this.scene.add(this.mclGhost);
+  }
+
+  private buildMclTrail(): void {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.mclTrailPositions, 3));
+    geometry.setDrawRange(0, 0);
+    this.mclTrail = new THREE.Line(
+      geometry,
+      new THREE.LineBasicMaterial({ color: 0x56f09f, transparent: true, opacity: 0.7 }),
+    );
+    this.mclTrail.frustumCulled = false;
+    this.scene.add(this.mclTrail);
+  }
+
+  private buildMclParticles(): void {
+    this.mclParticleGeometry = new THREE.BufferGeometry();
+    this.mclParticleGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.mclParticlePositions, 3),
+    );
+    this.mclParticles = new THREE.Points(
+      this.mclParticleGeometry,
+      new THREE.PointsMaterial({
+        color: 0x56f09f,
+        size: 0.035,
+        transparent: true,
+        opacity: 0.55,
+        sizeAttenuation: true,
+      }),
+    );
+    this.mclParticles.frustumCulled = false;
+    this.scene.add(this.mclParticles);
   }
 
   private buildTrail(): void {
@@ -442,34 +542,110 @@ export class TrackScene {
 
   updateSlam(slam: SlamMessage): void {
     if (slam.pose) {
-      this.slamGhost.visible = true;
+      this.slamGhost.visible = this.layers.slam;
       this.slamGhost.position.set(slam.pose.x, 0, slam.pose.y);
       this.slamGhost.rotation.y = -slam.pose.theta;
-      const x = slam.pose.x;
-      const y = slam.pose.y;
-      const last = this.slamTrailCount > 0 ? this.slamTrailCount - 1 : -1;
-      const lx = last >= 0 ? this.slamTrailPositions[last * 3] : NaN;
-      const lz = last >= 0 ? this.slamTrailPositions[last * 3 + 2] : NaN;
-      if (!Number.isFinite(lx) || Math.hypot(x - lx, y - lz) > 0.04) {
-        if (this.slamTrailCount >= this.slamTrailPositions.length / 3) {
-          this.slamTrailPositions.copyWithin(0, 3);
-          this.slamTrailCount -= 1;
-        }
-        const index = this.slamTrailCount * 3;
-        this.slamTrailPositions[index] = x;
-        this.slamTrailPositions[index + 1] = 0.025;
-        this.slamTrailPositions[index + 2] = y;
-        this.slamTrailCount += 1;
-        const geometry = this.slamTrail?.geometry;
-        if (geometry) {
-          geometry.setDrawRange(0, this.slamTrailCount);
-          geometry.attributes.position.needsUpdate = true;
-        }
-      }
+      this.appendTrail(
+        this.slamTrailPositions,
+        this.slamTrail,
+        'slamTrailCount',
+        slam.pose,
+        this.layers.slam,
+      );
+    }
+    if (slam.odometry) {
+      this.odomGhost.visible = this.layers.odom;
+      this.odomGhost.position.set(slam.odometry.x, 0, slam.odometry.y);
+      this.odomGhost.rotation.y = -slam.odometry.theta;
+      this.appendTrail(
+        this.odomTrailPositions,
+        this.odomTrail,
+        'odomTrailCount',
+        slam.odometry,
+        this.layers.odom,
+      );
+    }
+    if (slam.mcl?.pose) {
+      this.mclGhost.visible = this.layers.mcl;
+      this.mclGhost.position.set(slam.mcl.pose.x, 0, slam.mcl.pose.y);
+      this.mclGhost.rotation.y = -slam.mcl.pose.theta;
+      this.appendTrail(
+        this.mclTrailPositions,
+        this.mclTrail,
+        'mclTrailCount',
+        slam.mcl.pose,
+        this.layers.mcl,
+      );
+      this.updateMclParticles(slam);
+    } else {
+      this.mclGhost.visible = false;
+      if (this.mclTrail) this.mclTrail.visible = false;
+      if (this.mclParticles) this.mclParticles.visible = false;
     }
     if (slam.map) {
       this.updateSlamMap(slam);
     }
+  }
+
+  private appendTrail(
+    positions: Float32Array,
+    line: THREE.Line | null,
+    countField: 'slamTrailCount' | 'odomTrailCount' | 'mclTrailCount',
+    pose: SlamPose,
+    visible: boolean,
+  ): void {
+    if (line) line.visible = visible;
+    if (!visible) return;
+    const count = this[countField];
+    const last = count > 0 ? count - 1 : -1;
+    const lx = last >= 0 ? positions[last * 3] : NaN;
+    const lz = last >= 0 ? positions[last * 3 + 2] : NaN;
+    if (Number.isFinite(lx) && Math.hypot(pose.x - lx, pose.y - lz) <= 0.04) return;
+    if (count >= positions.length / 3) {
+      positions.copyWithin(0, 3);
+      this[countField] = count - 1;
+    }
+    const index = this[countField] * 3;
+    positions[index] = pose.x;
+    positions[index + 1] = 0.025;
+    positions[index + 2] = pose.y;
+    this[countField] += 1;
+    const geometry = line?.geometry;
+    if (geometry) {
+      geometry.setDrawRange(0, this[countField]);
+      geometry.attributes.position.needsUpdate = true;
+    }
+  }
+
+  private updateMclParticles(slam: SlamMessage): void {
+    if (!this.mclParticleGeometry || !this.mclParticles) return;
+    const particles = slam.mcl?.particles ?? [];
+    const max = this.mclParticlePositions.length / 3;
+    const count = Math.min(particles.length, max);
+    for (let i = 0; i < count; i += 1) {
+      this.mclParticlePositions[i * 3] = particles[i][0];
+      this.mclParticlePositions[i * 3 + 1] = 0.04;
+      this.mclParticlePositions[i * 3 + 2] = particles[i][1];
+    }
+    this.mclParticleGeometry.setDrawRange(0, count);
+    this.mclParticleGeometry.attributes.position.needsUpdate = true;
+    this.mclParticles.visible = this.layers.mcl && this.layers.particles && count > 0;
+  }
+
+  setLayerVisibility(layers: DebugLayers): void {
+    this.layers = { ...layers };
+    this.slamGhost.visible = layers.slam;
+    if (this.slamTrail) this.slamTrail.visible = layers.slam;
+    this.odomGhost.visible = layers.odom;
+    if (this.odomTrail) this.odomTrail.visible = layers.odom;
+    this.mclGhost.visible = layers.mcl;
+    if (this.mclTrail) this.mclTrail.visible = layers.mcl;
+    if (this.mclParticles) {
+      this.mclParticles.visible =
+        layers.mcl && layers.particles && this.mclParticleGeometry?.drawRange.count !== 0;
+    }
+    if (this.slamMap) this.slamMap.visible = layers.map;
+    if (this.trail) this.trail.visible = layers.gtTrail;
   }
 
   private updateSlamMap(slam: SlamMessage): void {
@@ -532,6 +708,7 @@ export class TrackScene {
       0.007,
       map.origin_y + height / 2,
     );
+    this.slamMap.visible = this.layers.map;
     this.scene.add(this.slamMap);
   }
 

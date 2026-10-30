@@ -107,17 +107,47 @@ export interface SlamMapPayload {
   data: string;
 }
 
+export interface SlamPose {
+  x: number;
+  y: number;
+  theta: number;
+}
+
 export interface SlamMessage {
   type: 'slam';
   available: boolean;
   t: number;
-  pose: { x: number; y: number; theta: number } | null;
+  pose: SlamPose | null;
   ate_m: number;
   scan_ms: number;
   match_score: number;
   inliers: number;
   scan_count: number;
+  loop_closures: number;
+  loop_event: boolean;
+  graph_nodes: number;
+  graph_edges: number;
+  odom_drift_m: number;
+  odometry?: SlamPose;
+  options?: { mcl_enabled: boolean; loop_closure_enabled: boolean };
+  mcl?: {
+    initialized: boolean;
+    pose: SlamPose | null;
+    ate_m: number;
+    ess: number;
+    spread_m: number;
+    particles: Array<[number, number]>;
+  };
   map?: SlamMapPayload;
+}
+
+export interface DebugLayers {
+  map: boolean;
+  slam: boolean;
+  mcl: boolean;
+  particles: boolean;
+  odom: boolean;
+  gtTrail: boolean;
 }
 
 export type ServerMessage = HelloMessage | StateMessage | ScanMessage | SlamMessage;

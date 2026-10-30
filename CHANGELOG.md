@@ -22,7 +22,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - C++17 2D lidar SLAM front-end: per-beam deskew, occupancy grid, chamfer
   likelihood, coarse/fine correlative matching with motion prior.
 - Live SLAM occupancy map, ghost pose/trail, ATE and scan-time diagnostics.
-- `awake-sim slam-bench`: 2.89 cm mean ATE, 5.27 cm max, 14.2 ms/scan.
+- `awake-sim slam-bench`: 2.89 cm mean ATE, 5.27 cm max, 14.2 ms/scan
+  (low-noise odometry benchmark).
+- Realistic drifting wheel/IMU odometry for SLAM evaluation.
+- 400-particle MCL with ESS/spread diagnostics and runtime on/off/reset.
+- Dashboard localization toggles (MCL, experimental loop closure) and debug
+  layers for GT, odometry, SLAM, MCL, particles and map.
+- `awake-sim slam-bench --mcl`: SLAM 22.6 cm vs MCL 22.0 cm mean ATE over 12 s;
+  MCL tracks the map but cannot fix map drift.
 
 ### Changed
 -

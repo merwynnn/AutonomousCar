@@ -70,8 +70,11 @@ uv run awake-sim run --scenario configs/scenarios/test_track.yaml
 # controller comparison
 uv run awake-sim compare --laps 5
 
-# SLAM front-end benchmark
-uv run awake-sim slam-bench --duration 20
+# SLAM front-end benchmark + MCL
+uv run awake-sim slam-bench --duration 20 --mcl
+
+# experimental loop closure (may false-positive on repetitive walls)
+uv run awake-sim slam-bench --duration 20 --loop-closure
 
 # C++ rebuild after changes
 uv run python -m awake_sim.cli build-cpp

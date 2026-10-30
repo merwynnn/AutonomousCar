@@ -87,6 +87,11 @@ class PyBulletSimulation:
         )
         self.odometry = OdometryModel(self.scenario.odometry, seed=self.scenario.seed)
         self.odometry.reset(self.track.sample(self.track.start_s))
+        self.slam_mcl_enabled = False
+        self.slam_loop_enabled = False
+        if self.slam is not None:
+            self.slam.set_mcl_enabled(self.slam_mcl_enabled)
+            self.slam.set_loop_closure_enabled(self.slam_loop_enabled)
         self.slam_pose: tuple[float, float, float] | None = None
         self.slam_ate = 0.0
         self.slam_scan_ms = 0.0
@@ -99,6 +104,11 @@ class PyBulletSimulation:
         self.slam_loop_event = False
         self.slam_loop_candidate = -1
         self.slam_loop_match: tuple[float, float, float] = (0.0, 0.0, 0.0)
+        self.slam_mcl_pose: tuple[float, float, float] | None = None
+        self.slam_mcl_ate = 0.0
+        self.slam_mcl_ess = 0.0
+        self.slam_mcl_spread = 0.0
+        self.slam_mcl_particles: list[tuple[float, float, float]] = []
         self.slam_map_payload: dict[str, Any] | None = None
         self._slam_dirty = False
         self.odom_drift_m = 0.0
@@ -182,6 +192,11 @@ class PyBulletSimulation:
         self.slam_loop_event = False
         self.slam_loop_candidate = -1
         self.slam_loop_match = (0.0, 0.0, 0.0)
+        self.slam_mcl_pose = None
+        self.slam_mcl_ate = 0.0
+        self.slam_mcl_ess = 0.0
+        self.slam_mcl_spread = 0.0
+        self.slam_mcl_particles = []
         self.slam_map_payload = None
         self._slam_dirty = False
         self.odom_drift_m = 0.0
@@ -227,6 +242,23 @@ class PyBulletSimulation:
             update.loop_match_y,
             update.loop_match_theta,
         )
+        self.slam_mcl_pose = (
+            (update.mcl_x, update.mcl_y, update.mcl_theta)
+            if update.mcl_initialized
+            else None
+        )
+        self.slam_mcl_ate = (
+            float(np.hypot(update.mcl_x - state.x, update.mcl_y - state.y))
+            if update.mcl_initialized
+            else 0.0
+        )
+        self.slam_mcl_ess = update.mcl_ess
+        self.slam_mcl_spread = update.mcl_spread
+        if self.slam is not None and update.mcl_initialized:
+            particles = self.slam.mcl_particles()
+            self.slam_mcl_particles = particles[::2]
+        else:
+            self.slam_mcl_particles = []
         if (
             self.slam_scan_count == 1
             or self.slam_scan_count % 10 == 0
@@ -475,6 +507,31 @@ class PyBulletSimulation:
                 "theta": round(self.slam_loop_match[2], 4),
             },
             "odom_drift_m": round(self.odom_drift_m, 4),
+            "odometry": {
+                "x": round(self.odometry.x, 4),
+                "y": round(self.odometry.y, 4),
+                "theta": round(self.odometry.theta, 4),
+            },
+            "options": {
+                "mcl_enabled": self.slam_mcl_enabled,
+                "loop_closure_enabled": self.slam_loop_enabled,
+            },
+            "mcl": {
+                "initialized": self.slam_mcl_pose is not None,
+                "pose": None
+                if self.slam_mcl_pose is None
+                else {
+                    "x": round(self.slam_mcl_pose[0], 4),
+                    "y": round(self.slam_mcl_pose[1], 4),
+                    "theta": round(self.slam_mcl_pose[2], 4),
+                },
+                "ate_m": round(self.slam_mcl_ate, 4),
+                "ess": round(self.slam_mcl_ess, 1),
+                "spread_m": round(self.slam_mcl_spread, 4),
+                "particles": [
+                    [round(x, 3), round(y, 3)] for x, y, _theta in self.slam_mcl_particles
+                ],
+            },
         }
         if include_map and self.slam_map_payload is not None:
             message["map"] = self.slam_map_payload
@@ -496,6 +553,8 @@ class PyBulletSimulation:
             "slam": self.enable_slam,
             "slam_scan_ms": round(self.slam_scan_ms, 2),
             "slam_ate_m": round(self.slam_ate, 4),
+            "mcl_enabled": self.slam_mcl_enabled,
+            "loop_closure_enabled": self.slam_loop_enabled,
         }
 
     # --------------------------------------------------------------- commands
@@ -525,6 +584,25 @@ class PyBulletSimulation:
                 controller if controller in {"wall_follow", "pure_pursuit"} else "wall_follow"
             )
             self.actuation = Actuation()
+        elif kind == "slam.set_options":
+            if self.slam is not None:
+                if "mcl_enabled" in msg:
+                    self.slam_mcl_enabled = bool(msg["mcl_enabled"])
+                    self.slam.set_mcl_enabled(self.slam_mcl_enabled)
+                    if not self.slam_mcl_enabled:
+                        self.slam_mcl_pose = None
+                        self.slam_mcl_particles = []
+                if "loop_closure_enabled" in msg:
+                    self.slam_loop_enabled = bool(msg["loop_closure_enabled"])
+                    self.slam.set_loop_closure_enabled(self.slam_loop_enabled)
+                self._slam_dirty = True
+        elif kind == "slam.reset_mcl":
+            if self.slam is not None:
+                self.slam.set_mcl_enabled(False)
+                self.slam.set_mcl_enabled(self.slam_mcl_enabled)
+                self.slam_mcl_pose = None
+                self.slam_mcl_particles = []
+                self._slam_dirty = True
         elif kind == "drive.command":
             self.control_mode = "manual"
             self.manual = Actuation(
