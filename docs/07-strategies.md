@@ -93,18 +93,16 @@ Metrics:
 
 Outputs:
 
-- SQLite experiment database;
-- CSV export;
-- dashboard leaderboard and Pareto plots;
+- controller comparison table from `awake-sim compare`;
+- lap times and penalty summary in the console;
 - Markdown report in `docs/experiments/`.
 
-## 6. Batch execution
+## 6. Headless runs
 
-- Each run is a headless simulation process with a fixed seed.
-- A worker pool runs N processes in parallel (default: 4, configurable).
-- Progress and cancellation are exposed in the dashboard.
-- Results are reproducible: same config + seed → same metrics.
-- A batch manifest records code version, config hash and environment.
+- Each `race` / `compare` run is a headless simulation with a fixed seed.
+- Same config + seed → same metrics.
+- The report records the command, seed and code revision.
+- Run comparisons one at a time to avoid CPU contention with the dashboard.
 
 ## 7. Hardware what-if
 
@@ -116,7 +114,7 @@ Because the car is not chosen yet, the lab can sweep:
 - lidar height/mount and sensor quality;
 - steering limits and latency.
 
-Outputs: lap-time sensitivity, Pareto front of speed vs robustness, and warnings
+Outputs: lap-time sensitivity, speed-vs-robustness summary, and warnings
 (e.g., lidar too high for the walls). This is a comparative tool, not a validated
 digital twin until the real car is measured.
 

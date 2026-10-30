@@ -67,11 +67,11 @@ make check       # lint + test + web build
 # headless run
 uv run awake-sim run --scenario configs/scenarios/test_track.yaml
 
-# batch experiment
-uv run awake-sim batch configs/experiments/example.yaml
+# controller comparison
+uv run awake-sim compare --laps 5
 
-# replay a recording
-uv run awake-sim replay data/recordings/<run>.jsonl
+# SLAM front-end benchmark
+uv run awake-sim slam-bench --duration 20
 
 # C++ rebuild after changes
 uv run python -m awake_sim.cli build-cpp
@@ -116,18 +116,18 @@ If not, run `uv python pin 3.11` and `uv sync --all-extras`.
 ### Simulation is slow
 
 - Close unused browser tabs.
-- Use headless batch for experiments.
+- Use headless `race` / `compare` for strategy runs.
 - Reduce lidar beams/sub-rays in the scenario config.
-- Check `nproc`; batch worker count may be too high.
 
 ### WSL memory pressure
 
 The laptop has ~7.3 GB RAM. Avoid running Gazebo/ROS, huge point clouds or many
-browser tabs simultaneously. Batch runs should use 2–4 workers.
+browser tabs simultaneously. Avoid running multiple headless comparisons at once.
 
 ## 8. Data and cleanup
 
-- Recordings and experiments live in `data/` (gitignored).
+- Optional raw logs live in `data/` (gitignored); experiment reports live in
+  `docs/experiments/`.
 - `make clean` removes build artefacts and dependencies; use with care.
 - To reset the Python environment: `uv sync --reinstall --all-extras`.
 
@@ -136,8 +136,7 @@ browser tabs simultaneously. Batch runs should use 2–4 workers.
 | Path | Contents |
 |---|---|
 | `configs/` | vehicle, sensor, track, scenario YAML |
-| `configs/experiments/` | batch definitions |
-| `data/experiments/` | results and recordings |
+| `data/` | optional raw logs (gitignored) |
 | `docs/devlog/` | work log |
 | `docs/assets/` | screenshots |
 | `cpp/` | SLAM core |

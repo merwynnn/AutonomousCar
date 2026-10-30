@@ -365,7 +365,7 @@ export default function App() {
 
         <div className="sidebar-footer">
           <div className="small-note">
-            M1 · PyBullet 4WD + lidar wall-follow
+            M3 · PyBullet + C++ SLAM front-end
             <br />
             Docs: AGENTS.md · STATUS.md
           </div>
@@ -593,14 +593,14 @@ export default function App() {
         <div className="panel">
           <div className="card-heading">
             <span>Milestone</span>
-            <span className="mini-badge">M2</span>
+            <span className="mini-badge">M3</span>
           </div>
           <p className="small-note">
-            Racing line and pure pursuit are live. Next: track generator, batch experiments,
-            replay and SLAM-based localization.
+            C++ SLAM front-end live: occupancy map, ghost pose/trail and ATE. Next: loop
+            closure, MCL and a deployable pure-pursuit result.
           </p>
           <div className="progress">
-            <div className="progress-bar" style={{ width: '58%' }} />
+            <div className="progress-bar" style={{ width: '72%' }} />
           </div>
           <div className="small-note">Docs: docs/02-architecture.md · docs/04-sensors.md</div>
         </div>

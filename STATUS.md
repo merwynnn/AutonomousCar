@@ -50,17 +50,16 @@ pose/trail, **0.8 cm ATE**, and 28.7 ms/scan under telemetry load.
 
 - **M0 ✅** — bootstrap, docs, dashboard, C++ binding.
 - **M1 ✅** — 5 autonomous wall-follow laps, realistic sensors.
-- **M2 core ✅** — racing line, pure pursuit, strategy benchmark; generator,
-  batch matrix, replay and editor still pending.
+- **M2 core ✅** — racing line, pure pursuit, strategy benchmark; generator and
+  editor still pending.
 - **M3 front-end ✅** — C++ SLAM tracking + live map; pose graph/loop closure,
-  MCL, drift tests and real-log replay pending.
+  MCL and drift tests pending.
 
 ## Next tasks
 
 1. M3b: drifting-odometry test, SE(2) pose graph, loop closure, MCL/global
    relocalization, map IoU and ATE/RPE reporting.
-2. M2 rest: seeded track generator with obstacles, batch matrix runner, replay,
-   live tuning and track editor.
+2. M2 rest: seeded track generator with obstacles and a simple track editor.
 3. Calibration against the real car when hardware is chosen.
 4. Pi port and benchmark (deferred).
 
@@ -71,8 +70,8 @@ pose/trail, **0.8 cm ATE**, and 28.7 ms/scan under telemetry load.
 - Some map artefacts appear outside the lane at high speed; robust map updates
   are planned.
 - Pure pursuit uses ground truth; the deployable result needs SLAM/MCL pose.
-- Live mode uses one lidar sub-ray per beam; batch high-fidelity uses three.
-- No replay, batch matrix or track editor yet.
+- Live mode uses one lidar sub-ray per beam; high-fidelity mode uses three.
+- No track generator/editor yet.
 - Wall-follow is conservative and slow on the waist corners.
 
 ## How to run

@@ -3,9 +3,9 @@
 ## 1. Design goals
 
 - A **real-time 3D simulation** with credible vehicle dynamics and sensor physics.
-- A **strategy lab** that can run headless batches much faster than real time.
+- A **strategy lab** that can run headless races and controller comparisons.
 - A **SLAM workbench** where every stage is inspectable and measurable.
-- A **human-usable dashboard** for live monitoring, replay and experiments.
+- A **human-usable dashboard** for live monitoring and strategy comparison.
 - A **portable core** so the SLAM and controllers can later run on the car.
 
 ## 2. System context
@@ -21,26 +21,20 @@ flowchart LR
         MGR["Simulation manager"]
         SIM["Simulation worker<br/>240 Hz physics"]
         SLAM["C++ SLAM core<br/>pybind11"]
-        DB[("SQLite<br/>experiments")]
-        FILES[("Recordings<br/>JSONL/NPZ")]
-        BATCH["Batch runner<br/>headless processes"]
+        FILES[("Optional raw logs")]
     end
 
-    UI <-->|"commands: JSON<br/>telemetry: JSON + binary"| API
+    UI <-->|"commands: JSON<br/>telemetry: JSON"| API
     API <--> MGR
     MGR --> SIM
     SIM <--> SLAM
-    MGR --> DB
     MGR --> FILES
-    BATCH --> SIM
-    BATCH --> DB
-    DB --> API
     FILES --> API
 ```
 
 The browser is a **view and control client**. It does not run physics or SLAM.
 This keeps results reproducible and lets the same simulation run headless for
-batch experiments.
+`race` / `compare` / `slam-bench`.
 
 ## 3. Components
 
@@ -54,19 +48,15 @@ batch experiments.
 | `tracks/` | PDF-like test track, procedural generator, editor serialization |
 | `control/` | Controllers, racing line, speed profile, state estimation interface |
 | `slam/` | Python bindings, reference implementation, evaluation, map export |
-| `experiments/` | Batch runner, metrics, SQLite storage, report generation |
+| `experiments/` | Experiment report helpers and metrics |
 | `server/` | FastAPI app, WebSocket protocol, simulation manager |
-| `cli/` | `awake-sim` commands (run, batch, build-cpp, replay, slam-eval) |
+| `cli/` | `awake-sim` commands (run, race, compare, slam-bench, build-cpp, test-cpp) |
 
 ### 3.2 C++ core (`cpp/`)
 
-- `awake_slam::Preprocessor` — filtering, deskew, normals.
-- `awake_slam::CorrelativeMatcher` — multi-resolution branch-and-bound matcher.
-- `awake_slam::IcpRefiner` — point-to-line refinement.
-- `awake_slam::OccupancyGrid` — log-odds grid, Bresenham, likelihood field.
-- `awake_slam::PoseGraph` — SE(2) graph optimization and loop closures.
-- `awake_slam::MonteCarloLocalizer` — particle-filter localization.
-- `awake_slam::SlamPipeline` — orchestration and diagnostics.
+- `awake_slam::OccupancyGrid` — log-odds grid, Bresenham, chamfer likelihood.
+- `awake_slam::SlamCore` — deskew, coarse/fine correlative matching, map update.
+- Pose graph/loop closure and MCL — designed, not implemented yet (M3b).
 
 Bindings are exposed through `src/awake_sim/_awake_slam*.so` and imported by
 `awake_sim.slam`. A pure-Python reference implementation is kept for tests and
@@ -75,17 +65,16 @@ teaching; the real-time path is C++.
 ### 3.3 Dashboard (`web/`)
 
 - React + TypeScript + Vite.
-- Three.js for the 3D scene; uPlot for charts.
-- Zustand (or reducer) for run state.
-- Views: Race, Engineering, Lab, Project.
-- WebSocket telemetry plus REST for config/results.
+- Three.js for the 3D scene; a lightweight SVG speed trace.
+- React state for run state.
+- Views: Race, Engineering, Strategy, Project.
+- WebSocket telemetry plus REST for status/config.
 
 ### 3.4 Storage
 
-- SQLite for experiment metadata and metrics.
-- JSONL for event logs.
-- NPZ or binary files for time-series and scans.
-- Config YAML + config hash recorded with every run.
+- Markdown experiment reports and plots in `docs/experiments/`.
+- Optional raw logs under `data/` (gitignored).
+- Config YAML + seed recorded with every reported run.
 
 ## 4. Runtime data flow
 
@@ -121,7 +110,7 @@ prevents the classic simulator cheat of seeing the current scan instantly.
 - No wall-clock time in physics or sensor sampling.
 - Rendering and telemetry are decoupled and may drop frames.
 - Every run records seed, config hash, code version and sensor preset.
-- Batch runs use one process per run (or a deterministic worker pool).
+- Headless runs use one process per run and record seed/config.
 
 ## 5. Interfaces
 
@@ -217,12 +206,8 @@ Every extrinsic is a 4×4 transform in config. Angles are radians internally.
 - `GET /api/health` — liveness and version.
 - `GET /api/status` — current run, config, milestone.
 - `GET /api/scenarios` — available scenarios.
-- `GET /api/tracks` — track presets and generated tracks.
-- `GET /api/experiments` — experiment list and metrics.
-- `GET /api/experiments/{id}` — details and artefacts.
-- `POST /api/run` — start a run.
-- `POST /api/batch` — start a batch.
-- `POST /api/replay` — load a recording.
+- `GET /api/track` — current track geometry.
+- `POST /api/run` — start a run (run control is currently via WebSocket).
 
 ### WebSocket `/ws/telemetry`
 
@@ -233,22 +218,22 @@ Commands (client → server):
 {"type": "run.pause"}
 {"type": "run.step", "dt": 0.016}
 {"type": "run.reset"}
-{"type": "config.set", "path": "controller.lookahead_m", "value": 0.6}
+{"type": "control.mode", "mode": "auto"}
+{"type": "control.controller", "controller": "pure_pursuit"}
+{"type": "drive.command", "throttle": 0.4, "steering": 0.1}
+{"type": "run.set_speed", "speed": 2.4}
 ```
 
 Telemetry (server → client):
 
-- `hello` — protocol version, scenario, track bounds.
-- `state` — car pose, velocity, steering, lap, race state.
-- `scan` — lidar points (binary Float32: angle, range, intensity, timestamp).
-- `map` — occupancy grid delta (binary).
-- `trajectory` — GT/odom/SLAM/planned paths.
-- `metrics` — speed, lap times, penalties, SLAM timing.
-- `event` — collision, penalty, loop closure, warning.
-- `experiment` — batch progress and results.
+- `hello` — protocol version, scenario, track geometry, capabilities.
+- `state` — car pose, velocity, steering, sonars, lap, race state.
+- `scan` — lidar angles/ranges/intensities.
+- `slam` — SLAM pose, ATE, scan time, match score and (periodically) occupancy map.
 
-JSON is used for control and small state; binary frames carry arrays to keep the
-browser responsive. The exact framing is documented in `docs/08-dashboard.md`.
+The current implementation uses JSON. Binary frames are a possible optimisation
+if telemetry becomes a bottleneck; the map is base64-encoded to keep frames
+compact enough for the local dashboard.
 
 ## 8. Deployment
 
@@ -278,7 +263,7 @@ See `AGENTS.md` §11 for the canonical tree. Key boundaries:
 - If the C++ extension is missing, the server reports `slam: unavailable` and
   disables SLAM modes; it does not silently fall back to perfect localization.
 - If a sensor model throws, the run pauses and the dashboard shows the error.
-- If the browser disconnects, the simulation can continue or pause based on
-  config; the default is to pause for interactive runs and continue for batch.
-- If the simulation worker crashes, the manager restarts it and preserves the
-  last recording.
+- If the browser disconnects, the simulation keeps running; reconnecting clients
+  receive the current state and SLAM map.
+- If the simulation worker crashes, the manager reports the error and the run can
+  be reset.

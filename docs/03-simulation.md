@@ -8,7 +8,7 @@ PyBullet 3.2.7 provides:
 - a raycast vehicle with suspension, wheels and tire friction;
 - batched raycasts for lidar and ultrasonic models;
 - collision detection against track walls and obstacles;
-- headless operation for batch experiments.
+- headless operation for `race` / `compare` runs.
 
 The simulator targets **credible comparative dynamics**, not a certified digital
 twin. Once the real car exists, measured parameters replace the generic defaults;
@@ -101,7 +101,7 @@ A run can be executed at:
 
 - **real time** for interactive driving;
 - **slow motion** for debugging;
-- **as fast as possible** for batch experiments (headless).
+- **as fast as possible** for headless comparisons.
 
 ## 5. Race manager
 
@@ -118,7 +118,7 @@ A run can be executed at:
 - Seeded per-sensor RNG streams.
 - No wall-clock or frame-rate dependence in physics/sensors.
 - Config hash + seed + code version stored with every run.
-- Batch workers use the same code path as interactive runs.
+- Headless runs use the same code path as interactive runs.
 - Golden-run test: fixed seed and config produce identical metrics.
 
 ## 7. Performance budget

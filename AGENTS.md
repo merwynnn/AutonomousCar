@@ -59,11 +59,11 @@ Simulation manager / worker (Python, 240 Hz physics)
     ├── sensor models (lidar, ultrasonic, IMU, encoders) + latency bus
     ├── controllers, planning, racing line, speed profile
     ├── C++ SLAM core (pybind11): CSM/ICP, occupancy grid, pose graph, MCL
-    └── recorder + experiment database
-Batch runner (headless subprocesses) → SQLite/CSV → dashboard
+    └── recorder + optional raw logs
+Headless `race` / `compare` / `slam-bench` commands use the same simulation core.
 ```
 
-- Python orchestrates simulation, experiments and visualization.
+- Python orchestrates simulation, race comparison and visualization.
 - Performance-critical SLAM lives in `cpp/` and is exposed through `src/awake_sim/slam/`.
 - The browser never runs physics; it renders server state and sends commands.
 - The real car interface is `RobotAPI`; the simulation adapter and a future serial
@@ -105,7 +105,7 @@ Detailed docs:
 - Each sensor has its own seeded RNG stream.
 - Every run records its config hash and seed.
 - Rendering and wall-clock time never affect simulation results.
-- Batch experiments must be reproducible run-to-run.
+- Headless `race` / `compare` runs must be reproducible.
 
 ### 5.3 Performance
 
@@ -197,12 +197,12 @@ src/awake_sim/      Python package
   tracks/           test track, generator, editor serialization
   control/          controllers, racing line, speed profile
   slam/             Python bindings + reference implementation + evaluation
-  experiments/      batch runner, metrics, storage
+  experiments/      experiment report helpers and metrics
   server/           FastAPI app, WebSocket protocol, simulation manager
   cli/              command-line entry points
 cpp/                C++17 SLAM core + pybind11 bindings
 web/                React/Three.js dashboard
 tests/              Python tests + fixtures
 docs/               architecture, requirements, runbook, devlog, ADRs
-data/               local recordings and experiment artefacts (gitignored)
+data/               optional raw logs (gitignored)
 ```

@@ -1,1 +1,1 @@
-"""Batch experiments, metrics and result storage."""
+"""Experiment report helpers and metrics."""

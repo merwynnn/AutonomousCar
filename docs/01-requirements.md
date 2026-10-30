@@ -34,8 +34,8 @@ If the PDF and this table disagree, the PDF wins; update this table.
 | S-03 | Fixed timestep, seeded RNG, recorded config hash | Reproducible experiments | Determinism test |
 | S-04 | 2D lidar SLAM from scratch, C++ hot path, 10 Hz target | User requirement; Python too slow | Benchmark + ATE/RPE test |
 | S-05 | Live 3D visualization of car, sensors, map, trajectories | Human monitoring | Screenshot/Playwright test |
-| S-06 | Replay, experiment comparison, live tuning, track editor | User selected features | UI acceptance test |
-| S-07 | Batch experiments over tracks/seeds/controllers | Strategy optimization | Batch integration test |
+| S-06 | Controller switch, SLAM map, track editor | User-selected features | UI acceptance test |
+| S-07 | Headless race/compare over controllers and seeds | Strategy optimization | Compare/race test |
 | S-08 | Portable C++ SLAM and hardware-agnostic controllers | Pi later | Build/API review |
 | S-09 | English docs, AGENTS.md, STATUS.md, devlog, ADRs | User requirement | Docs review |
 | S-10 | Git history and clean commits | Monitoring/reproducibility | Git log review |

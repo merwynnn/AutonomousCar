@@ -53,7 +53,7 @@ Live dashboard screenshot: [`assets/2026-10-30-m3-slam.png`](../assets/2026-10-3
   A drift/loop-closure test is the next step.
 - At high speed some map artefacts appear outside the lane; map filtering and
   robust updates are planned.
-- This is a simulator-only result; real-log replay and Pi benchmarking are later.
+- This is a simulator-only result; Pi benchmarking is later.
 
 ## Reproduction
 
@@ -71,4 +71,4 @@ the M3 base. Next:
 2. SE(2) pose graph with loop closure;
 3. MCL / global relocalization;
 4. map quality (IoU) and ATE/RPE reports on generated tracks;
-5. real-log replay adapter and Pi port.
+5. Pi port and benchmark.

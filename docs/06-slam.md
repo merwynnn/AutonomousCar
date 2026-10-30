@@ -11,7 +11,7 @@
   (8 s, 81 scans, `slam-bench`).
 - ⏳ Pose graph + loop closure (M3b).
 - ⏳ MCL / global relocalization (M3b).
-- ⏳ Real-log replay and Pi benchmark (later).
+- ⏳ Pi benchmark (later).
 
 See [`experiments/EXP-0002-slam-frontend.md`](experiments/EXP-0002-slam-frontend.md).
 
@@ -198,7 +198,6 @@ Evaluation runs are recorded and plotted in `docs/experiments/`.
 | `mapping` | Low-speed exploration lap; build map, centreline and racing line |
 | `race_mcl` | Localize on the prior map with MCL/scan matching; race |
 | `online_slam` | SLAM while racing, for unknown-track/no-practice scenarios |
-| `replay` | Process recorded real/sim lidar logs offline |
 
 The strategy lab compares lap times and crash rates across these modes. The
 expected result is that mapping first is faster and safer when practice time is

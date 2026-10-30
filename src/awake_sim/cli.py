@@ -188,16 +188,6 @@ def compare(
     console.print(table)
 
 
-@app.command()
-def batch(
-    config: Path = typer.Argument(..., help="Batch experiment YAML"),
-) -> None:
-    """Run a full batch matrix (planned for the next M2 increment)."""
-
-    console.print(f"[yellow]Batch matrix runner is the next M2 increment; config: {config}[/yellow]")
-    raise typer.Exit(code=2)
-
-
 @app.command("slam-bench")
 def slam_bench(
     duration: float = typer.Option(20.0, min=2.0, max=120.0, help="Simulated seconds"),
@@ -241,18 +231,6 @@ def slam_bench(
         table.add_row("Occupied cells", str(int(np.count_nonzero(occupancy > 0.5))))
         table.add_row("Free cells", str(int(np.count_nonzero(occupancy < -0.2))))
     console.print(table)
-
-
-@app.command("slam-eval")
-def slam_eval(
-    recording: Path | None = typer.Argument(None, help="Recording to evaluate"),
-) -> None:
-    """Evaluate a real/sim recording through SLAM (next increment)."""
-
-    console.print("[yellow]Recording replay evaluation is the next SLAM increment[/yellow]")
-    if recording:
-        console.print(f"recording: {recording}")
-    raise typer.Exit(code=2)
 
 
 if __name__ == "__main__":

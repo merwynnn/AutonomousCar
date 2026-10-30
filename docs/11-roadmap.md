@@ -33,7 +33,7 @@
 - Manual driving from the browser.
 - Simple auto controller (wall follow or pure pursuit).
 - 5-lap race manager, lap times, penalties.
-- Live 3D view, lidar/sensor overlays, charts, basic replay.
+- Live 3D view, lidar/sensor overlays and charts.
 - Tests and docs for all of the above.
 
 **Acceptance**
@@ -44,23 +44,20 @@
 - Seeded run is deterministic.
 - Screenshot/GIF and STATUS/devlog updated.
 
-## M2 — Strategy lab (core done; generator/batch/replay pending)
+## M2 — Strategy lab (core done; generator/editor pending)
 
 **Deliverables**
 
 - Controllers: wall follow, gap follow, pure pursuit, Stanley, MPC.
 - Centreline extraction, racing line optimization, time-optimal speed profile.
 - Track generator with obstacles + simple editor.
-- Batch runner, SQLite/CSV results, leaderboard, Pareto plots.
-- Live tuning and full replay.
-- Experiment report.
+- Strategy comparison report using `awake-sim compare` and documented experiments.
 
 **Acceptance**
 
-- At least 4 strategies compared on at least 20 generated tracks.
+- At least 4 strategies compared on generated tracks.
 - Measurable lap-time improvement over the baseline.
 - Crash/penalty rates reported, not just lap times.
-- Batch results reproducible.
 
 ## M3 — SLAM (front-end done; pose graph/MCL pending)
 
@@ -72,7 +69,7 @@
 - Live SLAM visualizations and diagnostics.
 - Evaluation: ATE/RPE, map IoU, loop closure, runtime.
 - Mapping/race/online modes.
-- Map export and replay.
+- Map export.
 
 **Acceptance**
 
@@ -89,12 +86,11 @@
 - `ideal`/`realistic`/`harsh` presets, latency/dropout/vibration/miscalibration.
 - Collision/penalty model refinement.
 - Randomized track/obstacle robustness suite.
-- Parameter sweeps, optional Optuna, hardware what-if.
-- Calibration guide and real-log replay adapter.
+- Hardware what-if and calibration guide.
 
 **Acceptance**
 
-- Pareto front of speed vs robustness.
+- Speed-vs-robustness summary across presets.
 - Hardware sensitivity report.
 - Harsh-preset results and failure analysis.
 - Calibration workflow documented and tested on synthetic data.

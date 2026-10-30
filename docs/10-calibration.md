@@ -110,5 +110,5 @@
 - [ ] IMU bias/noise estimated
 - [ ] Encoder resolution and slip estimated
 - [ ] Sensor/control latency measured
-- [ ] Real log replayed through SLAM
+- [ ] Real sensor data compared with the simulated sensor model
 - [ ] 5-lap sim vs real comparison documented

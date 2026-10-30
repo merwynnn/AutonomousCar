@@ -7,7 +7,7 @@ questions at a glance:
 
 1. **What is the car doing?** — 3D pose, speed, steering, lidar, map.
 2. **Why is it doing that?** — sensor data, localization, planned path, metrics.
-3. **Which strategy is better?** — replay, experiment comparison, Pareto plots.
+3. **Which strategy is better?** — strategy benchmarks and `compare` results.
 
 ## 2. Views
 
@@ -37,15 +37,13 @@ Everything needed to debug perception, SLAM and control:
   sensor rates, SLAM timing/ATE;
 - sensor health panel with warnings (e.g., lidar above wall height).
 
-### Lab view
+### Strategy view
 
-- experiment table with filters and sorting;
-- multi-run comparison and overlay plots;
-- CSV/JSON export;
-- batch launcher and progress;
-- live tuning sliders;
+- controller selection (wall-follow, pure pursuit);
+- benchmark panel with 5-lap totals and best laps;
 - track generator controls and editor;
-- replay with timeline scrubbing.
+- seed and realism preset;
+- links to experiment reports.
 
 ### Project view
 
@@ -83,10 +81,7 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 - Controller and localization mode.
 - Realism preset (`ideal`, `realistic`, `harsh`).
 - Seed.
-- Live tuning: controller gains, speed limit, lookahead, friction, latency,
-  noise multipliers.
-- Record/replay controls.
-- Batch launcher.
+- Controller gains and speed limit (applied by restarting the run).
 
 ## 5. WebSocket protocol
 
@@ -122,7 +117,7 @@ JSON messages:
 - `state`
 - `metrics`
 - `event`
-- `experiment`
+- `slam`
 - `error`
 
 ### Throttling
