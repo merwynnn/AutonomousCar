@@ -10,10 +10,10 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from awake_sim import __version__
-from awake_sim.server.demo import DemoSimulation
+from awake_sim.server.pybullet_sim import PyBulletSimulation
 from awake_sim.slam import HAVE_CPP
 
-manager = DemoSimulation()
+manager = PyBulletSimulation()
 
 
 @contextlib.asynccontextmanager
@@ -45,7 +45,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "version": __version__,
-        "mode": "demo",
+        "mode": manager.status()["mode"],
         "slam_cpp": HAVE_CPP,
     }
 
@@ -63,7 +63,7 @@ def scenarios() -> dict:
                 "id": "test_track_baseline",
                 "name": "Test track — baseline",
                 "track": "test_track",
-                "controller": "auto-centreline (demo)",
+                "controller": "wall-follow (lidar only)",
                 "realism": manager.scenario.realism,
             }
         ]

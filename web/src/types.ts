@@ -10,6 +10,7 @@ export interface TrackInfo {
   wall_height_m: number;
   wall_radius_m: number;
   start_distance_m: number;
+  track_length_m?: number;
 }
 
 export interface HelloMessage {
@@ -57,7 +58,14 @@ export interface StateMessage {
   t: number;
   paused: boolean;
   finished: boolean;
-  car: { x: number; y: number; theta: number; speed: number };
+  car: {
+    x: number;
+    y: number;
+    theta: number;
+    speed: number;
+    steering?: number;
+    yaw_rate?: number;
+  };
   race: {
     lap: number;
     laps: number;
@@ -66,12 +74,17 @@ export interface StateMessage {
     best_lap: number | null;
     total_time: number;
     penalties: number;
+    progress_m?: number;
+    lateral_m?: number;
   };
   sensors: {
     lidar_rate_hz: number;
     lidar_beams: number;
     realism: 'ideal' | 'realistic' | 'harsh';
+    scan_seq?: number;
+    sonars?: Array<{ name: string; range_m: number | null; valid: boolean }>;
   };
+  control_mode?: 'auto' | 'manual';
 }
 
 export interface ScanMessage {

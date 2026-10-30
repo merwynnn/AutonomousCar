@@ -3,7 +3,7 @@
 > Current milestone is tracked in `STATUS.md`. Each milestone is complete only when
 > its acceptance criteria are met and documented.
 
-## M0 — Bootstrap (current)
+## M0 — Bootstrap ✅
 
 **Deliverables**
 
@@ -23,7 +23,7 @@
 - `make check` is green.
 - Docs index and STATUS are current.
 
-## M1 — Driveable vertical slice
+## M1 — Driveable vertical slice ✅
 
 **Deliverables**
 
@@ -44,7 +44,7 @@
 - Seeded run is deterministic.
 - Screenshot/GIF and STATUS/devlog updated.
 
-## M2 — Strategy lab
+## M2 — Strategy lab (current)
 
 **Deliverables**
 

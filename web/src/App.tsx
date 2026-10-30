@@ -141,9 +141,52 @@ function TrackCanvas({
 
 export default function App() {
   const { status, hello, state, scan, history, send } = useTelemetry();
-  const [speed, setSpeed] = useState(2.0);
+  const [speed, setSpeed] = useState(2.4);
   const [cameraMode, setCameraMode] = useState<'orbit' | 'top'>('orbit');
+  const [controlMode, setControlMode] = useState<'auto' | 'manual'>('auto');
+  const keysRef = useRef({ w: false, a: false, s: false, d: false });
   const slamReady = hello?.slam_cpp ?? null;
+
+  useEffect(() => {
+    send({ type: 'control.mode', mode: controlMode });
+  }, [controlMode, send]);
+
+  useEffect(() => {
+    const onDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      const key = event.key.toLowerCase();
+      if (key in keysRef.current) {
+        event.preventDefault();
+        keysRef.current[key as keyof typeof keysRef.current] = true;
+        if (state?.paused) send({ type: 'run.start' });
+      }
+    };
+    const onUp = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (key in keysRef.current) {
+        event.preventDefault();
+        keysRef.current[key as keyof typeof keysRef.current] = false;
+      }
+    };
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+    };
+  }, [send, state?.paused]);
+
+  useEffect(() => {
+    if (controlMode !== 'manual') return;
+    const timer = window.setInterval(() => {
+      const keys = keysRef.current;
+      const throttle = (keys.w ? 1 : 0) - (keys.s ? 0.7 : 0);
+      const steering = (keys.a ? 0.45 : 0) - (keys.d ? 0.45 : 0);
+      send({ type: 'drive.command', throttle, steering });
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [controlMode, send]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -191,6 +234,31 @@ export default function App() {
         </div>
 
         <div className="sidebar-section">
+          <div className="section-label">Driving mode</div>
+          <div className="segmented">
+            <button
+              type="button"
+              className={controlMode === 'auto' ? 'active' : ''}
+              onClick={() => setControlMode('auto')}
+            >
+              Auto
+            </button>
+            <button
+              type="button"
+              className={controlMode === 'manual' ? 'active' : ''}
+              onClick={() => setControlMode('manual')}
+            >
+              Manual
+            </button>
+          </div>
+          <p className="small-note">
+            {controlMode === 'auto'
+              ? 'Lidar wall-follow, no ground truth.'
+              : 'W/S throttle · A/D steer. Keep the page focused.'}
+          </p>
+        </div>
+
+        <div className="sidebar-section">
           <div className="section-label">Run control</div>
           <div className="button-row">
             <button
@@ -215,7 +283,7 @@ export default function App() {
 
         <div className="sidebar-section">
           <div className="section-label">
-            Target speed <span className="muted">{speed.toFixed(1)} m/s</span>
+            Auto target speed <span className="muted">{speed.toFixed(1)} m/s</span>
           </div>
           <input
             type="range"
@@ -223,6 +291,7 @@ export default function App() {
             max="6"
             step="0.1"
             value={speed}
+            disabled={controlMode === 'manual'}
             onChange={(event) => {
               const value = Number(event.target.value);
               setSpeed(value);
@@ -263,7 +332,7 @@ export default function App() {
 
         <div className="sidebar-footer">
           <div className="small-note">
-            M0 bootstrap · centreline demo
+            M1 · PyBullet 4WD + lidar wall-follow
             <br />
             Docs: AGENTS.md · STATUS.md
           </div>
@@ -299,10 +368,12 @@ export default function App() {
         <section className="viewport">
           <TrackCanvas hello={hello} state={state} scan={scan} cameraMode={cameraMode} />
           <div className="viewport-badge">
-            <span className="live-dot" /> {scanning ? 'Lidar live' : 'Waiting for scan'}
+            <span className="live-dot" /> {controlMode.toUpperCase()} ·{' '}
+            {scanning ? 'Lidar live' : 'Waiting for scan'}
           </div>
           <div className="viewport-note">
             Green → blue points are lidar returns. Orange is the travelled path.
+            {controlMode === 'manual' ? ' Driving: W/S throttle, A/D steer.' : ''}
           </div>
           {warnings.length > 0 ? (
             <div className="warning-banner">{warnings.join(' · ')}</div>
@@ -312,8 +383,12 @@ export default function App() {
         <section className="bottom">
           <div className="metrics-row">
             <Metric label="Speed" value={`${(state?.car.speed ?? 0).toFixed(2)} m/s`} hint="body speed" />
+            <Metric
+              label="Steering"
+              value={`${(((state?.car.steering ?? 0) * 180) / Math.PI).toFixed(1)}°`}
+              hint="actual front angle"
+            />
             <Metric label="Lidar returns" value={`${finitePoints} / ${scanning || '—'}`} hint="valid beams" />
-            <Metric label="Penalties" value={`${race?.penalties ?? 0}`} hint="competition-style" />
             <Metric
               label="SLAM core"
               value={slamReady === null ? '—' : slamReady ? 'C++ ready' : 'Not built'}
@@ -335,6 +410,29 @@ export default function App() {
             <Metric label="Last lap" value={formatTime(race?.last_lap)} />
             <Metric label="Best lap" value={formatTime(race?.best_lap)} />
             <Metric label="Total" value={formatTime(race?.total_time)} />
+          </div>
+          <div className="progress">
+            <div
+              className="progress-bar"
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.max(
+                    0,
+                    ((race?.progress_m ?? 0) /
+                      (hello?.track.track_length_m ?? 30)) *
+                      100,
+                  ),
+                )}%`,
+              }}
+            />
+          </div>
+          <div className="sensor-row" style={{ marginTop: 8 }}>
+            <span>Progress</span>
+            <strong>
+              {(race?.progress_m ?? 0).toFixed(1)} m · lateral{' '}
+              {(race?.lateral_m ?? 0).toFixed(2)} m
+            </strong>
           </div>
         </div>
 
@@ -366,11 +464,21 @@ export default function App() {
             <strong>{hello?.sensors.imu_rate_hz ?? '—'} Hz</strong>
           </div>
           <div className="sensor-row">
+            <span>Yaw rate</span>
+            <strong>{((state?.car.yaw_rate ?? 0) * 180 / Math.PI).toFixed(1)} °/s</strong>
+          </div>
+          <div className="sensor-row">
             <span>Mount height</span>
             <strong>
               {hello?.sensors.lidar.mount.position_m?.[2]?.toFixed(2) ?? '—'} m
             </strong>
           </div>
+          {(state?.sensors.sonars ?? []).map((sonar) => (
+            <div className="sensor-row" key={sonar.name}>
+              <span>{sonar.name.replaceAll('_', ' ')}</span>
+              <strong>{sonar.valid && sonar.range_m !== null ? `${sonar.range_m.toFixed(2)} m` : 'no echo'}</strong>
+            </div>
+          ))}
         </div>
 
         <div className="panel">
@@ -390,14 +498,14 @@ export default function App() {
         <div className="panel">
           <div className="card-heading">
             <span>Milestone</span>
-            <span className="mini-badge">M0</span>
+            <span className="mini-badge">M1</span>
           </div>
           <p className="small-note">
-            Bootstrap in progress. Next: PyBullet car, realistic sensor bus, manual driving and
-            lap timing. The dashboard shell is live now.
+            PyBullet 4WD car, raycast lidar with noise/dropouts/latency, three ultrasonic
+            sensors, wall-follow and manual driving. Next: race manager polish and replay.
           </p>
           <div className="progress">
-            <div className="progress-bar" style={{ width: '18%' }} />
+            <div className="progress-bar" style={{ width: '42%' }} />
           </div>
           <div className="small-note">Docs: docs/02-architecture.md · docs/04-sensors.md</div>
         </div>

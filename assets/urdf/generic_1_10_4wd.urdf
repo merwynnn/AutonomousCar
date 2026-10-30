@@ -1,0 +1,161 @@
+<?xml version="1.0"?>
+<!--
+  Generic 1/10 4WD Ackermann car.
+  Base frame: x forward, y left, z up; origin at chassis centre.
+  Spawn with basePosition z = 0.09 m so the wheels touch z = 0.
+  Dimensions and masses mirror configs/vehicles/generic_1_10_4wd.yaml.
+-->
+<robot name="generic_1_10_4wd">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.8"/>
+      <inertia ixx="0.00615" ixy="0" ixz="0" iyy="0.0294" iyz="0" izz="0.0247"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.40 0.19 0.07"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry><box size="0.40 0.19 0.07"/></geometry>
+      <material name="body_red"><color rgba="0.85 0.18 0.18 1"/></material>
+    </visual>
+  </link>
+
+  <!-- Front-left steering knuckle -->
+  <link name="fl_knuckle">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.02"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="fl_steer" type="revolute">
+    <parent link="base_link"/>
+    <child link="fl_knuckle"/>
+    <origin xyz="0.13 0.095 -0.055" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.55" upper="0.55" effort="12" velocity="8"/>
+    <dynamics damping="0.05" friction="0.01"/>
+  </joint>
+
+  <link name="fl_wheel">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="3e-5" ixy="0" ixz="0" iyy="3e-5" iyz="0" izz="3e-5"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+      <material name="wheel_black"><color rgba="0.05 0.05 0.06 1"/></material>
+    </visual>
+  </link>
+  <joint name="fl_wheel_joint" type="continuous">
+    <parent link="fl_knuckle"/>
+    <child link="fl_wheel"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="8" velocity="120"/>
+    <dynamics damping="0.004" friction="0.001"/>
+  </joint>
+
+  <!-- Front-right steering knuckle -->
+  <link name="fr_knuckle">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.02"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
+    </inertial>
+  </link>
+  <joint name="fr_steer" type="revolute">
+    <parent link="base_link"/>
+    <child link="fr_knuckle"/>
+    <origin xyz="0.13 -0.095 -0.055" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-0.55" upper="0.55" effort="12" velocity="8"/>
+    <dynamics damping="0.05" friction="0.01"/>
+  </joint>
+
+  <link name="fr_wheel">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="3e-5" ixy="0" ixz="0" iyy="3e-5" iyz="0" izz="3e-5"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+      <material name="wheel_black"><color rgba="0.05 0.05 0.06 1"/></material>
+    </visual>
+  </link>
+  <joint name="fr_wheel_joint" type="continuous">
+    <parent link="fr_knuckle"/>
+    <child link="fr_wheel"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="8" velocity="120"/>
+    <dynamics damping="0.004" friction="0.001"/>
+  </joint>
+
+  <!-- Rear-left wheel -->
+  <link name="rl_wheel">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="3e-5" ixy="0" ixz="0" iyy="3e-5" iyz="0" izz="3e-5"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+      <material name="wheel_black"><color rgba="0.05 0.05 0.06 1"/></material>
+    </visual>
+  </link>
+  <joint name="rl_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rl_wheel"/>
+    <origin xyz="-0.13 0.095 -0.055" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="8" velocity="120"/>
+    <dynamics damping="0.004" friction="0.001"/>
+  </joint>
+
+  <!-- Rear-right wheel -->
+  <link name="rr_wheel">
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.05"/>
+      <inertia ixx="3e-5" ixy="0" ixz="0" iyy="3e-5" iyz="0" izz="3e-5"/>
+    </inertial>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+    </collision>
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <geometry><cylinder radius="0.035" length="0.028"/></geometry>
+      <material name="wheel_black"><color rgba="0.05 0.05 0.06 1"/></material>
+    </visual>
+  </link>
+  <joint name="rr_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rr_wheel"/>
+    <origin xyz="-0.13 -0.095 -0.055" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit effort="8" velocity="120"/>
+    <dynamics damping="0.004" friction="0.001"/>
+  </joint>
+</robot>

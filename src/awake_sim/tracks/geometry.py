@@ -139,6 +139,34 @@ def build_test_track(width_m: float = 0.9, samples_per_segment: int = 32) -> Tra
     )
 
 
+def project_to_polyline(
+    points: np.ndarray, position: Point
+) -> tuple[float, float, int]:
+    """Project a point onto a closed polyline.
+
+    Returns ``(s, lateral, index)`` where ``s`` is arc length along the
+    centreline, ``lateral`` is the signed distance (left positive), and ``index``
+    is the winning segment.
+    """
+
+    pts = np.asarray(points, dtype=float)
+    nxt = np.roll(pts, -1, axis=0)
+    seg = nxt - pts
+    seg_len2 = np.maximum(np.sum(seg * seg, axis=1), 1e-12)
+    rel = np.asarray(position, dtype=float) - pts
+    t = np.clip(np.sum(rel * seg, axis=1) / seg_len2, 0.0, 1.0)
+    projections = pts + t[:, None] * seg
+    delta = np.asarray(position, dtype=float) - projections
+    dist = np.linalg.norm(delta, axis=1)
+    idx = int(np.argmin(dist))
+    seg_len = np.sqrt(seg_len2)
+    cumulative = np.concatenate([[0.0], np.cumsum(seg_len)])
+    s = float(cumulative[idx] + t[idx] * seg_len[idx])
+    cross = seg[idx, 0] * delta[idx, 1] - seg[idx, 1] * delta[idx, 0]
+    lateral = float(cross / max(seg_len[idx], 1e-12))
+    return s, lateral, idx
+
+
 def _cross(a: np.ndarray, b: np.ndarray) -> float:
     return float(a[0] * b[1] - a[1] * b[0])
 

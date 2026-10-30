@@ -11,13 +11,13 @@ def test_health() -> None:
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "ok"
-        assert body["mode"] == "demo"
+        assert body["mode"] == "pybullet"
 
 
 def test_status_and_track() -> None:
     with TestClient(app) as client:
         status = client.get("/api/status").json()
-        assert status["mode"] == "demo"
+        assert status["mode"] == "pybullet"
         assert status["track_length_m"] > 15.0
 
         track = client.get("/api/track").json()
@@ -30,7 +30,7 @@ def test_websocket_hello_and_state() -> None:
         hello = ws.receive_json()
         assert hello["type"] == "hello"
         assert hello["protocol"] == 1
-        assert hello["mode"] == "demo"
+        assert hello["mode"] == "pybullet"
         assert hello["track"]["width_m"] == 0.9
         assert hello["sensors"]["lidar"]["beams"] == 720
 

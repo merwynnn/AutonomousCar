@@ -59,6 +59,12 @@ For each beam `i`:
 The raw scan is therefore **motion-distorted** exactly like a real spinning lidar.
 SLAM must deskew it using IMU/odometry; the dashboard can show raw vs deskewed.
 
+**Live vs high-fidelity:** the live dashboard uses one sub-ray per beam to keep
+the browser telemetry real-time (≈11 ms/scan for 720 beams on this laptop). Batch
+and high-fidelity runs can restore the configured 3 sub-rays (≈44 ms/scan) for
+edge/mixed-pixel realism. The beam count, rates, noise and dropout parameters are
+unchanged between modes.
+
 ### 3.2 Non-idealities
 
 | Effect | Model |
