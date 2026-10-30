@@ -1,0 +1,24 @@
+name: test_track_baseline
+description: Baseline scenario on the PDF-like test track.
+track: configs/tracks/test_track.yaml
+vehicle: configs/vehicles/generic_1_10_4wd.yaml
+sensors: configs/sensors/ld06.yaml
+
+seed: 42
+realism: realistic
+localization: gt
+controller: manual
+
+race:
+  laps: 5
+  wall_deformation_impulse_threshold: 0.35
+
+simulation:
+  physics_hz: 240
+  control_hz: 50
+  telemetry_hz: 30
+  realtime_factor: 1.0
+
+recording:
+  enabled: true
+  save_scans: true

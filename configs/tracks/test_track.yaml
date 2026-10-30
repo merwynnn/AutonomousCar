@@ -1,0 +1,21 @@
+name: test_track
+description: PDF-like peanut test track, 0.9 m lane, 16 cm pipe walls.
+version: 1
+seed: 1
+bounds: [0.0, 0.0, 15.0, 8.0]
+width_m: 0.9
+
+# Placeholder centreline; replaced by the generated/validated geometry in M1.
+centerline: []
+
+walls:
+  height_m: 0.16
+  radius_m: 0.08
+  material: grey_pvc
+
+start_line:
+  position: [7.5, 1.0]
+  heading_deg: 0.0
+  width_m: 0.9
+
+obstacles: []

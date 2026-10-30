@@ -1,0 +1,57 @@
+name: generic_1_10_4wd
+description: Generic 1/10 touring car, 4WD Ackermann, pending real-car calibration.
+scale: 0.1
+
+dimensions:
+  length_m: 0.40
+  width_m: 0.19
+  height_m: 0.16
+  ground_clearance_m: 0.008
+
+mass_kg: 2.0
+center_of_mass_m: [0.0, 0.0, 0.045]
+
+wheelbase_m: 0.26
+track_width_m: 0.18
+wheel_radius_m: 0.035
+drive: 4wd
+
+steering:
+  max_angle_deg: 25.0
+  rate_deg_s: 300.0
+  deadband_deg: 0.5
+  backlash_deg: 0.5
+  latency_ms: 20.0
+
+motor:
+  max_torque_nm: 0.60
+  max_rpm: 12000.0
+  gear_ratio: 5.0
+  current_limit_a: 40.0
+  torque_lag_ms: 15.0
+
+battery:
+  cells: 2
+  nominal_voltage_v: 7.4
+  capacity_mah: 2200.0
+  internal_resistance_ohm: 0.08
+
+tires:
+  friction_front: 1.0
+  friction_rear: 1.0
+  rolling_resistance: 0.02
+
+suspension:
+  stiffness: 25.0
+  damping: 2.0
+  max_travel_m: 0.012
+
+aero:
+  drag_coefficient: 0.8
+  frontal_area_m2: 0.02
+
+limits:
+  max_length_m: 0.45
+  max_width_m: 0.20
+  max_height_m: 0.20
+  min_ground_clearance_m: 0.005

@@ -1,0 +1,140 @@
+name: ld06_realistic
+description: LD06-class 2D spinning lidar, 720 beams, non-ideal by default.
+
+lidar:
+  frame_id: lidar
+  beams: 720
+  rate_hz: 10.0
+  min_range_m: 0.03
+  max_range_m: 12.0
+  angular_resolution_deg: 0.5
+  scan_direction: clockwise
+  mount:
+    position_m: [0.10, 0.0, 0.14]
+    rpy_deg: [0.0, 0.0, 0.0]
+  noise:
+    range_sigma_m: 0.012
+    range_bias_m: 0.002
+    range_sigma_per_m: 0.001
+    angle_sigma_deg: 0.05
+    angle_offset_deg: 0.2
+    range_scale_error: 0.005
+  quantization:
+    range_m: 0.001
+    angle_deg: 0.05
+  divergence:
+    subrays: 3
+    half_angle_deg: 0.15
+    aggregation: mixed
+  dropout:
+    base_probability: 0.005
+    max_probability: 0.20
+    incidence_threshold_deg: 70.0
+    min_reflectivity: 0.08
+  dead_beams:
+    fraction: 0.01
+  dropped_scan_probability: 0.01
+  packet_loss_probability: 0.001
+  latency_ms: 35.0
+  latency_jitter_ms: 15.0
+  temperature_drift_m_per_min: 0.0002
+  self_filter: true
+  wall_height_warning_m: 0.16
+
+ultrasonic:
+  rate_hz: 20.0
+  cone_angle_deg: 30.0
+  rays: 15
+  min_range_m: 0.02
+  max_range_m: 4.0
+  range_sigma_m: 0.01
+  range_sigma_ratio: 0.01
+  latency_ms: 30.0
+  cross_talk_probability: 0.02
+  specular_dropout_probability: 0.05
+  sensors:
+    - name: front_left
+      frame_id: sonar_fl
+      mount:
+        position_m: [0.17, 0.07, 0.08]
+        rpy_deg: [0.0, 0.0, 15.0]
+    - name: front_right
+      frame_id: sonar_fr
+      mount:
+        position_m: [0.17, -0.07, 0.08]
+        rpy_deg: [0.0, 0.0, -15.0]
+    - name: rear_center
+      frame_id: sonar_rear
+      mount:
+        position_m: [-0.18, 0.0, 0.08]
+        rpy_deg: [0.0, 0.0, 180.0]
+
+imu:
+  frame_id: imu
+  rate_hz: 200.0
+  latency_ms: 5.0
+  gyro:
+    bias_deg_s: 0.8
+    noise_deg_s: 0.06
+    random_walk_deg_s_sqrt_hz: 0.005
+    scale_error: 0.01
+    cross_axis: 0.005
+    saturation_deg_s: 500.0
+  accel:
+    bias_m_s2: 0.05
+    noise_m_s2: 0.02
+    vibration_m_s2: 0.4
+    saturation_m_s2: 156.0
+  mounting_misalignment_deg: 1.0
+
+encoders:
+  rate_hz: 50.0
+  ticks_per_rev: 1024
+  wheel_radius_error: 0.02
+  track_width_error: 0.01
+  timestamp_jitter_ms: 2.0
+  dropout_probability: 0.002
+
+realism_presets:
+  ideal:
+    lidar:
+      noise_scale: 0.0
+      dropout_scale: 0.0
+      latency_scale: 0.0
+    ultrasonic:
+      noise_scale: 0.0
+      dropout_scale: 0.0
+      latency_scale: 0.0
+    imu:
+      noise_scale: 0.0
+      bias_scale: 0.0
+    encoders:
+      slip_scale: 0.0
+  realistic:
+    lidar:
+      noise_scale: 1.0
+      dropout_scale: 1.0
+      latency_scale: 1.0
+    ultrasonic:
+      noise_scale: 1.0
+      dropout_scale: 1.0
+      latency_scale: 1.0
+    imu:
+      noise_scale: 1.0
+      bias_scale: 1.0
+    encoders:
+      slip_scale: 1.0
+  harsh:
+    lidar:
+      noise_scale: 1.8
+      dropout_scale: 2.5
+      latency_scale: 2.0
+    ultrasonic:
+      noise_scale: 2.0
+      dropout_scale: 3.0
+      latency_scale: 2.0
+    imu:
+      noise_scale: 2.0
+      bias_scale: 3.0
+    encoders:
+      slip_scale: 1.5
