@@ -15,17 +15,17 @@ and no ground truth in the control loop?
 
 | Metric | Result |
 |---|---:|
-| Mapping lap (MCL control, no GT) | 20.81 s |
-| Map seam (start vs end pose) | **8.3 cm** |
+| Mapping lap (MCL control, no GT) | 20.68 s |
+| Map seam (start vs end pose) | **11.9 cm** |
 | One-lap MCL race | 20.15 s |
 | One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
 | Race speed | 0.9 m/s |
 | Global relocalization | off |
 | MCL tuning | 400 particles, rank_keep 0.99, stride 3, softmax 10 |
 | 5-lap attempt: completed | **5 / 5** |
-| 5-lap attempt: total | **134.32 s** |
-| 5-lap attempt: lap times | 27.12, 26.62, 27.13, 26.80, 26.65 s |
-| 5-lap attempt: MCL ATE mean / max | 23.3 / 60.8 cm |
+| 5-lap attempt: total | **136.00 s** |
+| 5-lap attempt: lap times | 27.13, 27.32, 27.24, 27.28, 27.03 s |
+| 5-lap attempt: MCL ATE mean / max | 22.4 / 80.5 cm |
 | 5-lap attempt: status | **OK** |
 
 ## Interpretation
@@ -36,9 +36,10 @@ and no ground truth in the control loop?
 - MCL error grows across laps (22.6 cm mean in the one-lap comparison, 45.3 cm
   in the 5-lap attempt). Without a global correction, particles slowly lock onto
   the drifting local map.
-- At 1.2 m/s the car got stuck on lap 2. At **0.9 m/s** all five laps completed,
-  with MCL ATE 23.3 cm mean / 60.8 cm max. Speed is currently the safety margin
-  that keeps MCL tracking through the seam.
+- With the procedural obstacles, all five laps completed at **0.9 m/s**, MCL ATE
+  22.4 cm mean / 80.5 cm max. The obstacles add distinctive scan features and
+  make odometry-only fail much earlier (36.4 cm mean, DNF). Speed is still the
+  safety margin that keeps MCL tracking through the seam.
 - Tuning result: aggressive rank pruning (0.95/0.9) improved one lap but failed
   the 5-lap run. A mild **rank_keep 0.99** with 400 particles and stride 3 is the
   reliable setting. Ranking is applied only when resampling is triggered.

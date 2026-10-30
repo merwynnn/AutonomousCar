@@ -55,10 +55,10 @@ def test_lidar_is_non_ideal_and_wall_height_aware(rig) -> None:
     assert ideal.valid_count() >= scan.valid_count()
 
     high = sensors.lidar.model_copy(deep=True)
-    high.mount = {"position_m": [0.10, 0.0, 0.20]}
+    high.mount = {"position_m": [0.10, 0.0, 0.60]}
     high_model = LidarModel(high, world, seed=7)
     high_scan = high_model.scan(state, 0.0, realism_scale=0.0)
-    # Above the 16 cm walls, a horizontal scan hits nothing in the empty track.
+    # Above the walls and obstacles, a horizontal scan hits nothing.
     assert high_scan.valid_count() < 10
 
 

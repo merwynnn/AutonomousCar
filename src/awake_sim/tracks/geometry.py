@@ -5,7 +5,7 @@ Everything is in metres in the world frame (x forward, y left, z up).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -19,6 +19,19 @@ class Pose2:
     theta: float
 
 
+@dataclass(frozen=True)
+class Obstacle:
+    name: str
+    kind: str  # "box" or "cylinder"
+    x: float
+    y: float
+    yaw: float
+    length: float = 0.0
+    width: float = 0.0
+    height: float = 0.2
+    radius: float = 0.0
+
+
 @dataclass
 class TrackGeometry:
     centerline: np.ndarray  # (N, 2), closed loop without duplicate endpoint
@@ -27,6 +40,7 @@ class TrackGeometry:
     width_m: float
     start_s: float
     bounds: tuple[float, float, float, float]
+    obstacles: list[Obstacle] = field(default_factory=list)
 
     @property
     def length(self) -> float:
@@ -120,6 +134,63 @@ def peanut_control_points() -> list[Point]:
     ]
 
 
+def build_obstacles(
+    centerline: np.ndarray,
+    width_m: float,
+    seed: int = 2027,
+) -> list[Obstacle]:
+    """Deterministic wall-side crates/poles used as SLAM landmarks.
+
+    They sit near the walls, outside the safe racing line, so they add distinctive
+    scan features without blocking the lane.
+    """
+
+    rng = np.random.default_rng(seed)
+    pts = np.asarray(centerline, dtype=float)
+    nxt = np.roll(pts, -1, axis=0)
+    prev = np.roll(pts, 1, axis=0)
+    tangent = nxt - prev
+    tangent /= np.maximum(np.linalg.norm(tangent, axis=1, keepdims=True), 1e-9)
+    normal = np.column_stack([-tangent[:, 1], tangent[:, 0]])
+
+    # Fractions along the centreline, avoiding the start/finish area.
+    fractions = [0.10, 0.22, 0.34, 0.46, 0.60, 0.72, 0.84, 0.94]
+    obstacles: list[Obstacle] = []
+    for i, fraction in enumerate(fractions):
+        idx = int((fraction * len(pts) + rng.integers(0, 5)) % len(pts))
+        side = 1.0 if i % 2 == 0 else -1.0
+        offset = side * (width_m / 2.0 - 0.06)
+        x = float(pts[idx, 0] + normal[idx, 0] * offset)
+        y = float(pts[idx, 1] + normal[idx, 1] * offset)
+        yaw = float(np.arctan2(tangent[idx, 1], tangent[idx, 0]))
+        if i % 3 == 0:
+            obstacles.append(
+                Obstacle(
+                    name=f"crate_{i:02d}",
+                    kind="box",
+                    x=x,
+                    y=y,
+                    yaw=yaw,
+                    length=0.16,
+                    width=0.07,
+                    height=0.22,
+                )
+            )
+        else:
+            obstacles.append(
+                Obstacle(
+                    name=f"pole_{i:02d}",
+                    kind="cylinder",
+                    x=x,
+                    y=y,
+                    yaw=yaw,
+                    height=0.30,
+                    radius=0.035,
+                )
+            )
+    return obstacles
+
+
 def build_test_track(width_m: float = 0.9, samples_per_segment: int = 32) -> TrackGeometry:
     centerline = catmull_rom_closed(peanut_control_points(), samples_per_segment)
     inner = offset_polyline(centerline, width_m / 2.0)
@@ -136,6 +207,7 @@ def build_test_track(width_m: float = 0.9, samples_per_segment: int = 32) -> Tra
         width_m=width_m,
         start_s=start_s,
         bounds=(0.0, 0.0, 15.0, 8.0),
+        obstacles=build_obstacles(centerline, width_m),
     )
 
 

@@ -18,14 +18,16 @@ quality cost in lap time?
 | Pose source | Lap time | ATE mean | ATE max | Status |
 |---|---:|---:|---:|---|
 | GT | 20.12 s | 0.0 cm | 0.0 cm | OK |
-| Odom | DNF | 17.9 cm | 38.5 cm | hit wall |
-| MCL | **20.40 s** | **22.6 cm** | 40.3 cm | OK |
+| Odom | DNF | 36.4 cm | 75.1 cm | hit wall |
+| MCL | **20.57 s** | **23.0 cm** | 38.8 cm | OK |
 
 ## Interpretation
 
-- **MCL is only 1.4% slower than ground truth** at this conservative speed.
-- **Odometry-only fails**: 20–40 cm drift is enough to hit a wall.
-- MCL is not perfect, but it is good enough to complete the lap at 1.2 m/s.
+- **MCL is only ~2% slower than ground truth** at this conservative speed.
+- **Odometry-only fails**: with the procedural landmarks the run drifts to
+  36.4 cm mean / 75.1 cm max and hits a wall.
+- MCL is not perfect, but it completes the lap and is clearly more robust than
+  odometry.
 - The safe line matters: with the aggressive line, MCL/odometry crashed at the
   right lobe even with the same localization.
 - No ground truth enters the MCL control loop. GT is only the comparison mode.

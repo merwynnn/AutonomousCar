@@ -67,6 +67,7 @@ export class TrackScene {
   private startLine: THREE.Mesh | null = null;
   private centerline: THREE.Line | null = null;
   private surface: THREE.Mesh | null = null;
+  private obstaclesGroup = new THREE.Group();
 
   private animationFrame = 0;
   private resizeObserver: ResizeObserver;
@@ -384,6 +385,7 @@ export class TrackScene {
     }
 
     this.buildSurface(track);
+    this.buildObstacles(track);
     const segments: Array<[Vec2, Vec2]> = [];
     for (const loop of [track.inner, track.outer]) {
       for (let i = 0; i < loop.length; i += 1) {
@@ -477,6 +479,36 @@ export class TrackScene {
     });
     this.surface = new THREE.Mesh(geometry, material);
     this.scene.add(this.surface);
+  }
+
+  private buildObstacles(track: TrackInfo): void {
+    this.scene.remove(this.obstaclesGroup);
+    this.obstaclesGroup.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      const material = (mesh as THREE.Mesh).material;
+      if (Array.isArray(material)) material.forEach((item) => item.dispose());
+      else if (material) material.dispose();
+    });
+    this.obstaclesGroup = new THREE.Group();
+    for (const obstacle of track.obstacles ?? []) {
+      const isBox = obstacle.kind === 'box';
+      const geometry = isBox
+        ? new THREE.BoxGeometry(obstacle.length, obstacle.height, obstacle.width)
+        : new THREE.CylinderGeometry(obstacle.radius, obstacle.radius, obstacle.height, 12);
+      const material = new THREE.MeshStandardMaterial({
+        color: isBox ? 0xffb454 : 0x58a6ff,
+        roughness: 0.55,
+        metalness: 0.15,
+        emissive: isBox ? 0x3a2408 : 0x0b2738,
+        emissiveIntensity: 0.4,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(obstacle.x, obstacle.height / 2, obstacle.y);
+      mesh.rotation.y = -obstacle.yaw;
+      this.obstaclesGroup.add(mesh);
+    }
+    this.scene.add(this.obstaclesGroup);
   }
 
   private buildStartLine(track: TrackInfo): void {

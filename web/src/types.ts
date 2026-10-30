@@ -1,5 +1,17 @@
 export type Vec2 = [number, number];
 
+export interface TrackObstacle {
+  name: string;
+  kind: 'box' | 'cylinder';
+  x: number;
+  y: number;
+  yaw: number;
+  length: number;
+  width: number;
+  height: number;
+  radius: number;
+}
+
 export interface TrackInfo {
   name: string;
   width_m: number;
@@ -11,6 +23,7 @@ export interface TrackInfo {
   wall_radius_m: number;
   start_distance_m: number;
   track_length_m?: number;
+  obstacles?: TrackObstacle[];
 }
 
 export interface HelloMessage {

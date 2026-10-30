@@ -31,6 +31,8 @@ def test_test_track_geometry() -> None:
     assert track.length > 15.0
     assert track.inner.shape == track.outer.shape == track.centerline.shape
     assert track.bounds == (0.0, 0.0, 15.0, 8.0)
+    assert len(track.obstacles) >= 6
+    assert all(0.0 < obstacle.height < 0.5 for obstacle in track.obstacles)
     # inner/outer should be separated by roughly the track width
     sep = np.linalg.norm(track.inner - track.outer, axis=1)
     assert np.median(sep) == np.median(sep)  # finite

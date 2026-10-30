@@ -12,32 +12,35 @@
 | Pose source | Lap time | ATE mean | Status |
 |---|---:|---:|---|
 | GT | 20.12 s | 0.0 cm | OK |
-| Odom | DNF | 17.9 cm | hit wall |
-| **MCL** | **20.40 s** | **22.6 cm** | **OK** |
+| Odom | DNF | 36.4 cm | hit wall |
+| **MCL** | **20.57 s** | **23.0 cm** | **OK** |
 
-**MCL drives the car with no ground truth in the control loop**, only 1.4%
-slower than GT at this conservative speed. Odometry-only fails.
+**MCL drives the car with no ground truth in the control loop**, only ~2%
+slower than GT at this conservative speed. Odometry-only fails, worsened by the
+procedural landmarks.
 
 ### Map once, race with MCL
 
 | Metric | Result |
 |---|---:|
-| Mapping lap (MCL, no GT) | 20.81 s |
-| Map seam (start vs end pose) | 8.3 cm |
-| One-lap MCL race | 20.15 s |
-| One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
-| 5-lap race at 0.9 m/s | **5/5, 134.32 s** |
-| 5-lap best lap | 26.62 s |
-| 5-lap MCL ATE mean / max | 23.3 / 60.8 cm |
+| Mapping lap (MCL, no GT) | 20.68 s |
+| Map seam (start vs end pose) | 11.9 cm |
+| 5-lap race at 0.9 m/s | **5/5, 136.00 s** |
+| 5-lap best lap | 27.03 s |
+| Lap times | 27.13, 27.32, 27.24, 27.28, 27.03 s |
+| 5-lap MCL ATE mean / max | 22.4 / 80.5 cm |
 | Tuned MCL | 400 particles, rank_keep 0.99, stride 3 |
 
 Mapping and racing are both sensor-only (MCL, no GT). The five-lap race
 **completes at 0.9 m/s** with global relocalization off. At 1.2 m/s it still
-sticks near the map seam; speed is currently the safety margin.
+sticks near the map seam; speed is currently the safety margin. Procedural
+wall-side crates/poles add distinctive lidar features and make odometry-only
+fail earlier.
 
 ## What works today
 
 - PyBullet 1/10 4WD Ackermann car, 240 Hz physics, 16 cm pipe walls.
+- Procedural wall-side crates/poles: collidable, lidar-visible SLAM landmarks.
 - 720-beam non-ideal lidar, three ultrasonic sensors, drifting wheel odometry.
 - Wall-follow, pure pursuit and manual driving.
 - Racing line + speed profile with a speed-limit slider that applies to both
@@ -64,7 +67,7 @@ sticks near the map seam; speed is currently the safety margin.
 ## Next tasks
 
 1. Global MCL relocalization / periodic correction at the start line.
-2. Reliable loop closure or a visible start-line landmark to remove the 19 cm
+2. Reliable loop closure or a visible start-line landmark to remove the ~12 cm
    map seam.
 3. More robust controller (Stanley/MPC) for MCL at higher speed.
 4. M2 rest: track generator/editor.

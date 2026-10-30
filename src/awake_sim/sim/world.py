@@ -44,6 +44,7 @@ class PyBulletWorld:
 
         self.wall_ids = self._build_walls()
         self.wall_id_set = set(self.wall_ids)
+        self.obstacle_ids = self._build_obstacles()
         self.car = self._load_car()
         self.joint_index = self._joint_map()
         self.wheel_joints = [
@@ -96,6 +97,39 @@ class PyBulletWorld:
                 )
                 p.changeDynamics(body, -1, lateralFriction=0.7, restitution=0.0)
                 ids.append(body)
+        return ids
+
+    def _build_obstacles(self) -> list[int]:
+        ids: list[int] = []
+        for obstacle in self.track.obstacles:
+            if obstacle.kind == "box":
+                shape = p.createCollisionShape(
+                    p.GEOM_BOX,
+                    halfExtents=[
+                        obstacle.length / 2.0,
+                        obstacle.width / 2.0,
+                        obstacle.height / 2.0,
+                    ],
+                )
+            else:
+                shape = p.createCollisionShape(
+                    p.GEOM_CYLINDER,
+                    radius=obstacle.radius,
+                    height=obstacle.height,
+                )
+            body = p.createMultiBody(
+                baseMass=0.0,
+                baseCollisionShapeIndex=shape,
+                basePosition=[obstacle.x, obstacle.y, obstacle.height / 2.0],
+                baseOrientation=[
+                    0.0,
+                    0.0,
+                    math.sin(obstacle.yaw / 2.0),
+                    math.cos(obstacle.yaw / 2.0),
+                ],
+            )
+            p.changeDynamics(body, -1, lateralFriction=0.8, restitution=0.0)
+            ids.append(body)
         return ids
 
     def _load_car(self) -> int:

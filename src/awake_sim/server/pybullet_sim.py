@@ -476,6 +476,20 @@ class PyBulletSimulation:
                 "wall_radius_m": 0.08,
                 "start_distance_m": self.track.start_s,
                 "track_length_m": round(self.track.length, 3),
+                "obstacles": [
+                    {
+                        "name": obstacle.name,
+                        "kind": obstacle.kind,
+                        "x": obstacle.x,
+                        "y": obstacle.y,
+                        "yaw": obstacle.yaw,
+                        "length": obstacle.length,
+                        "width": obstacle.width,
+                        "height": obstacle.height,
+                        "radius": obstacle.radius,
+                    }
+                    for obstacle in self.track.obstacles
+                ],
             },
             "race": {"laps": self.scenario.race.laps},
             "slam_cpp": HAVE_CPP,
