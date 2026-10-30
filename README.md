@@ -8,8 +8,8 @@ and a browser dashboard for live monitoring and strategy comparison.
 > pure pursuit are working. MCL drives both the mapping lap and the race with no
 > ground truth in the control loop: 20.40 s vs 20.12 s for GT on a conservative
 > one-lap comparison; sensor-only mapping produced an 8.3 cm map seam. The
-> five-lap MCL race is **DNF (1/5)** — MCL drift over multiple laps is the
-> current blocker. See [`STATUS.md`](STATUS.md).
+> five-lap sensor-only MCL race completes at 0.9 m/s: **5/5 laps, 134.08 s**.
+> Faster MCL runs still stick near the map seam. See [`STATUS.md`](STATUS.md).
 
 ![AWAKE simulator dashboard](docs/assets/2026-10-30-m3-slam.png)
 

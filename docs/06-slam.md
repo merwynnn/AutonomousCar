@@ -12,6 +12,10 @@
 - ✅ SE(2) pose graph with keyframes, sequential edges and a tested optimizer.
 - ✅ 400-particle MCL on the occupancy map, with ESS/spread diagnostics and a
   runtime on/off switch.
+- ✅ Global MCL relocalization: scatter particles over free map cells and
+  relocalize from the scan. Manual and stuck-triggered; no ground truth.
+  **Off by default**: on the symmetric peanut track it can converge to the
+  wrong place; it is a kidnap-recovery tool, not a per-lap fix.
 - ✅ Dashboard debug layers: map, SLAM, MCL, particles, odometry, GT trail.
 - ⏳ Reliable loop-closure detection. **Disabled**: scan-only place recognition
   produced false positives on repetitive pipe walls. No forced start-pose reset.
@@ -23,6 +27,11 @@
 0.20 m. See [`experiments/EXP-0003-mcl.md`](experiments/EXP-0003-mcl.md).
 MCL tracks the map but cannot correct map drift; the map is still the limiting
 factor.
+
+**Five-lap sensor-only result:** with a frozen one-lap map (8.3 cm seam), MCL
+completes 5/5 laps at **0.9 m/s**, 134.08 s total, MCL ATE 24.7 cm mean /
+54.0 cm max, global relocalization off. At 1.2 m/s it still sticks near the seam.
+See [`experiments/EXP-0005-map-and-race.md`](experiments/EXP-0005-map-and-race.md).
 
 **Honest status:** the front-end tracks locally but drifts under realistic wheel
 odometry. The pose graph is ready; the missing piece is a trustworthy place
@@ -150,9 +159,10 @@ MCL implementation:
 - weighted mean pose and particle spread exported to the dashboard;
 - runtime on/off switch and reset command.
 
-Global relocalization (spread particles over the whole map) and kidnapped-robot
-recovery are not implemented yet. MCL cannot correct a drifting map; it follows
-whatever map the front-end has built.
+Global relocalization is implemented: particles are spread over free map cells,
+scored against the scan, resampled for four rounds, and the mean pose is used.
+It is triggered manually or when the stuck recovery fires; it does not run
+automatically on every confidence dip. It still cannot correct a distorted map.
 
 ## 3. C++ API
 

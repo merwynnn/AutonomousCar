@@ -28,6 +28,8 @@ struct SlamResult {
     double mcl_ess = 0.0;
     double mcl_spread = 0.0;
     int mcl_particle_count = 0;
+    int global_relocalizations = 0;
+    bool relocalized_this_scan = false;
 };
 
 /// Log-odds occupancy grid with a chamfer likelihood field for scan matching.
@@ -96,9 +98,12 @@ public:
 
     void set_mcl_enabled(bool enabled);
     void set_loop_closure_enabled(bool enabled);
+    void set_global_relocalization_enabled(bool enabled);
+    void request_global_relocalization();
     void set_map_frozen(bool frozen);
     bool mcl_enabled() const { return mcl_enabled_; }
     bool loop_closure_enabled() const { return loop_closure_enabled_; }
+    bool global_relocalization_enabled() const { return global_relocalization_enabled_; }
     bool map_frozen() const { return map_frozen_; }
     std::vector<Pose2> mcl_particles() const { return mcl_particles_; }
 
@@ -134,6 +139,9 @@ private:
     void mcl_update(const std::vector<float>& local_x,
                     const std::vector<float>& local_y,
                     const Pose2& odometry);
+    void mcl_global_relocalize(const std::vector<float>& local_x,
+                               const std::vector<float>& local_y,
+                               const Pose2& odometry);
 
     OccupancyGrid grid_;
     PoseGraph graph_;
@@ -157,6 +165,10 @@ private:
 
     bool mcl_enabled_ = false;
     bool loop_closure_enabled_ = false;
+    bool global_relocalization_enabled_ = false;
+    bool relocalize_requested_ = false;
+    bool relocalized_this_scan_ = false;
+    int global_relocalizations_ = 0;
     bool map_frozen_ = false;
     bool mcl_initialized_ = false;
     Pose2 mcl_pose_{};

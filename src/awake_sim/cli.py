@@ -202,6 +202,12 @@ def compare(
 def map_and_race(
     laps: int = typer.Option(5, min=1, max=5),
     mapping_speed: float = typer.Option(1.2, min=0.5, max=3.0),
+    race_speed: float = typer.Option(0.9, min=0.5, max=3.0),
+    global_relocalization: bool = typer.Option(
+        False,
+        "--global-relocalization",
+        help="Enable experimental global MCL relocalization",
+    ),
 ) -> None:
     """Map one slow lap, freeze/save the map, then race it with MCL."""
 
@@ -253,10 +259,12 @@ def map_and_race(
     sim.localization_mode = "mcl"
     sim.slam_mcl_enabled = True
     sim.slam.set_mcl_enabled(True)
-    sim.speed_limit = 1.2
+    sim.slam_global_relocalization_enabled = global_relocalization
+    sim.slam.set_global_relocalization_enabled(global_relocalization)
+    sim.speed_limit = race_speed
     sim.pure_pursuit.speed_scale = 0.5
-    sim.pure_pursuit.speed_limit = 1.2
-    sim.controller.base_speed = 1.2
+    sim.pure_pursuit.speed_limit = race_speed
+    sim.controller.base_speed = race_speed
     sim.paused = False
     mcl_ates: list[float] = []
     last_scan = 0
@@ -275,12 +283,18 @@ def map_and_race(
     table.add_row("Mapping lap (s)", f"{mapping_lap:.2f}")
     table.add_row("Map seam (cm)", f"{seam * 100:.1f}")
     table.add_row("Map file", str(map_path))
+    table.add_row("Race speed (m/s)", f"{race_speed:.1f}")
+    table.add_row(
+        "Global relocalization",
+        "on" if global_relocalization else "off",
+    )
     table.add_row("Race status", "OK" if len(sim.lap_times) >= laps else f"DNF ({len(sim.lap_times)}/{laps})")
     table.add_row("Race total (s)", f"{sum(sim.lap_times):.2f}")
     table.add_row("Race best (s)", f"{min(sim.lap_times):.2f}" if sim.lap_times else "—")
     table.add_row("Race laps", ", ".join(f"{t:.2f}" for t in sim.lap_times) or "—")
     table.add_row("MCL ATE mean (cm)", f"{float(np.mean(mcl_ates)) * 100:.1f}" if mcl_ates else "—")
     table.add_row("MCL ATE max (cm)", f"{float(np.max(mcl_ates)) * 100:.1f}" if mcl_ates else "—")
+    table.add_row("Global relocalizations", str(sim.slam_global_relocalizations))
     console.print(table)
     sim.world.close()
 

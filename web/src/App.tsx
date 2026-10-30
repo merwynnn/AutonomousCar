@@ -174,6 +174,7 @@ export default function App() {
   );
   const [localizationMode, setLocalizationMode] = useState<'gt' | 'odom' | 'mcl'>('gt');
   const [mclEnabled, setMclEnabled] = useState(false);
+  const [globalRelocEnabled, setGlobalRelocEnabled] = useState(false);
   const [loopClosureEnabled, setLoopClosureEnabled] = useState(false);
   const [layers, setLayers] = useState<DebugLayers>({
     map: true,
@@ -195,8 +196,9 @@ export default function App() {
       type: 'slam.set_options',
       mcl_enabled: mclEnabled,
       loop_closure_enabled: loopClosureEnabled,
+      global_relocalization_enabled: globalRelocEnabled,
     });
-  }, [mclEnabled, loopClosureEnabled, send]);
+  }, [mclEnabled, loopClosureEnabled, globalRelocEnabled, send]);
 
   useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
@@ -263,6 +265,14 @@ export default function App() {
   const scanning = scan?.ranges.length ?? 0;
   const running = state ? !state.paused && !state.finished : false;
   const warnings = hello?.warnings ?? [];
+  const layerHelp: Record<keyof DebugLayers, string> = {
+    map: 'Show or hide the SLAM occupancy map on the floor.',
+    slam: 'Show or hide the blue SLAM front-end ghost and trail.',
+    mcl: 'Show or hide the green MCL ghost and trail.',
+    particles: 'Show or hide the green MCL particle cloud.',
+    odom: 'Show or hide the grey odometry ghost and trail.',
+    gtTrail: 'Show or hide the orange actual-car trail (ground truth/reference only).',
+  };
 
   return (
     <div className="app">
@@ -293,6 +303,7 @@ export default function App() {
           <div className="segmented">
             <button
               type="button"
+              title="Autonomous driving: the selected controller drives the car."
               className={controlMode === 'auto' ? 'active' : ''}
               onClick={() => setControlMode('auto')}
             >
@@ -300,6 +311,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Manual driving: W/S throttle, A/D steering. No autonomous controller."
               className={controlMode === 'manual' ? 'active' : ''}
               onClick={() => setControlMode('manual')}
             >
@@ -310,6 +322,7 @@ export default function App() {
             <div className="segmented" style={{ marginTop: 6 }}>
               <button
                 type="button"
+                title="Lidar-only wall following. Does not use the map or ground truth."
                 className={autoController === 'wall_follow' ? 'active' : ''}
                 onClick={() => setAutoController('wall_follow')}
               >
@@ -317,6 +330,7 @@ export default function App() {
               </button>
               <button
                 type="button"
+                title="Pure pursuit on the racing line, using the selected localization pose."
                 className={autoController === 'pure_pursuit' ? 'active' : ''}
                 onClick={() => setAutoController('pure_pursuit')}
               >
@@ -328,7 +342,7 @@ export default function App() {
             {controlMode === 'auto'
               ? autoController === 'wall_follow'
                 ? 'Lidar wall-follow, no ground truth.'
-                : 'Pure pursuit + racing line. Uses GT pose (upper bound).'
+                : `Pure pursuit + racing line using ${localizationMode.toUpperCase()} pose.`
               : 'W/S throttle · A/D steer. Keep the page focused.'}
           </p>
         </div>
@@ -338,6 +352,7 @@ export default function App() {
           <div className="segmented">
             <button
               type="button"
+              title="Ground-truth pose. Debug and upper-bound comparison only; not deployable."
               className={localizationMode === 'gt' ? 'active' : ''}
               onClick={() => setLocalizationMode('gt')}
             >
@@ -345,6 +360,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Wheel/IMU odometry only. Shows how quickly drift accumulates."
               className={localizationMode === 'odom' ? 'active' : ''}
               onClick={() => setLocalizationMode('odom')}
             >
@@ -352,6 +368,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Particle-filter localization on the SLAM map. No ground truth in the control loop."
               className={localizationMode === 'mcl' ? 'active' : ''}
               onClick={() => {
                 setLocalizationMode('mcl');
@@ -368,6 +385,7 @@ export default function App() {
           <div className="segmented">
             <button
               type="button"
+              title="Disable the particle filter. Pure pursuit can fall back to the selected pose source."
               className={mclEnabled ? '' : 'active'}
               onClick={() => setMclEnabled(false)}
             >
@@ -375,6 +393,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Enable the 400-particle MCL on the SLAM map. Required for MCL localization."
               className={mclEnabled ? 'active' : ''}
               onClick={() => setMclEnabled(true)}
             >
@@ -384,6 +403,7 @@ export default function App() {
           <div className="segmented" style={{ marginTop: 6 }}>
             <button
               type="button"
+              title="Loop closure disabled. The map is front-end only."
               className={loopClosureEnabled ? '' : 'active'}
               onClick={() => setLoopClosureEnabled(false)}
             >
@@ -391,20 +411,49 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="EXPERIMENTAL: scan-only place recognition. Repetitive pipe walls can produce false closures and corrupt the map."
               className={loopClosureEnabled ? 'active' : ''}
               onClick={() => setLoopClosureEnabled(true)}
             >
               Loop on
             </button>
           </div>
-          <button
-            type="button"
-            className="ghost wide"
-            style={{ marginTop: 8 }}
-            onClick={() => send({ type: 'slam.reset_mcl' })}
-          >
-            Reset MCL
-          </button>
+          <div className="segmented" style={{ marginTop: 6 }}>
+            <button
+              type="button"
+              title="Disable automatic global MCL relocalization."
+              className={globalRelocEnabled ? '' : 'active'}
+              onClick={() => setGlobalRelocEnabled(false)}
+            >
+              Global reloc off
+            </button>
+            <button
+              type="button"
+              title="Allow global MCL relocalization when the car is stuck, or when you press Relocalize. Scatters particles over the map; no ground truth."
+              className={globalRelocEnabled ? 'active' : ''}
+              onClick={() => setGlobalRelocEnabled(true)}
+            >
+              Global reloc on
+            </button>
+          </div>
+          <div className="button-row" style={{ marginTop: 8 }}>
+            <button
+              type="button"
+              title="Run global MCL relocalization once on the next scan."
+              className="ghost"
+              onClick={() => send({ type: 'slam.relocalize' })}
+            >
+              Relocalize
+            </button>
+            <button
+              type="button"
+              title="Clear the particle cloud and reinitialize MCL around the current SLAM pose."
+              className="ghost"
+              onClick={() => send({ type: 'slam.reset_mcl' })}
+            >
+              Reset MCL
+            </button>
+          </div>
           <p className="small-note">
             {loopClosureEnabled
               ? 'Loop closure is experimental: the pipe walls are repetitive and false matches can corrupt the map.'
@@ -425,7 +474,7 @@ export default function App() {
                 ['gtTrail', 'Actual trail'],
               ] as Array<[keyof DebugLayers, string]>
             ).map(([key, label]) => (
-              <label className="debug-toggle" key={key}>
+              <label className="debug-toggle" key={key} title={layerHelp[key]}>
                 <input
                   type="checkbox"
                   checked={layers[key]}
@@ -444,17 +493,24 @@ export default function App() {
           <div className="button-row">
             <button
               type="button"
+              title={running ? 'Pause the simulation.' : 'Start or resume the simulation.'}
               className="primary"
               onClick={() => send({ type: running ? 'run.pause' : 'run.start' })}
             >
               {running ? 'Pause' : 'Start'}
             </button>
-            <button type="button" className="ghost" onClick={() => send({ type: 'run.reset' })}>
+            <button
+              type="button"
+              title="Reset the car to the start line and clear the current run (map is kept only in mapping mode)."
+              className="ghost"
+              onClick={() => send({ type: 'run.reset' })}
+            >
               Reset
             </button>
           </div>
           <button
             type="button"
+            title="Pause and advance the simulation by 33 ms (8 physics steps)."
             className="ghost wide"
             onClick={() => send({ type: 'run.step', dt: 1 / 30 })}
           >
@@ -468,6 +524,7 @@ export default function App() {
           </div>
           <input
             type="range"
+            title="Maximum target speed. It caps the racing-line speed profile and the wall-follow base speed."
             min="0.5"
             max="6"
             step="0.1"
@@ -486,6 +543,7 @@ export default function App() {
           <div className="segmented">
             <button
               type="button"
+              title="Render the main car at the actual PyBullet physics pose."
               className={renderPose === 'actual' ? 'active' : ''}
               onClick={() => setRenderPose('actual')}
             >
@@ -493,6 +551,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Render the main car at the pose used by the controller (MCL or odometry); orange ghost shows the actual car."
               className={renderPose === 'controller' ? 'active' : ''}
               onClick={() => setRenderPose('controller')}
             >
@@ -500,6 +559,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Render the main car at the SLAM front-end pose; orange ghost shows the actual car."
               className={renderPose === 'slam' ? 'active' : ''}
               onClick={() => setRenderPose('slam')}
             >
@@ -517,6 +577,7 @@ export default function App() {
           <div className="segmented">
             <button
               type="button"
+              title="Free orbit camera. Drag to rotate, scroll to zoom."
               className={cameraMode === 'orbit' ? 'active' : ''}
               onClick={() => setCameraMode('orbit')}
             >
@@ -524,6 +585,7 @@ export default function App() {
             </button>
             <button
               type="button"
+              title="Top-down camera for track and trajectory inspection."
               className={cameraMode === 'top' ? 'active' : ''}
               onClick={() => setCameraMode('top')}
             >
@@ -545,6 +607,8 @@ export default function App() {
         <div className="sidebar-footer">
           <div className="small-note">
             M3 · PyBullet + C++ SLAM front-end
+            <br />
+            Hover any control for a description.
             <br />
             Docs: AGENTS.md · STATUS.md
           </div>
@@ -771,6 +835,10 @@ export default function App() {
                         ? `${slam.mcl.ess.toFixed(0)} / ${slam.mcl.spread_m.toFixed(2)} m`
                         : '—'}
                     </strong>
+                  </div>
+                  <div className="sensor-row">
+                    <span>Global relocalizations</span>
+                    <strong>{slam.mcl?.global_relocalizations ?? 0}</strong>
                   </div>
                 </>
               ) : null}

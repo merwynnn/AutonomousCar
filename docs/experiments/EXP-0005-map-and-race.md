@@ -19,11 +19,13 @@ and no ground truth in the control loop?
 | Map seam (start vs end pose) | **8.3 cm** |
 | One-lap MCL race | 20.15 s |
 | One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
-| 5-lap attempt: completed | **1 / 5** |
-| 5-lap attempt: total completed time | 20.15 s |
-| 5-lap attempt: lap times | 20.15 s |
-| 5-lap attempt: MCL ATE mean / max | 36.9 / 47.6 cm |
-| 5-lap attempt: status | **DNF** (stuck on lap 2) |
+| Race speed | 0.9 m/s |
+| Global relocalization | off |
+| 5-lap attempt: completed | **5 / 5** |
+| 5-lap attempt: total | **134.08 s** |
+| 5-lap attempt: lap times | 26.95, 26.73, 26.87, 26.90, 26.62 s |
+| 5-lap attempt: MCL ATE mean / max | 24.7 / 54.0 cm |
+| 5-lap attempt: status | **OK** |
 
 ## Interpretation
 
@@ -33,9 +35,12 @@ and no ground truth in the control loop?
 - MCL error grows across laps (22.6 cm mean in the one-lap comparison, 45.3 cm
   in the 5-lap attempt). Without a global correction, particles slowly lock onto
   the drifting local map.
-- The car got stuck on lap 2 despite reverse recovery. This is a localization
-  failure, not a controller tuning issue. The one-lap map is good enough for one
-  lap but not for sustained MCL tracking.
+- At 1.2 m/s the car got stuck on lap 2. At **0.9 m/s** all five laps completed,
+  with MCL ATE 24.7 cm mean / 54.0 cm max. Speed is currently the safety margin
+  that keeps MCL tracking through the seam.
+- Global relocalization was tested and made the run worse on this symmetric
+  track: the scan-only scatter can converge to the wrong place. It is now
+  experimental, off by default, and triggered only manually or when stuck.
 - Mapping is faster than the race only because it was configured at 1.5 m/s and
   a shorter line; at equal settings GT is 20.12 s, MCL 20.40 s.
 
@@ -50,10 +55,11 @@ The next fixes are:
 3. lower race speed until MCL drift is bounded;
 4. a more robust controller (Stanley/MPC) that tolerates larger pose error.
 
-The map seam is the key diagnostic: the previous 19.2 cm seam created the local
-ambiguity that eventually grew into a 0.7 m MCL error. The sensor-only mapping
-lap reduced the seam to 8.3 cm; whether that is enough for five laps is being
-measured.
+The map seam is the key diagnostic: the sensor-only mapping lap reduced it to
+8.3 cm. At 0.9 m/s, five laps complete with MCL ATE staying at tens of
+centimetres. At 1.2 m/s the car sticks near the seam. The next gains must come
+from global relocalization done properly, loop closure, or a more robust
+controller.
 
 ## Reproduction
 

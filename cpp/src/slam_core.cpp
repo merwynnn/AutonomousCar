@@ -432,8 +432,133 @@ void SlamCore::set_loop_closure_enabled(bool enabled) {
     loop_closure_enabled_ = enabled;
 }
 
+void SlamCore::set_global_relocalization_enabled(bool enabled) {
+    global_relocalization_enabled_ = enabled;
+}
+
+void SlamCore::request_global_relocalization() {
+    relocalize_requested_ = true;
+}
+
 void SlamCore::set_map_frozen(bool frozen) {
     map_frozen_ = frozen;
+}
+
+void SlamCore::mcl_global_relocalize(const std::vector<float>& local_x,
+                                     const std::vector<float>& local_y,
+                                     const Pose2& odometry) {
+    constexpr int particle_count = 400;
+    const std::vector<float>& log_odds = grid_.log_odds();
+    std::vector<std::pair<double, double>> free_cells;
+    for (int y = 0; y < grid_.height(); ++y) {
+        for (int x = 0; x < grid_.width(); ++x) {
+            const std::size_t idx = static_cast<std::size_t>(y) * grid_.width() + x;
+            if (log_odds[idx] < -0.2f) {
+                free_cells.emplace_back(
+                    grid_.origin_x() + (x + 0.5) * grid_.resolution(),
+                    grid_.origin_y() + (y + 0.5) * grid_.resolution());
+            }
+        }
+    }
+    if (free_cells.size() < 50 || local_x.empty()) {
+        // Not enough map yet: fall back to a local cloud around the current pose.
+        mcl_particles_.resize(particle_count);
+        mcl_weights_.assign(particle_count, 1.0 / particle_count);
+        std::normal_distribution<double> nxy(0.0, 0.15);
+        std::normal_distribution<double> nth(0.0, 0.08);
+        for (Pose2& particle : mcl_particles_) {
+            particle.x = pose_.x + nxy(mcl_rng_);
+            particle.y = pose_.y + nxy(mcl_rng_);
+            particle.theta = wrap_angle(pose_.theta + nth(mcl_rng_));
+        }
+        mcl_pose_ = pose_;
+    } else {
+        std::uniform_int_distribution<int> pick_cell(0, static_cast<int>(free_cells.size()) - 1);
+        std::uniform_real_distribution<double> pick_theta(-kPi, kPi);
+        mcl_particles_.resize(particle_count);
+        mcl_weights_.assign(particle_count, 1.0 / particle_count);
+        for (Pose2& particle : mcl_particles_) {
+            const auto& cell = free_cells[pick_cell(mcl_rng_)];
+            particle.x = cell.first;
+            particle.y = cell.second;
+            particle.theta = pick_theta(mcl_rng_);
+        }
+        std::vector<float> sub_x;
+        std::vector<float> sub_y;
+        for (std::size_t i = 0; i < local_x.size(); i += 3) {
+            sub_x.push_back(local_x[i]);
+            sub_y.push_back(local_y[i]);
+        }
+        std::normal_distribution<double> rough_xy(0.0, 0.03);
+        std::normal_distribution<double> rough_th(0.0, 0.02);
+        for (int round = 0; round < 4; ++round) {
+            std::vector<double> scores(particle_count, 0.0);
+            for (int i = 0; i < particle_count; ++i) {
+                scores[i] = grid_.score_local(sub_x, sub_y, mcl_particles_[i]);
+            }
+            const double max_score = *std::max_element(scores.begin(), scores.end());
+            double sum = 0.0;
+            for (int i = 0; i < particle_count; ++i) {
+                mcl_weights_[i] = std::exp(12.0 * (scores[i] - max_score));
+                sum += mcl_weights_[i];
+            }
+            if (sum <= 0.0) {
+                mcl_weights_.assign(particle_count, 1.0 / particle_count);
+            } else {
+                for (double& weight : mcl_weights_) weight /= sum;
+            }
+            double sum_sq = 0.0;
+            for (double weight : mcl_weights_) sum_sq += weight * weight;
+            mcl_ess_ = sum_sq > 0.0 ? 1.0 / sum_sq : 0.0;
+
+            std::vector<Pose2> resampled(particle_count);
+            std::uniform_real_distribution<double> uniform(0.0, 1.0 / particle_count);
+            double cursor = uniform(mcl_rng_);
+            double cumulative = mcl_weights_[0];
+            int source = 0;
+            for (int i = 0; i < particle_count; ++i) {
+                while (cursor > cumulative && source + 1 < particle_count) {
+                    ++source;
+                    cumulative += mcl_weights_[source];
+                }
+                resampled[i] = mcl_particles_[source];
+                cursor += 1.0 / particle_count;
+            }
+            for (Pose2& particle : resampled) {
+                particle.x += rough_xy(mcl_rng_);
+                particle.y += rough_xy(mcl_rng_);
+                particle.theta = wrap_angle(particle.theta + rough_th(mcl_rng_));
+            }
+            mcl_particles_ = resampled;
+        }
+        double mean_x = 0.0;
+        double mean_y = 0.0;
+        double mean_cos = 0.0;
+        double mean_sin = 0.0;
+        for (const Pose2& particle : mcl_particles_) {
+            mean_x += particle.x;
+            mean_y += particle.y;
+            mean_cos += std::cos(particle.theta);
+            mean_sin += std::sin(particle.theta);
+        }
+        mean_x /= particle_count;
+        mean_y /= particle_count;
+        double variance = 0.0;
+        for (const Pose2& particle : mcl_particles_) {
+            const double dx = particle.x - mean_x;
+            const double dy = particle.y - mean_y;
+            variance += dx * dx + dy * dy;
+        }
+        mcl_spread_ = std::sqrt(variance / particle_count);
+        mcl_pose_ = Pose2{mean_x, mean_y, std::atan2(mean_sin, mean_cos)};
+        mcl_ess_ = particle_count;
+    }
+    mcl_weights_.assign(particle_count, 1.0 / particle_count);
+    last_mcl_odom_ = odometry;
+    mcl_initialized_ = true;
+    relocalize_requested_ = false;
+    relocalized_this_scan_ = true;
+    ++global_relocalizations_;
 }
 
 void SlamCore::mcl_update(const std::vector<float>& local_x,
@@ -457,6 +582,10 @@ void SlamCore::mcl_update(const std::vector<float>& local_x,
         mcl_ess_ = particle_count;
         mcl_spread_ = 0.15;
         mcl_initialized_ = true;
+        return;
+    }
+    if (relocalize_requested_) {
+        mcl_global_relocalize(local_x, local_y, odometry);
         return;
     }
 
@@ -552,6 +681,7 @@ SlamResult SlamCore::process(const Scan& scan, const Pose2& odometry) {
         throw std::invalid_argument("scan ranges and angles must be non-empty and equal length");
     }
     loop_closure_this_scan_ = false;
+    relocalized_this_scan_ = false;
 
     std::vector<float> local_x;
     std::vector<float> local_y;
@@ -571,6 +701,8 @@ SlamResult SlamCore::process(const Scan& scan, const Pose2& odometry) {
         result.mcl_ess = mcl_ess_;
         result.mcl_spread = mcl_spread_;
         result.mcl_particle_count = static_cast<int>(mcl_particles_.size());
+        result.global_relocalizations = global_relocalizations_;
+        result.relocalized_this_scan = relocalized_this_scan_;
     };
 
     if (scan_count_ == 0) {
@@ -684,6 +816,9 @@ void SlamCore::reset() {
     mcl_weights_.clear();
     mcl_ess_ = 0.0;
     mcl_spread_ = 0.0;
+    relocalize_requested_ = false;
+    relocalized_this_scan_ = false;
+    global_relocalizations_ = 0;
 }
 
 }  // namespace awake_slam

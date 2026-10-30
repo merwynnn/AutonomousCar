@@ -33,7 +33,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - GT/odom/MCL localization modes; MCL drives pure pursuit with no GT.
 - `localization-bench`: GT 20.12 s, MCL 20.40 s, odometry DNF on one lap.
 - Map freeze/save and `map-and-race`: sensor-only MCL mapping, 20.81 s,
-  8.3 cm seam; one-lap MCL race 20.15 s; five-lap MCL race DNF (1/5).
+  8.3 cm seam; one-lap MCL race 20.15 s; five-lap MCL race 5/5 in 134.08 s at
+  0.9 m/s (MCL ATE 24.7 cm mean). Global relocalization experimental/off.
 - Dashboard car-view selector: Actual / Controller / SLAM.
 - Speed-limit slider now applies to pure pursuit as well as wall-follow.
 

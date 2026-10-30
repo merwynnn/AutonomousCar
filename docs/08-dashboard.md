@@ -88,6 +88,7 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 - Localization mode: GT / Odom / MCL.
 - Car view: Actual physics pose / Controller pose / SLAM pose.
 - MCL off/on and reset MCL.
+- Global relocalization off/on, plus a manual Relocalize action.
 - Loop closure off/on (experimental; default off).
 - Speed limit slider applied to pure pursuit and wall-follow.
 - Debug layer toggles: map, SLAM, MCL, particles, odometry, actual trail.
@@ -110,7 +111,8 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 {"type": "control.mode", "mode": "auto"}
 {"type": "control.controller", "controller": "pure_pursuit"}
 {"type": "drive.command", "throttle": 0.4, "steering": 0.1}
-{"type": "slam.set_options", "mcl_enabled": true, "loop_closure_enabled": false}
+{"type": "slam.set_options", "mcl_enabled": true, "loop_closure_enabled": false, "global_relocalization_enabled": true}
+{"type": "slam.relocalize"}
 {"type": "slam.reset_mcl"}
 ```
 

@@ -131,13 +131,19 @@ export interface SlamMessage {
   graph_edges: number;
   odom_drift_m: number;
   odometry?: SlamPose;
-  options?: { mcl_enabled: boolean; loop_closure_enabled: boolean };
+  options?: {
+    mcl_enabled: boolean;
+    loop_closure_enabled: boolean;
+    global_relocalization_enabled: boolean;
+  };
   mcl?: {
     initialized: boolean;
     pose: SlamPose | null;
     ate_m: number;
     ess: number;
     spread_m: number;
+    global_relocalizations: number;
+    relocalized: boolean;
     particles: Array<[number, number]>;
   };
   map?: SlamMapPayload;

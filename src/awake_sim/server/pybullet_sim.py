@@ -97,9 +97,13 @@ class PyBulletSimulation:
         self.odometry.reset(self.track.sample(self.track.start_s))
         self.slam_mcl_enabled = False
         self.slam_loop_enabled = False
+        self.slam_global_relocalization_enabled = False
         if self.slam is not None:
             self.slam.set_mcl_enabled(self.slam_mcl_enabled)
             self.slam.set_loop_closure_enabled(self.slam_loop_enabled)
+            self.slam.set_global_relocalization_enabled(
+                self.slam_global_relocalization_enabled
+            )
         self.slam_pose: tuple[float, float, float] | None = None
         self.slam_ate = 0.0
         self.slam_scan_ms = 0.0
@@ -117,6 +121,8 @@ class PyBulletSimulation:
         self.slam_mcl_ess = 0.0
         self.slam_mcl_spread = 0.0
         self.slam_mcl_particles: list[tuple[float, float, float]] = []
+        self.slam_global_relocalizations = 0
+        self.slam_relocalized = False
         self.slam_map_payload: dict[str, Any] | None = None
         self._slam_dirty = False
         self.odom_drift_m = 0.0
@@ -219,6 +225,8 @@ class PyBulletSimulation:
         self.slam_mcl_ess = 0.0
         self.slam_mcl_spread = 0.0
         self.slam_mcl_particles = []
+        self.slam_global_relocalizations = 0
+        self.slam_relocalized = False
         if not keep_map:
             self.slam_map_payload = None
         self._slam_dirty = False
@@ -277,6 +285,10 @@ class PyBulletSimulation:
         )
         self.slam_mcl_ess = update.mcl_ess
         self.slam_mcl_spread = update.mcl_spread
+        self.slam_global_relocalizations = update.global_relocalizations
+        self.slam_relocalized = update.relocalized_this_scan
+        if update.relocalized_this_scan:
+            self.control_pose = None
         if self.slam is not None and update.mcl_initialized:
             particles = self.slam.mcl_particles()
             self.slam_mcl_particles = particles[::2]
@@ -312,6 +324,9 @@ class PyBulletSimulation:
             self.recovery_time = 1.2
             self.stuck_time = 0.0
             self.recovery_steer = 0.0
+            if self.slam is not None and self.slam_global_relocalization_enabled:
+                self.slam.request_global_relocalization()
+                self.control_pose = None
             self.actuation = Actuation(throttle=-0.65, steering=0.0)
             return
         self.actuation = command
@@ -590,6 +605,7 @@ class PyBulletSimulation:
             "options": {
                 "mcl_enabled": self.slam_mcl_enabled,
                 "loop_closure_enabled": self.slam_loop_enabled,
+                "global_relocalization_enabled": self.slam_global_relocalization_enabled,
             },
             "mcl": {
                 "initialized": self.slam_mcl_pose is not None,
@@ -603,6 +619,8 @@ class PyBulletSimulation:
                 "ate_m": round(self.slam_mcl_ate, 4),
                 "ess": round(self.slam_mcl_ess, 1),
                 "spread_m": round(self.slam_mcl_spread, 4),
+                "global_relocalizations": self.slam_global_relocalizations,
+                "relocalized": self.slam_relocalized,
                 "particles": [
                     [round(x, 3), round(y, 3)] for x, y, _theta in self.slam_mcl_particles
                 ],
@@ -701,6 +719,17 @@ class PyBulletSimulation:
                 if "loop_closure_enabled" in msg:
                     self.slam_loop_enabled = bool(msg["loop_closure_enabled"])
                     self.slam.set_loop_closure_enabled(self.slam_loop_enabled)
+                if "global_relocalization_enabled" in msg:
+                    self.slam_global_relocalization_enabled = bool(
+                        msg["global_relocalization_enabled"]
+                    )
+                    self.slam.set_global_relocalization_enabled(
+                        self.slam_global_relocalization_enabled
+                    )
+                self._slam_dirty = True
+        elif kind == "slam.relocalize":
+            if self.slam is not None:
+                self.slam.request_global_relocalization()
                 self._slam_dirty = True
         elif kind == "slam.reset_mcl":
             if self.slam is not None:

@@ -34,6 +34,8 @@ class SlamUpdate:
     mcl_ess: float = 0.0
     mcl_spread: float = 0.0
     mcl_particle_count: int = 0
+    global_relocalizations: int = 0
+    relocalized_this_scan: bool = False
 
 
 def deskew_scan(
@@ -175,6 +177,8 @@ class SlamPipeline:
             mcl_ess=float(result.mcl_ess),
             mcl_spread=float(result.mcl_spread),
             mcl_particle_count=int(result.mcl_particle_count),
+            global_relocalizations=int(result.global_relocalizations),
+            relocalized_this_scan=bool(result.relocalized_this_scan),
         )
 
     def set_mcl_enabled(self, enabled: bool) -> None:
@@ -183,6 +187,12 @@ class SlamPipeline:
 
     def set_loop_closure_enabled(self, enabled: bool) -> None:
         self.impl.set_loop_closure_enabled(enabled)
+
+    def set_global_relocalization_enabled(self, enabled: bool) -> None:
+        self.impl.set_global_relocalization_enabled(enabled)
+
+    def request_global_relocalization(self) -> None:
+        self.impl.request_global_relocalization()
 
     def set_map_frozen(self, frozen: bool) -> None:
         self.impl.set_map_frozen(frozen)

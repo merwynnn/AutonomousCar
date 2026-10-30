@@ -51,7 +51,9 @@ PYBIND11_MODULE(_awake_slam, m) {
         .def_readonly("mcl_initialized", &SlamResult::mcl_initialized)
         .def_readonly("mcl_ess", &SlamResult::mcl_ess)
         .def_readonly("mcl_spread", &SlamResult::mcl_spread)
-        .def_readonly("mcl_particle_count", &SlamResult::mcl_particle_count);
+        .def_readonly("mcl_particle_count", &SlamResult::mcl_particle_count)
+        .def_readonly("global_relocalizations", &SlamResult::global_relocalizations)
+        .def_readonly("relocalized_this_scan", &SlamResult::relocalized_this_scan);
 
     py::class_<SlamCore>(m, "SlamCore")
         .def(py::init<double, int, int, double, double, double, double, double>(),
@@ -67,9 +69,12 @@ PYBIND11_MODULE(_awake_slam, m) {
         .def("reset", &SlamCore::reset)
         .def("set_mcl_enabled", &SlamCore::set_mcl_enabled, py::arg("enabled"))
         .def("set_loop_closure_enabled", &SlamCore::set_loop_closure_enabled, py::arg("enabled"))
+        .def("set_global_relocalization_enabled", &SlamCore::set_global_relocalization_enabled, py::arg("enabled"))
+        .def("request_global_relocalization", &SlamCore::request_global_relocalization)
         .def("set_map_frozen", &SlamCore::set_map_frozen, py::arg("frozen"))
         .def_property_readonly("mcl_enabled", &SlamCore::mcl_enabled)
         .def_property_readonly("loop_closure_enabled", &SlamCore::loop_closure_enabled)
+        .def_property_readonly("global_relocalization_enabled", &SlamCore::global_relocalization_enabled)
         .def_property_readonly("map_frozen", &SlamCore::map_frozen)
         .def("mcl_particles", &SlamCore::mcl_particles)
         .def("map_log_odds", &SlamCore::map_log_odds)
