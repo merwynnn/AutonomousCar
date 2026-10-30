@@ -19,11 +19,11 @@ and no ground truth in the control loop?
 | Map seam (start vs end pose) | **8.3 cm** |
 | One-lap MCL race | 20.15 s |
 | One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
-| 5-lap attempt: completed | **3 / 5** |
-| 5-lap attempt: total completed time | 61.44 s |
-| 5-lap attempt: lap times | 20.72, 20.35, 20.37 s |
-| 5-lap attempt: MCL ATE mean / max | 45.3 / 69.7 cm |
-| 5-lap attempt: status | **DNF** (stuck after lap 3) |
+| 5-lap attempt: completed | **1 / 5** |
+| 5-lap attempt: total completed time | 20.15 s |
+| 5-lap attempt: lap times | 20.15 s |
+| 5-lap attempt: MCL ATE mean / max | 36.9 / 47.6 cm |
+| 5-lap attempt: status | **DNF** (stuck on lap 2) |
 
 ## Interpretation
 
@@ -33,8 +33,9 @@ and no ground truth in the control loop?
 - MCL error grows across laps (22.6 cm mean in the one-lap comparison, 45.3 cm
   in the 5-lap attempt). Without a global correction, particles slowly lock onto
   the drifting local map.
-- The car got stuck after lap 3 despite reverse recovery. This is a localization
-  failure, not a controller tuning issue.
+- The car got stuck on lap 2 despite reverse recovery. This is a localization
+  failure, not a controller tuning issue. The one-lap map is good enough for one
+  lap but not for sustained MCL tracking.
 - Mapping is faster than the race only because it was configured at 1.5 m/s and
   a shorter line; at equal settings GT is 20.12 s, MCL 20.40 s.
 

@@ -26,11 +26,12 @@ slower than GT at this conservative speed. Odometry-only fails.
 | Map seam (start vs end pose) | 8.3 cm |
 | One-lap MCL race | 20.15 s |
 | One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
-| 5-lap attempt | **3/5 laps, DNF** |
-| 5-lap MCL ATE mean / max | 45.3 / 69.7 cm |
+| 5-lap attempt | **1/5 laps, DNF** |
+| 5-lap MCL ATE mean / max | 36.9 / 47.6 cm |
 
-A frozen one-lap map supports one MCL lap. Mapping itself is now sensor-only
-(MCL, no GT), with an **8.3 cm seam**. The five-lap result is being measured.
+A frozen one-lap map supports one MCL lap. Mapping itself is sensor-only (MCL,
+no GT), with an **8.3 cm seam**, but the car sticks on lap 2 of a five-lap run.
+MCL drift over multiple laps is the current blocker.
 
 ## What works today
 
@@ -69,7 +70,7 @@ A frozen one-lap map supports one MCL lap. Mapping itself is now sensor-only
 
 ## Known issues
 
-- 5-lap MCL race is **DNF** after 3 laps; MCL error grows without global
+- 5-lap MCL race is **DNF** after 1 lap; MCL error grows without global
   correction.
 - Loop closure is experimental and off; scan-only detection false-positives on
   repetitive walls.
