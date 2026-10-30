@@ -3,26 +3,10 @@
 #include <cstddef>
 #include <vector>
 
-#include <Eigen/Dense>
+#include "awake_slam/pose_graph.hpp"
+#include "awake_slam/types.hpp"
 
 namespace awake_slam {
-
-struct Pose2 {
-    double x = 0.0;
-    double y = 0.0;
-    double theta = 0.0;
-
-    Eigen::Vector3d as_vector() const { return Eigen::Vector3d(x, y, theta); }
-};
-
-struct Scan {
-    std::vector<float> ranges;  // metres; NaN/<=0 means invalid
-    std::vector<float> angles;  // radians in the scan frame
-    double t_start = 0.0;       // seconds
-
-    std::size_t size() const { return ranges.size(); }
-    bool valid() const { return !ranges.empty() && ranges.size() == angles.size(); }
-};
 
 struct SlamResult {
     Pose2 pose;
@@ -30,6 +14,14 @@ struct SlamResult {
     int scan_count = 0;
     double match_score = 0.0;
     int inliers = 0;
+    int loop_closures = 0;
+    bool loop_closure_this_scan = false;
+    int graph_nodes = 0;
+    int graph_edges = 0;
+    int loop_candidate = -1;
+    double loop_match_x = 0.0;
+    double loop_match_y = 0.0;
+    double loop_match_theta = 0.0;
 };
 
 /// Log-odds occupancy grid with a chamfer likelihood field for scan matching.
@@ -74,7 +66,14 @@ private:
     std::vector<float> likelihood_;
 };
 
-/// 2D lidar SLAM: scan-to-map correlative matching + occupancy mapping.
+struct Keyframe {
+    Pose2 pose;        // optimized / current map pose
+    Pose2 front_pose;  // front-end pose when the keyframe was created
+    Scan scan;
+};
+
+/// 2D lidar SLAM: deskew, scan matching, occupancy grid, keyframes, SE(2) pose
+/// graph and loop closure.
 class SlamCore {
 public:
     explicit SlamCore(double map_resolution = 0.05,
@@ -99,14 +98,45 @@ public:
     std::vector<float> map_log_odds() const { return grid_.log_odds(); }
 
 private:
-    SlamResult match_and_map(const Scan& scan, const Pose2& odometry);
+    struct Match {
+        Pose2 pose;
+        double score = 0.0;
+        int inliers = 0;
+    };
+
+    Match match_scan(const OccupancyGrid& grid,
+                     const std::vector<float>& local_x,
+                     const std::vector<float>& local_y,
+                     const Pose2& initial,
+                     double range_xy,
+                     double range_theta,
+                     bool use_prior,
+                     double prior_xy,
+                     double prior_theta) const;
+    void add_keyframe(const Pose2& pose, const Scan& scan);
+    bool try_loop_closure(const std::vector<float>& local_x,
+                          const std::vector<float>& local_y);
+    void rebuild_map();
 
     OccupancyGrid grid_;
+    PoseGraph graph_;
+    std::vector<Keyframe> keyframes_;
     Pose2 pose_{};
+    Pose2 last_keyframe_pose_{};
     int scan_count_ = 0;
+    int scans_since_keyframe_ = 0;
+    int loop_closures_ = 0;
+    int last_loop_keyframe_ = -1000;
+    bool loop_closure_this_scan_ = false;
+    int last_loop_candidate_ = -1;
+    Pose2 last_loop_match_{};
     double lidar_offset_x_;
     double lidar_offset_y_;
     double max_range_;
+    int keyframe_every_scans_ = 5;
+    double keyframe_distance_m_ = 0.45;
+    double loop_min_distance_m_ = 2.0;
+    int loop_min_index_gap_ = 12;
 };
 
 }  // namespace awake_slam

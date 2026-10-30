@@ -1,7 +1,7 @@
 # Project status
 
 > Last updated: 2026-10-30
-> Current milestone: **M3 in progress — SLAM front-end live**
+> Current milestone: **M3 in progress — SLAM front-end live; loop closure detector disabled**
 
 ![M3 SLAM dashboard](docs/assets/2026-10-30-m3-slam.png)
 
@@ -14,7 +14,7 @@ Test track, 5 laps, `realistic` sensors:
 | Wall-follow (lidar) | 148.34 | 29.46 | lidar only |
 | **Pure pursuit + racing line** | **46.12** | **9.20** | ground truth (upper bound) |
 
-SLAM front-end (`slam-bench`, 8 s / 81 scans):
+SLAM front-end (local tracking, 8 s / 81 scans, low-noise odometry):
 
 | Metric | Result |
 |---|---:|
@@ -24,8 +24,12 @@ SLAM front-end (`slam-bench`, 8 s / 81 scans):
 | Scan time p95 | **18.9 ms** |
 | Occupied / free cells | 2,255 / 9,179 |
 
-The live dashboard screenshot shows the SLAM occupancy map, blue SLAM ghost
-pose/trail, **0.8 cm ATE**, and 28.7 ms/scan under telemetry load.
+The live dashboard shows the SLAM occupancy map, blue SLAM ghost pose/trail,
+ATE and scan time. With realistic drifting odometry the map accumulates drift;
+the loop-closure detector is currently disabled because scan-only place
+recognition produced false matches on the repetitive pipe walls. The SE(2)
+pose-graph back-end is implemented and unit-tested, but no forced start-pose
+reset is used.
 
 ## What works today
 
@@ -39,6 +43,9 @@ pose/trail, **0.8 cm ATE**, and 28.7 ms/scan under telemetry load.
 - Race manager: 5-lap timing, start-line arming, progress/lateral offset.
 - **C++17 SLAM front-end**: per-beam deskew, occupancy grid, chamfer likelihood,
   coarse/fine correlative matching with motion prior, pybind11 bindings.
+- **SE(2) pose graph** with keyframes, sequential edges and a tested optimizer.
+- Loop-closure detection is **disabled** until a reliable descriptor/landmark is
+  added; no forced reset or referee-driven pose correction.
 - Live SLAM visualization: occupancy map texture, SLAM ghost/trail, ATE and
   scan-time diagnostics.
 - Dashboard: live 3D, lidar, sonars, steering, speed trace, strategy benchmarks,
@@ -52,21 +59,24 @@ pose/trail, **0.8 cm ATE**, and 28.7 ms/scan under telemetry load.
 - **M1 ✅** — 5 autonomous wall-follow laps, realistic sensors.
 - **M2 core ✅** — racing line, pure pursuit, strategy benchmark; generator and
   editor still pending.
-- **M3 front-end ✅** — C++ SLAM tracking + live map; pose graph/loop closure,
-  MCL and drift tests pending.
+- **M3 front-end ✅** — C++ SLAM tracking + live map; pose graph implemented,
+  loop-closure detection disabled pending reliable place recognition; MCL later.
 
 ## Next tasks
 
-1. M3b: drifting-odometry test, SE(2) pose graph, loop closure, MCL/global
-   relocalization, map IoU and ATE/RPE reporting.
+1. M3b: reliable place recognition (Scan Context or a visible start-line
+   landmark), loop-closure verification, MCL/global relocalization, map IoU and
+   ATE/RPE reporting.
 2. M2 rest: seeded track generator with obstacles and a simple track editor.
 3. Calibration against the real car when hardware is chosen.
 4. Pi port and benchmark (deferred).
 
 ## Known issues
 
-- SLAM has no loop closure or MCL yet; odometry is GT + noise, not a drifting
-  wheel odometry.
+- SLAM has no active loop closure or MCL yet. The front-end drifts with realistic
+  wheel odometry; the map is local, not globally corrected.
+- Scan-only loop detection is ambiguous on the repetitive pipe walls; it is
+  disabled rather than allowed to corrupt the map.
 - Some map artefacts appear outside the lane at high speed; robust map updates
   are planned.
 - Pure pursuit uses ground truth; the deployable result needs SLAM/MCL pose.

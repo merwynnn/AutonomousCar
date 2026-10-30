@@ -12,6 +12,7 @@ find_package(pybind11 CONFIG REQUIRED)
 pybind11_add_module(_awake_slam
     cpp/bindings/module.cpp
     cpp/src/slam_core.cpp
+    cpp/src/pose_graph.cpp
 )
 target_include_directories(_awake_slam PRIVATE cpp/include)
 target_link_libraries(_awake_slam PRIVATE Eigen3::Eigen)
@@ -23,7 +24,16 @@ enable_testing()
 add_executable(awake_slam_tests
     cpp/tests/test_slam_core.cpp
     cpp/src/slam_core.cpp
+    cpp/src/pose_graph.cpp
 )
 target_include_directories(awake_slam_tests PRIVATE cpp/include)
 target_link_libraries(awake_slam_tests PRIVATE Eigen3::Eigen)
 add_test(NAME awake_slam_core COMMAND awake_slam_tests)
+
+add_executable(awake_pose_graph_tests
+    cpp/tests/test_pose_graph.cpp
+    cpp/src/pose_graph.cpp
+)
+target_include_directories(awake_pose_graph_tests PRIVATE cpp/include)
+target_link_libraries(awake_pose_graph_tests PRIVATE Eigen3::Eigen)
+add_test(NAME awake_pose_graph COMMAND awake_pose_graph_tests)

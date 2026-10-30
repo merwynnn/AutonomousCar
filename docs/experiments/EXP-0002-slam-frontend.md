@@ -46,7 +46,10 @@ Live dashboard screenshot: [`assets/2026-10-30-m3-slam.png`](../assets/2026-10-3
 
 ## Caveats
 
-- **No pose graph or loop closure yet.** The map is built by the front-end only.
+- **No active loop closure.** The SE(2) pose graph exists and is unit-tested,
+  but scan-only place recognition was not reliable on the repetitive pipe walls.
+  A forced start-pose closure was tried and rejected as cheating. The map is
+  built by the front-end only until a trustworthy descriptor/landmark is added.
 - **No MCL yet.** Localization is scan matching against the running map, seeded
   by odometry.
 - Odometry is ground truth + noise, not a realistic drifting wheel odometry.
@@ -67,8 +70,8 @@ uv run pytest tests/test_slam_pipeline.py -q
 The front-end is good enough to drive the live SLAM visualization and to become
 the M3 base. Next:
 
-1. drifting odometry and loop-closure tests;
-2. SE(2) pose graph with loop closure;
+1. reliable place recognition (Scan Context or a visible start-line landmark);
+2. loop-closure verification and pose-graph activation;
 3. MCL / global relocalization;
 4. map quality (IoU) and ATE/RPE reports on generated tracks;
 5. Pi port and benchmark.

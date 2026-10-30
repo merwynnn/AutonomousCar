@@ -8,10 +8,17 @@
 - ✅ pybind11 bindings + Python `SlamPipeline`, map export (base64 occupancy).
 - ✅ Live dashboard: occupancy map, SLAM ghost pose/trail, ATE, scan time.
 - ✅ Benchmark: 2.89 cm mean ATE, 5.27 cm max, 14.2 ms mean / 18.9 ms p95
-  (8 s, 81 scans, `slam-bench`).
-- ⏳ Pose graph + loop closure (M3b).
-- ⏳ MCL / global relocalization (M3b).
-- ⏳ Pi benchmark (later).
+  (8 s, 81 scans, low-noise odometry).
+- ✅ SE(2) pose graph with keyframes, sequential edges and a tested optimizer.
+- ⏳ Reliable loop-closure detection. **Disabled**: scan-only place recognition
+  produced false positives on repetitive pipe walls. No forced start-pose reset.
+- ⏳ MCL / global relocalization.
+- ⏳ Pi benchmark.
+
+**Honest status:** the front-end tracks locally but drifts under realistic wheel
+odometry. The pose graph is ready; the missing piece is a trustworthy place
+recognition front-end (Scan Context, submap descriptors, or a visible
+start-line/landmark sensor). Without it, loop closure is not claimed.
 
 See [`experiments/EXP-0002-slam-frontend.md`](experiments/EXP-0002-slam-frontend.md).
 
@@ -112,8 +119,11 @@ r_ij = log( T_i^-1 · T_j · Z_ij^-1 )
 ```
 
 Optimization is robust Gauss–Newton on the SE(2) manifold with a Huber kernel.
-Loop closures are proposed by spatial proximity + scan matching, then accepted by
-a score/inlier threshold. The dashboard shows loop-closure edges and the pose graph.
+Loop closures are proposed by spatial proximity + local-submap scan matching.
+The pose graph is implemented and unit-tested. The automatic detector is
+currently disabled because repetitive pipe walls caused false positives; a
+trustworthy descriptor (Scan Context) or visible landmark is required before it
+is re-enabled.
 
 ### 2.6 Localization
 

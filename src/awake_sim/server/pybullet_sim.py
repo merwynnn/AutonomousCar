@@ -23,6 +23,7 @@ from awake_sim.control.racing_line import build_racing_line
 from awake_sim.control.wall_follow import WallFollowController
 from awake_sim.sensors.lidar import LidarModel, LidarScan
 from awake_sim.sensors.ultrasonic import UltrasonicModel, UltrasonicReading
+from awake_sim.sim.odometry import OdometryModel
 from awake_sim.sim.vehicle import Actuation
 from awake_sim.sim.world import PyBulletWorld
 from awake_sim.slam import HAVE_CPP
@@ -84,15 +85,23 @@ class PyBulletSimulation:
             if self.enable_slam
             else None
         )
-        self._slam_rng = np.random.default_rng(self.scenario.seed + 300)
+        self.odometry = OdometryModel(self.scenario.odometry, seed=self.scenario.seed)
+        self.odometry.reset(self.track.sample(self.track.start_s))
         self.slam_pose: tuple[float, float, float] | None = None
         self.slam_ate = 0.0
         self.slam_scan_ms = 0.0
         self.slam_match_score = 0.0
         self.slam_inliers = 0
         self.slam_scan_count = 0
+        self.slam_loop_closures = 0
+        self.slam_graph_nodes = 0
+        self.slam_graph_edges = 0
+        self.slam_loop_event = False
+        self.slam_loop_candidate = -1
+        self.slam_loop_match: tuple[float, float, float] = (0.0, 0.0, 0.0)
         self.slam_map_payload: dict[str, Any] | None = None
         self._slam_dirty = False
+        self.odom_drift_m = 0.0
 
         self.physics_dt = 1.0 / self.scenario.simulation.physics_hz
         self.control_every = 4  # 60 Hz
@@ -134,7 +143,9 @@ class PyBulletSimulation:
 
     # ------------------------------------------------------------------ state
     def reset(self) -> None:
-        self.world.reset(self.track.sample(self.track.start_s))
+        start_pose = self.track.sample(self.track.start_s)
+        self.world.reset(start_pose)
+        self.odometry.reset(start_pose)
         self.controller.reset()
         self.pure_pursuit.reset()
         self.paused = True
@@ -165,8 +176,15 @@ class PyBulletSimulation:
         self.slam_match_score = 0.0
         self.slam_inliers = 0
         self.slam_scan_count = 0
+        self.slam_loop_closures = 0
+        self.slam_graph_nodes = 0
+        self.slam_graph_edges = 0
+        self.slam_loop_event = False
+        self.slam_loop_candidate = -1
+        self.slam_loop_match = (0.0, 0.0, 0.0)
         self.slam_map_payload = None
         self._slam_dirty = False
+        self.odom_drift_m = 0.0
         self._sample_scan()
         self._sample_sonars()
         self._scan_dirty = True
@@ -179,27 +197,43 @@ class PyBulletSimulation:
         self._scan_seq += 1
         self._scan_dirty = True
         if self.slam is not None:
-            odom_x = state.x + self._slam_rng.normal(0.0, 0.01)
-            odom_y = state.y + self._slam_rng.normal(0.0, 0.01)
-            odom_theta = state.yaw + self._slam_rng.normal(0.0, 0.003)
+            odom = self.odometry.pose
+            self.odom_drift_m = float(np.hypot(odom.x - state.x, odom.y - state.y))
             started = time.perf_counter()
             update = self.slam.process(
                 self._latest_scan,
-                odom_x,
-                odom_y,
-                odom_theta,
+                odom.x,
+                odom.y,
+                odom.theta,
                 state.speed,
                 state.yaw_rate,
             )
             self.slam_scan_ms = (time.perf_counter() - started) * 1000.0
-            self.slam_pose = (update.x, update.y, update.theta)
-            self.slam_ate = float(np.hypot(update.x - state.x, update.y - state.y))
-            self.slam_match_score = update.match_score
-            self.slam_inliers = update.inliers
-            self.slam_scan_count = update.scan_count
-            if self.slam_scan_count == 1 or self.slam_scan_count % 10 == 0:
-                self.slam_map_payload = self.slam.map_payload()
-            self._slam_dirty = True
+            self._apply_slam_update(update, state)
+
+    def _apply_slam_update(self, update: Any, state: Any) -> None:
+        self.slam_pose = (update.x, update.y, update.theta)
+        self.slam_ate = float(np.hypot(update.x - state.x, update.y - state.y))
+        self.slam_match_score = update.match_score
+        self.slam_inliers = update.inliers
+        self.slam_scan_count = update.scan_count
+        self.slam_loop_closures = update.loop_closures
+        self.slam_graph_nodes = update.graph_nodes
+        self.slam_graph_edges = update.graph_edges
+        self.slam_loop_event = update.loop_closure_this_scan
+        self.slam_loop_candidate = update.loop_candidate
+        self.slam_loop_match = (
+            update.loop_match_x,
+            update.loop_match_y,
+            update.loop_match_theta,
+        )
+        if (
+            self.slam_scan_count == 1
+            or self.slam_scan_count % 10 == 0
+            or self.slam_loop_event
+        ):
+            self.slam_map_payload = self.slam.map_payload() if self.slam is not None else None
+        self._slam_dirty = True
 
     def _sample_sonars(self) -> None:
         self._latest_sonars = self.ultrasonic.sample(
@@ -268,6 +302,8 @@ class PyBulletSimulation:
             self._update_control()
         self.world.set_actuation(self.actuation)
         self.world.step()
+        state = self.world.state()
+        self.odometry.update(state.speed, state.yaw_rate, self.physics_dt)
         self.sim_time += self.physics_dt
         self.step_count += 1
         self._update_progress()
@@ -428,6 +464,17 @@ class PyBulletSimulation:
             "match_score": round(self.slam_match_score, 4),
             "inliers": self.slam_inliers,
             "scan_count": self.slam_scan_count,
+            "loop_closures": self.slam_loop_closures,
+            "loop_event": self.slam_loop_event,
+            "graph_nodes": self.slam_graph_nodes,
+            "graph_edges": self.slam_graph_edges,
+            "loop_candidate": self.slam_loop_candidate,
+            "loop_match": {
+                "x": round(self.slam_loop_match[0], 4),
+                "y": round(self.slam_loop_match[1], 4),
+                "theta": round(self.slam_loop_match[2], 4),
+            },
+            "odom_drift_m": round(self.odom_drift_m, 4),
         }
         if include_map and self.slam_map_payload is not None:
             message["map"] = self.slam_map_payload

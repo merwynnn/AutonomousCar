@@ -556,6 +556,8 @@ export default function App() {
               </div>
               <p className="small-note">
                 Blue ghost and trail = SLAM pose; amber/orange floor = mapped walls.
+                Front-end only: loop-closure detection is disabled until place
+                recognition is reliable on the repetitive walls.
               </p>
             </>
           ) : (

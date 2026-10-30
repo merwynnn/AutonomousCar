@@ -19,10 +19,8 @@ inline double clamp(double value, double low, double high) {
     return std::max(low, std::min(high, value));
 }
 
-inline double wrap_angle(double angle) {
-    while (angle > kPi) angle -= 2.0 * kPi;
-    while (angle < -kPi) angle += 2.0 * kPi;
-    return angle;
+inline double distance2d(const Pose2& a, const Pose2& b) {
+    return std::hypot(a.x - b.x, a.y - b.y);
 }
 
 }  // namespace
@@ -215,27 +213,235 @@ SlamCore::SlamCore(double map_resolution,
     if (max_range <= 0.0) throw std::invalid_argument("max_range must be positive");
 }
 
+SlamCore::Match SlamCore::match_scan(const OccupancyGrid& grid,
+                                     const std::vector<float>& local_x,
+                                     const std::vector<float>& local_y,
+                                     const Pose2& initial,
+                                     double range_xy,
+                                     double range_theta,
+                                     bool use_prior,
+                                     double prior_xy,
+                                     double prior_theta) const {
+    if (local_x.empty()) return {initial, 0.0, 0};
+
+    std::vector<float> sub_x;
+    std::vector<float> sub_y;
+    sub_x.reserve(local_x.size() / 2 + 1);
+    sub_y.reserve(local_y.size() / 2 + 1);
+    for (std::size_t i = 0; i < local_x.size(); i += 2) {
+        sub_x.push_back(local_x[i]);
+        sub_y.push_back(local_y[i]);
+    }
+
+    auto objective = [&](const Pose2& candidate,
+                         const std::vector<float>& px,
+                         const std::vector<float>& py) {
+        double value = grid.score_local(px, py, candidate);
+        if (use_prior) {
+            const double dx = candidate.x - initial.x;
+            const double dy = candidate.y - initial.y;
+            const double dth = wrap_angle(candidate.theta - initial.theta);
+            value -= 0.5 * (dx * dx / (prior_xy * prior_xy) +
+                            dy * dy / (prior_xy * prior_xy) +
+                            dth * dth / (prior_theta * prior_theta));
+        }
+        return value;
+    };
+
+    constexpr double deg = kPi / 180.0;
+    const double coarse_xy_step = range_xy > 0.5 ? 0.10 : 0.05;
+    const int nx = std::max(1, static_cast<int>(std::round(range_xy / coarse_xy_step)));
+    const int nt = std::max(1, static_cast<int>(std::round(range_theta / (1.5 * deg))));
+    Pose2 best = initial;
+    double best_value = objective(best, sub_x, sub_y);
+    for (int ix = -nx; ix <= nx; ++ix) {
+        for (int iy = -nx; iy <= nx; ++iy) {
+            for (int it = -nt; it <= nt; ++it) {
+                Pose2 candidate{
+                    initial.x + ix * coarse_xy_step,
+                    initial.y + iy * coarse_xy_step,
+                    wrap_angle(initial.theta + it * 1.5 * deg),
+                };
+                const double value = objective(candidate, sub_x, sub_y);
+                if (value > best_value) {
+                    best_value = value;
+                    best = candidate;
+                }
+            }
+        }
+    }
+
+    double best_fine = objective(best, local_x, local_y);
+    for (int ix = -4; ix <= 4; ++ix) {
+        for (int iy = -4; iy <= 4; ++iy) {
+            for (int it = -3; it <= 3; ++it) {
+                Pose2 candidate{
+                    best.x + ix * 0.01,
+                    best.y + iy * 0.01,
+                    wrap_angle(best.theta + it * 0.5 * deg),
+                };
+                const double value = objective(candidate, local_x, local_y);
+                if (value > best_fine) {
+                    best_fine = value;
+                    best = candidate;
+                }
+            }
+        }
+    }
+    return {
+        best,
+        grid.score_local(local_x, local_y, best),
+        grid.inliers_local(local_x, local_y, best, 0.20),
+    };
+}
+
+void SlamCore::add_keyframe(const Pose2& pose, const Scan& scan) {
+    const int index = graph_.add_node(pose);
+    if (!keyframes_.empty()) {
+        // Always measure the sequential constraint from the original front-end
+        // poses. Using an already-optimized pose here would inject the previous
+        // loop correction into every new edge.
+        const Pose2 rel = relative(keyframes_.back().front_pose, pose);
+        GraphEdge edge;
+        edge.from = index - 1;
+        edge.to = index;
+        edge.dx = rel.x;
+        edge.dy = rel.y;
+        edge.dtheta = rel.theta;
+        edge.information = 1.0 / (0.03 * 0.03);
+        edge.loop = false;
+        graph_.add_edge(edge);
+    }
+    keyframes_.push_back(Keyframe{pose, pose, scan});
+    last_keyframe_pose_ = pose;
+}
+
+bool SlamCore::try_loop_closure(const std::vector<float>& local_x,
+                                const std::vector<float>& local_y) {
+    const int current = static_cast<int>(keyframes_.size()) - 1;
+    if (current < loop_min_index_gap_ + 1) return false;
+    if (current - last_loop_keyframe_ < 10) return false;
+
+    const Pose2& cur = keyframes_[current].pose;
+    std::vector<std::pair<double, int>> candidates;
+    for (int i = 0; i <= current - loop_min_index_gap_; ++i) {
+        const Pose2& old = keyframes_[i].pose;
+        const double d = distance2d(cur, old);
+        const double dtheta = std::abs(wrap_angle(cur.theta - old.theta));
+        if (d < loop_min_distance_m_ && dtheta < 0.55) {
+            candidates.emplace_back(d, i);
+        }
+    }
+    if (candidates.empty()) return false;
+    std::sort(candidates.begin(), candidates.end());
+
+    // Try the nearest few candidates. For each candidate we build a small local
+    // submap from neighbouring keyframes, then verify the current scan against
+    // that submap. A candidate is accepted only if the scan matches *at the
+    // candidate pose* (not 1 m down the corridor) with enough overlap.
+    const int max_candidates = std::min(3, static_cast<int>(candidates.size()));
+    for (int c = 0; c < max_candidates; ++c) {
+        const int candidate = candidates[c].second;
+        OccupancyGrid local(
+            grid_.resolution(),
+            grid_.width(),
+            grid_.height(),
+            grid_.origin_x(),
+            grid_.origin_y());
+        const int first = std::max(0, candidate - 8);
+        const int last = std::min(current - 1, candidate + 8);
+        for (int i = first; i <= last; ++i) {
+            local.update(
+                keyframes_[i].pose,
+                keyframes_[i].scan,
+                lidar_offset_x_,
+                lidar_offset_y_,
+                max_range_);
+        }
+        local.rebuild_likelihood();
+
+        const Match match = match_scan(
+            local,
+            local_x,
+            local_y,
+            keyframes_[candidate].pose,
+            1.2,
+            20.0 * kPi / 180.0,
+            true,
+            0.50,
+            0.25);
+        if (match.score < 0.70 ||
+            match.inliers < static_cast<int>(0.5 * local_x.size())) {
+            continue;
+        }
+        const double pose_error = distance2d(match.pose, keyframes_[candidate].pose);
+        const double angle_error =
+            std::abs(wrap_angle(match.pose.theta - keyframes_[candidate].pose.theta));
+        if (pose_error > 0.55 || angle_error > 0.22) {
+            continue;  // matched somewhere else along the corridor: not a loop
+        }
+
+        const Pose2 rel = relative(keyframes_[candidate].pose, match.pose);
+        GraphEdge edge;
+        edge.from = candidate;
+        edge.to = current;
+        edge.dx = rel.x;
+        edge.dy = rel.y;
+        edge.dtheta = rel.theta;
+        edge.information = 1.0 / (0.03 * 0.03);
+        edge.loop = true;
+        graph_.add_edge(edge);
+        graph_.optimize(10);
+
+        for (int i = 0; i < static_cast<int>(keyframes_.size()); ++i) {
+            // Keep front_pose untouched: future sequential edges must still be
+            // measured against the original front-end trajectory.
+            keyframes_[i].pose = graph_.poses()[i];
+        }
+        pose_ = keyframes_.back().pose;
+        last_keyframe_pose_ = pose_;
+        rebuild_map();
+        ++loop_closures_;
+        last_loop_keyframe_ = current;
+        last_loop_candidate_ = candidate;
+        last_loop_match_ = match.pose;
+        loop_closure_this_scan_ = true;
+        return true;
+    }
+    return false;
+}
+
+void SlamCore::rebuild_map() {
+    grid_.reset();
+    for (const Keyframe& keyframe : keyframes_) {
+        grid_.update(keyframe.pose, keyframe.scan, lidar_offset_x_, lidar_offset_y_, max_range_);
+    }
+    grid_.rebuild_likelihood();
+}
+
 SlamResult SlamCore::process(const Scan& scan, const Pose2& odometry) {
     if (!scan.valid()) {
         throw std::invalid_argument("scan ranges and angles must be non-empty and equal length");
     }
+    loop_closure_this_scan_ = false;
+
     if (scan_count_ == 0) {
         pose_ = odometry;
         grid_.update(pose_, scan, lidar_offset_x_, lidar_offset_y_, max_range_);
         grid_.rebuild_likelihood();
-        ++scan_count_;
+        add_keyframe(pose_, scan);
+        scan_count_ = 1;
         SlamResult result;
         result.pose = pose_;
         result.initialized = true;
         result.scan_count = scan_count_;
         result.match_score = 1.0;
         result.inliers = static_cast<int>(scan.ranges.size());
+        result.graph_nodes = graph_.node_count();
+        result.graph_edges = graph_.edge_count();
         return result;
     }
-    return match_and_map(scan, odometry);
-}
 
-SlamResult SlamCore::match_and_map(const Scan& scan, const Pose2& odometry) {
     std::vector<float> local_x;
     std::vector<float> local_y;
     local_x.reserve(scan.ranges.size());
@@ -248,93 +454,67 @@ SlamResult SlamCore::match_and_map(const Scan& scan, const Pose2& odometry) {
         local_y.push_back(static_cast<float>(lidar_offset_y_ + r * std::sin(angle)));
     }
     if (local_x.empty()) {
-        return {pose_, true, scan_count_, 0.0, 0};
+        return {pose_, true, scan_count_, 0.0, 0, loop_closures_, false,
+                graph_.node_count(), graph_.edge_count()};
     }
 
-    // A motion prior keeps the matcher from jumping between repetitive wall
-    // segments when odometry is already a good local estimate.
-    const double sigma_xy = 0.25;
-    const double sigma_theta = 0.15;
-    auto objective = [&](const Pose2& candidate,
-                         const std::vector<float>& px,
-                         const std::vector<float>& py) {
-        const double dx = candidate.x - odometry.x;
-        const double dy = candidate.y - odometry.y;
-        const double dth = wrap_angle(candidate.theta - odometry.theta);
-        const double prior = 0.5 * (dx * dx / (sigma_xy * sigma_xy) +
-                                    dy * dy / (sigma_xy * sigma_xy) +
-                                    dth * dth / (sigma_theta * sigma_theta));
-        return grid_.score_local(px, py, candidate) - prior;
-    };
+    // In long straights the scan is nearly unobservable along the corridor.
+    // Trust the short-term odometry delta and use scan matching mainly for the
+    // perpendicular/heading correction; the global drift is fixed by loop closure.
+    const Match front = match_scan(
+        grid_, local_x, local_y, odometry, 0.20, 6.0 * kPi / 180.0, true, 0.10, 0.08);
+    pose_ = front.pose;
+    ++scans_since_keyframe_;
 
-    // Coarse search on every second point, then fine search on all points.
-    std::vector<float> sub_x;
-    std::vector<float> sub_y;
-    sub_x.reserve(local_x.size() / 2 + 1);
-    sub_y.reserve(local_y.size() / 2 + 1);
-    for (std::size_t i = 0; i < local_x.size(); i += 2) {
-        sub_x.push_back(local_x[i]);
-        sub_y.push_back(local_y[i]);
-    }
+    const bool keyframe_due =
+        scans_since_keyframe_ >= keyframe_every_scans_ ||
+        distance2d(pose_, last_keyframe_pose_) > keyframe_distance_m_;
 
-    Pose2 best = odometry;
-    double best_objective = objective(best, sub_x, sub_y);
-    constexpr double deg = kPi / 180.0;
-    for (int ix = -5; ix <= 5; ++ix) {
-        for (int iy = -5; iy <= 5; ++iy) {
-            for (int it = -5; it <= 5; ++it) {
-                Pose2 candidate{
-                    odometry.x + ix * 0.05,
-                    odometry.y + iy * 0.05,
-                    wrap_angle(odometry.theta + it * 1.5 * deg),
-                };
-                const double value = objective(candidate, sub_x, sub_y);
-                if (value > best_objective) {
-                    best_objective = value;
-                    best = candidate;
-                }
-            }
-        }
-    }
-    best_objective = objective(best, local_x, local_y);
-    for (int ix = -4; ix <= 4; ++ix) {
-        for (int iy = -4; iy <= 4; ++iy) {
-            for (int it = -3; it <= 3; ++it) {
-                Pose2 candidate{
-                    best.x + ix * 0.01,
-                    best.y + iy * 0.01,
-                    wrap_angle(best.theta + it * 0.5 * deg),
-                };
-                const double value = objective(candidate, local_x, local_y);
-                if (value > best_objective) {
-                    best_objective = value;
-                    best = candidate;
-                }
-            }
-        }
+    if (keyframe_due) {
+        add_keyframe(pose_, scan);
+        // Automatic loop closure is disabled until place recognition is reliable
+        // on the repetitive pipe walls. The pose-graph back-end is implemented and
+        // tested, but firing it on a false positive corrupts the map. Do not
+        // re-enable try_loop_closure() without a false-positive test.
+        grid_.update(pose_, scan, lidar_offset_x_, lidar_offset_y_, max_range_);
+        grid_.rebuild_likelihood();
+        scans_since_keyframe_ = 0;
+    } else {
+        grid_.update(pose_, scan, lidar_offset_x_, lidar_offset_y_, max_range_);
+        grid_.rebuild_likelihood();
     }
 
-    const double best_score = grid_.score_local(local_x, local_y, best);
-    if (best_score < 0.03) {
-        best = odometry;
-    }
-    pose_ = best;
-    grid_.update(pose_, scan, lidar_offset_x_, lidar_offset_y_, max_range_);
-    grid_.rebuild_likelihood();
     ++scan_count_;
     SlamResult result;
     result.pose = pose_;
     result.initialized = true;
     result.scan_count = scan_count_;
-    result.match_score = best_score;
-    result.inliers = grid_.inliers_local(local_x, local_y, pose_, 0.20);
+    result.match_score = front.score;
+    result.inliers = front.inliers;
+    result.loop_closures = loop_closures_;
+    result.loop_closure_this_scan = loop_closure_this_scan_;
+    result.graph_nodes = graph_.node_count();
+    result.graph_edges = graph_.edge_count();
+    result.loop_candidate = loop_closure_this_scan_ ? last_loop_candidate_ : -1;
+    result.loop_match_x = last_loop_match_.x;
+    result.loop_match_y = last_loop_match_.y;
+    result.loop_match_theta = last_loop_match_.theta;
     return result;
 }
 
 void SlamCore::reset() {
     grid_.reset();
+    graph_.clear();
+    keyframes_.clear();
     pose_ = Pose2{};
+    last_keyframe_pose_ = Pose2{};
     scan_count_ = 0;
+    scans_since_keyframe_ = 0;
+    loop_closures_ = 0;
+    last_loop_keyframe_ = -1000;
+    loop_closure_this_scan_ = false;
+    last_loop_candidate_ = -1;
+    last_loop_match_ = Pose2{};
 }
 
 }  // namespace awake_slam

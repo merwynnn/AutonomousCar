@@ -77,7 +77,16 @@ def test_cpp() -> None:
             f"-Dpybind11_DIR={pybind11_dir}",
         ]
     )
-    _run(["cmake", "--build", str(build_dir), "--target", "awake_slam_tests"])
+    _run(
+        [
+            "cmake",
+            "--build",
+            str(build_dir),
+            "--target",
+            "awake_slam_tests",
+            "awake_pose_graph_tests",
+        ]
+    )
     _run(["ctest", "--test-dir", str(build_dir), "--output-on-failure"])
 
 
@@ -227,6 +236,9 @@ def slam_bench(
     table.add_row("ATE max (cm)", f"{float(np.max(ates)) * 100:.2f}")
     table.add_row("Scan mean (ms)", f"{float(np.mean(scan_times)):.1f}")
     table.add_row("Scan p95 (ms)", f"{float(np.percentile(scan_times, 95)):.1f}")
+    table.add_row("Loop closures", str(sim.slam_loop_closures))
+    table.add_row("Graph nodes", str(sim.slam_graph_nodes))
+    table.add_row("Odom drift (m)", f"{sim.odom_drift_m:.3f}")
     if occupancy is not None:
         table.add_row("Occupied cells", str(int(np.count_nonzero(occupancy > 0.5))))
         table.add_row("Free cells", str(int(np.count_nonzero(occupancy < -0.2))))

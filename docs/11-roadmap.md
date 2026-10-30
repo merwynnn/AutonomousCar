@@ -59,12 +59,13 @@
 - Measurable lap-time improvement over the baseline.
 - Crash/penalty rates reported, not just lap times.
 
-## M3 — SLAM (front-end done; pose graph/MCL pending)
+## M3 — SLAM (front-end done; reliable loop closure/MCL pending)
 
 **Deliverables**
 
-- C++17 SLAM core: preprocessing/deskew, CSM, ICP, occupancy grid, pose graph,
-  loop closure, MCL.
+- C++17 SLAM core: preprocessing/deskew, CSM, occupancy grid, pose graph.
+- Reliable place recognition and loop-closure verification.
+- MCL / global relocalization.
 - pybind11 bindings + Python reference implementation.
 - Live SLAM visualizations and diagnostics.
 - Evaluation: ATE/RPE, map IoU, loop closure, runtime.
@@ -74,8 +75,9 @@
 **Acceptance**
 
 - 10 Hz processing on desktop (target <20 ms/scan for 720 beams).
-- ATE threshold met on the test track with `realistic` sensors.
-- Visually accurate map and trajectory.
+- Front-end ATE and drift reported honestly; loop closure tested with a
+  false-positive suite.
+- Visually accurate map and trajectory after loop correction.
 - SLAM-localized 5-lap run.
 - Benchmark and docs.
 

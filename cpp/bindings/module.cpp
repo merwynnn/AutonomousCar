@@ -38,7 +38,15 @@ PYBIND11_MODULE(_awake_slam, m) {
         .def_readonly("initialized", &SlamResult::initialized)
         .def_readonly("scan_count", &SlamResult::scan_count)
         .def_readonly("match_score", &SlamResult::match_score)
-        .def_readonly("inliers", &SlamResult::inliers);
+        .def_readonly("inliers", &SlamResult::inliers)
+        .def_readonly("loop_closures", &SlamResult::loop_closures)
+        .def_readonly("loop_closure_this_scan", &SlamResult::loop_closure_this_scan)
+        .def_readonly("graph_nodes", &SlamResult::graph_nodes)
+        .def_readonly("graph_edges", &SlamResult::graph_edges)
+        .def_readonly("loop_candidate", &SlamResult::loop_candidate)
+        .def_readonly("loop_match_x", &SlamResult::loop_match_x)
+        .def_readonly("loop_match_y", &SlamResult::loop_match_y)
+        .def_readonly("loop_match_theta", &SlamResult::loop_match_theta);
 
     py::class_<SlamCore>(m, "SlamCore")
         .def(py::init<double, int, int, double, double, double, double, double>(),

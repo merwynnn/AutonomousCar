@@ -19,6 +19,15 @@ simulation:
   telemetry_hz: 30
   realtime_factor: 1.0
 
+odometry:
+  speed_scale_error: 0.02
+  yaw_scale_error: 0.01
+  speed_bias_mps: 0.0
+  yaw_bias_deg_s: 0.20
+  yaw_bias_walk_deg_s_sqrt_s: 0.01
+  speed_noise_mps: 0.02
+  yaw_noise_rad_s: 0.005
+
 recording:
   enabled: true
   save_scans: true

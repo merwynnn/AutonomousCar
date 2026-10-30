@@ -19,6 +19,14 @@ class SlamUpdate:
     match_score: float
     inliers: int
     scan_count: int
+    loop_closures: int = 0
+    loop_closure_this_scan: bool = False
+    graph_nodes: int = 0
+    graph_edges: int = 0
+    loop_candidate: int = -1
+    loop_match_x: float = 0.0
+    loop_match_y: float = 0.0
+    loop_match_theta: float = 0.0
 
 
 def deskew_scan(
@@ -69,6 +77,8 @@ class SlamPipeline:
         self.height_cells = int(round(height_m / resolution_m))
         self.resolution = resolution_m
         self.scan_period = scan_period_s
+        self._last_odom: tuple[float, float, float] | None = None
+        self._last_slam: tuple[float, float, float] | None = None
         self.impl = core.SlamCore(
             resolution_m,
             self.width_cells,
@@ -82,6 +92,8 @@ class SlamPipeline:
 
     def reset(self) -> None:
         self.impl.reset()
+        self._last_odom = None
+        self._last_slam = None
 
     def process(
         self,
@@ -104,10 +116,35 @@ class SlamPipeline:
             [float(a) for a in angles],
             float(scan.t_measure),
         )
+        if self._last_odom is None or self._last_slam is None:
+            prediction = (odometry_x, odometry_y, odometry_theta)
+        else:
+            # Use the odometry *increment* relative to the previous scan, applied
+            # to the previous SLAM pose. This cancels accumulated global odometry
+            # drift while keeping the local motion prediction accurate.
+            last_ox, last_oy, last_otheta = self._last_odom
+            dx = odometry_x - last_ox
+            dy = odometry_y - last_oy
+            c = np.cos(last_otheta)
+            s = np.sin(last_otheta)
+            body_dx = c * dx + s * dy
+            body_dy = -s * dx + c * dy
+            dtheta = np.arctan2(
+                np.sin(odometry_theta - last_otheta),
+                np.cos(odometry_theta - last_otheta),
+            )
+            sx, sy, stheta = self._last_slam
+            prediction = (
+                sx + np.cos(stheta) * body_dx - np.sin(stheta) * body_dy,
+                sy + np.sin(stheta) * body_dx + np.cos(stheta) * body_dy,
+                np.arctan2(np.sin(stheta + dtheta), np.cos(stheta + dtheta)),
+            )
         result = self.impl.process(
             core_scan,
-            core.Pose2(float(odometry_x), float(odometry_y), float(odometry_theta)),
+            core.Pose2(float(prediction[0]), float(prediction[1]), float(prediction[2])),
         )
+        self._last_odom = (odometry_x, odometry_y, odometry_theta)
+        self._last_slam = (float(result.pose.x), float(result.pose.y), float(result.pose.theta))
         return SlamUpdate(
             x=float(result.pose.x),
             y=float(result.pose.y),
@@ -115,6 +152,14 @@ class SlamPipeline:
             match_score=float(result.match_score),
             inliers=int(result.inliers),
             scan_count=int(result.scan_count),
+            loop_closures=int(result.loop_closures),
+            loop_closure_this_scan=bool(result.loop_closure_this_scan),
+            graph_nodes=int(result.graph_nodes),
+            graph_edges=int(result.graph_edges),
+            loop_candidate=int(result.loop_candidate),
+            loop_match_x=float(result.loop_match_x),
+            loop_match_y=float(result.loop_match_y),
+            loop_match_theta=float(result.loop_match_theta),
         )
 
     def map_array(self) -> np.ndarray:

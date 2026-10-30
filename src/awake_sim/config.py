@@ -190,6 +190,16 @@ class SensorsConfig(StrictModel):
     realism_presets: dict[str, Any] = Field(default_factory=dict)
 
 
+class OdometryConfig(StrictModel):
+    speed_scale_error: float = 0.02
+    yaw_scale_error: float = 0.01
+    speed_bias_mps: float = 0.0
+    yaw_bias_deg_s: float = 0.20
+    yaw_bias_walk_deg_s_sqrt_s: float = 0.01
+    speed_noise_mps: float = 0.02
+    yaw_noise_rad_s: float = 0.005
+
+
 class RaceConfig(StrictModel):
     laps: int = Field(default=5, ge=1)
     wall_deformation_impulse_threshold: float = Field(default=0.35, ge=0)
@@ -219,6 +229,7 @@ class ScenarioConfig(StrictModel):
     controller: str = "manual"
     race: RaceConfig = Field(default_factory=RaceConfig)
     simulation: SimulationConfig = Field(default_factory=SimulationConfig)
+    odometry: OdometryConfig = Field(default_factory=OdometryConfig)
     recording: RecordingConfig = Field(default_factory=RecordingConfig)
 
 
