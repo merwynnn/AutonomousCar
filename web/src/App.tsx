@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TrackScene } from './scene/TrackScene';
-import type { HelloMessage, ScanMessage, StateMessage } from './types';
+import type { HelloMessage, ScanMessage, SlamMessage, StateMessage } from './types';
 import { useTelemetry, type ConnectionStatus, type SpeedSample } from './useTelemetry';
 
 function formatTime(seconds: number | null | undefined): string {
@@ -100,11 +100,13 @@ function TrackCanvas({
   hello,
   state,
   scan,
+  slam,
   cameraMode,
 }: {
   hello: HelloMessage | null;
   state: StateMessage | null;
   scan: ScanMessage | null;
+  slam: SlamMessage | null;
   cameraMode: 'orbit' | 'top';
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,6 +135,10 @@ function TrackCanvas({
   }, [scan, state]);
 
   useEffect(() => {
+    if (slam) sceneRef.current?.updateSlam(slam);
+  }, [slam]);
+
+  useEffect(() => {
     sceneRef.current?.setCamera(cameraMode);
   }, [cameraMode]);
 
@@ -140,7 +146,7 @@ function TrackCanvas({
 }
 
 export default function App() {
-  const { status, hello, state, scan, history, send } = useTelemetry();
+  const { status, hello, state, scan, slam, history, send } = useTelemetry();
   const [speed, setSpeed] = useState(2.4);
   const [cameraMode, setCameraMode] = useState<'orbit' | 'top'>('orbit');
   const [controlMode, setControlMode] = useState<'auto' | 'manual'>('auto');
@@ -393,7 +399,13 @@ export default function App() {
         </header>
 
         <section className="viewport">
-          <TrackCanvas hello={hello} state={state} scan={scan} cameraMode={cameraMode} />
+          <TrackCanvas
+            hello={hello}
+            state={state}
+            scan={scan}
+            slam={slam}
+            cameraMode={cameraMode}
+          />
           <div className="viewport-badge">
             <span className="live-dot" /> {controlMode.toUpperCase()} ·{' '}
             {controlMode === 'auto'
@@ -422,9 +434,11 @@ export default function App() {
             />
             <Metric label="Lidar returns" value={`${finitePoints} / ${scanning || '—'}`} hint="valid beams" />
             <Metric
-              label="SLAM core"
-              value={slamReady === null ? '—' : slamReady ? 'C++ ready' : 'Not built'}
-              hint="pipeline in M3"
+              label="SLAM ATE"
+              value={
+                slam?.available ? `${(slam.ate_m * 100).toFixed(1)} cm` : slamReady ? 'Ready' : '—'
+              }
+              hint={slam?.available ? `${slam.scan_ms.toFixed(1)} ms/scan` : 'pipeline in M3'}
             />
           </div>
           <SpeedTrace history={history} />
@@ -516,15 +530,45 @@ export default function App() {
         <div className="panel">
           <div className="card-heading">
             <span>SLAM</span>
-            <span className="muted">M3</span>
+            <span className={`mini-badge ${slam?.available ? 'realism-realistic' : ''}`}>
+              {slam?.available ? 'ONLINE' : 'M3'}
+            </span>
           </div>
-          <p className="small-note">
-            From-scratch 2D lidar SLAM: correlative matching, occupancy grid, pose graph and
-            particle-filter localization. Live map and ATE diagnostics will appear here.
-          </p>
-          <div className="disabled-bar">
-            <span>{slamReady ? 'C++ core compiled' : 'C++ core not built'}</span>
-          </div>
+          {slam?.available ? (
+            <>
+              <div className="sensor-row">
+                <span>ATE vs GT</span>
+                <strong>{(slam.ate_m * 100).toFixed(1)} cm</strong>
+              </div>
+              <div className="sensor-row">
+                <span>Scan time</span>
+                <strong>{slam.scan_ms.toFixed(1)} ms</strong>
+              </div>
+              <div className="sensor-row">
+                <span>Match / inliers</span>
+                <strong>
+                  {slam.match_score.toFixed(2)} / {slam.inliers}
+                </strong>
+              </div>
+              <div className="sensor-row">
+                <span>Scans</span>
+                <strong>{slam.scan_count}</strong>
+              </div>
+              <p className="small-note">
+                Blue ghost and trail = SLAM pose; amber/orange floor = mapped walls.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="small-note">
+                From-scratch 2D lidar SLAM: correlative matching, occupancy grid and
+                diagnostics. The C++ core is {slamReady ? 'compiled' : 'not built'}.
+              </p>
+              <div className="disabled-bar">
+                <span>{slamReady ? 'Waiting for scans' : 'Build the C++ core'}</span>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="panel">

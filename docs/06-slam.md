@@ -1,5 +1,20 @@
 # SLAM design
 
+## Implementation status (2026-10-30)
+
+- ✅ C++17 occupancy grid (5 cm), log-odds updates, chamfer likelihood field.
+- ✅ Per-beam scan deskew from the odometry/IMU twist.
+- ✅ Coarse/fine correlative scan matching with a motion prior.
+- ✅ pybind11 bindings + Python `SlamPipeline`, map export (base64 occupancy).
+- ✅ Live dashboard: occupancy map, SLAM ghost pose/trail, ATE, scan time.
+- ✅ Benchmark: 2.89 cm mean ATE, 5.27 cm max, 14.2 ms mean / 18.9 ms p95
+  (8 s, 81 scans, `slam-bench`).
+- ⏳ Pose graph + loop closure (M3b).
+- ⏳ MCL / global relocalization (M3b).
+- ⏳ Real-log replay and Pi benchmark (later).
+
+See [`experiments/EXP-0002-slam-frontend.md`](experiments/EXP-0002-slam-frontend.md).
+
 ## 1. Scope
 
 A from-scratch 2D lidar SLAM pipeline for an indoor track with:
@@ -146,13 +161,13 @@ Python calls it once per scan; no per-point Python overhead.
 
 ## 4. Performance targets
 
-| Metric | Target |
-|---|---|
-| Scan processing (720 beams, desktop) | <20 ms |
-| Scan processing (360 beams, Pi later) | <50 ms |
-| Map update | <5 ms |
-| Loop closure (when triggered) | <50 ms |
-| Memory | <100 MB for the track map |
+| Metric | Target | Current |
+|---|---|---|
+| Scan processing (720 beams, desktop) | <20 ms | 14.2 ms mean / 18.9 ms p95 |
+| Scan processing (360 beams, Pi later) | <50 ms | not benchmarked |
+| Map update | <5 ms | included above |
+| Loop closure (when triggered) | <50 ms | not implemented |
+| Memory | <100 MB for the track map | ~48k cells |
 
 Techniques:
 

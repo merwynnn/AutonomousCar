@@ -24,24 +24,45 @@ int main() {
     using awake_slam::Scan;
     using awake_slam::SlamCore;
 
-    SlamCore core(0.025);
-    check(close(core.map_resolution(), 0.025), "map resolution");
+    SlamCore core(0.05, 300, 160, 0.0, 0.0, 0.10, 0.0, 12.0);
+    check(close(core.map_resolution(), 0.05), "map resolution");
+    check(core.map_width() == 300, "map width");
+    check(core.map_height() == 160, "map height");
     check(core.scan_count() == 0, "initial scan count");
 
-    Scan scan{{1.0f, 2.0f, 3.0f}, {0.0f, 0.1f, 0.2f}, 0.0};
+    // A simple 181-beam fan facing a wall 2 m ahead plus side returns.
+    std::vector<float> ranges;
+    std::vector<float> angles;
+    for (int i = 0; i < 181; ++i) {
+        const double angle = -1.5707963 + 3.1415926 * i / 180.0;
+        ranges.push_back(2.0f);
+        angles.push_back(static_cast<float>(angle));
+    }
+    Scan scan{ranges, angles, 0.0};
     check(scan.valid(), "scan valid");
-    check(scan.size() == 3, "scan size");
+    check(scan.size() == 181, "scan size");
 
-    auto result = core.process(scan, Pose2{0.5, 1.0, 0.2});
-    check(result.initialized, "result initialized");
-    check(result.scan_count == 1, "result scan count");
-    check(close(result.pose.x, 0.5), "pose x");
-    check(close(result.pose.y, 1.0), "pose y");
-    check(close(result.pose.theta, 0.2), "pose theta");
+    auto first = core.process(scan, Pose2{1.0, 2.0, 0.0});
+    check(first.initialized, "first initialized");
+    check(first.scan_count == 1, "first scan count");
+    check(close(first.pose.x, 1.0), "first pose x");
+    auto map = core.map_log_odds();
+    check(map.size() == static_cast<std::size_t>(core.map_width() * core.map_height()),
+          "map size");
+    bool has_occupied = false;
+    for (float value : map) {
+        if (value > 0.5f) {
+            has_occupied = true;
+            break;
+        }
+    }
+    check(has_occupied, "map has occupied cells");
 
-    auto second = core.process(scan, Pose2{0.6, 1.1, 0.25});
+    auto second = core.process(scan, Pose2{1.08, 2.02, 0.01});
     check(second.scan_count == 2, "second scan count");
-    check(close(second.pose.x, 0.6), "second pose x");
+    check(std::isfinite(second.pose.x) && std::isfinite(second.pose.theta), "second pose finite");
+    check(second.match_score >= 0.0, "match score");
+    check(second.inliers > 0, "inliers");
 
     core.reset();
     check(core.scan_count() == 0, "reset scan count");

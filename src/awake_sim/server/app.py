@@ -84,6 +84,8 @@ async def telemetry(websocket: WebSocket) -> None:
         await websocket.send_json(manager.hello())
         await websocket.send_json(manager.state_message())
         await websocket.send_json(manager.scan_message())
+        if manager.enable_slam:
+            await websocket.send_json(manager.slam_message(include_map=True))
 
         async def receive_commands() -> None:
             while True:

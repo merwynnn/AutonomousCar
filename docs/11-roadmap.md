@@ -44,7 +44,7 @@
 - Seeded run is deterministic.
 - Screenshot/GIF and STATUS/devlog updated.
 
-## M2 — Strategy lab (current)
+## M2 — Strategy lab (core done; generator/batch/replay pending)
 
 **Deliverables**
 
@@ -62,7 +62,7 @@
 - Crash/penalty rates reported, not just lap times.
 - Batch results reproducible.
 
-## M3 — SLAM
+## M3 — SLAM (front-end done; pose graph/MCL pending)
 
 **Deliverables**
 

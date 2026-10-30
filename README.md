@@ -4,12 +4,12 @@ A physically credible 3D simulator and strategy lab for the AWAKE Challenge 2027
 mini autonomous vehicle: realistic non-ideal sensors, from-scratch 2D lidar SLAM,
 and a browser dashboard for live monitoring, replay and experiments.
 
-> Status: **M2 in progress**. PyBullet car, non-ideal sensors, wall-follow,
-> racing line and pure pursuit are live. Pure pursuit runs 5 laps in 46.12 s
-> (ground-truth upper bound) vs 148.34 s for wall-follow. See
-> [`STATUS.md`](STATUS.md) for the live state.
+> Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line,
+> pure pursuit and a live C++ SLAM front-end are working. Pure pursuit runs
+> 5 laps in 46.12 s (GT upper bound) vs 148.34 s for wall-follow; SLAM tracks at
+> 2.89 cm mean ATE and 14.2 ms/scan. See [`STATUS.md`](STATUS.md).
 
-![AWAKE simulator dashboard](docs/assets/2026-10-30-m2-pursuit.png)
+![AWAKE simulator dashboard](docs/assets/2026-10-30-m3-slam.png)
 
 ## Why this exists
 
@@ -31,10 +31,10 @@ wheel odometry. This project lets the team:
 |---|---|
 | Simulation | PyBullet 3D, generic 1/10 4WD Ackermann car, fixed 240 Hz physics, track walls and obstacles |
 | Sensors | LD06-class 2D lidar, 3 ultrasonic, IMU, encoders, steering sensor; non-ideal by default |
-| SLAM | C++17 CSM + ICP, occupancy grid, pose graph/loop closure, MCL localization; live diagnostics |
+| SLAM | C++17 deskew + correlative matching + occupancy grid; live map/ATE. Pose graph, loop closure and MCL next |
 | Strategies | Wall-follow, gap-follow, pure pursuit, Stanley, MPC, racing line, time-optimal speed profile |
 | Experiments | Seeded batch runs, lap-time/robustness metrics, SQLite/CSV, leaderboard, Pareto plots |
-| Dashboard | Live 3D, sensor views, charts, replay, experiment comparison, live tuning, track editor |
+| Dashboard | Live 3D, sensor views, SLAM map, charts, controller switch; replay and experiment comparison next |
 | Docs | `AGENTS.md`, `STATUS.md`, architecture, requirements traceability, devlog, ADRs, runbook |
 
 ## Documentation

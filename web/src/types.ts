@@ -98,4 +98,26 @@ export interface ScanMessage {
   realism: 'ideal' | 'realistic' | 'harsh';
 }
 
-export type ServerMessage = HelloMessage | StateMessage | ScanMessage;
+export interface SlamMapPayload {
+  width: number;
+  height: number;
+  resolution: number;
+  origin_x: number;
+  origin_y: number;
+  data: string;
+}
+
+export interface SlamMessage {
+  type: 'slam';
+  available: boolean;
+  t: number;
+  pose: { x: number; y: number; theta: number } | null;
+  ate_m: number;
+  scan_ms: number;
+  match_score: number;
+  inliers: number;
+  scan_count: number;
+  map?: SlamMapPayload;
+}
+
+export type ServerMessage = HelloMessage | StateMessage | ScanMessage | SlamMessage;

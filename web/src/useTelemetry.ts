@@ -3,6 +3,7 @@ import type {
   HelloMessage,
   ScanMessage,
   ServerMessage,
+  SlamMessage,
   StateMessage,
 } from './types';
 
@@ -18,6 +19,7 @@ export interface Telemetry {
   hello: HelloMessage | null;
   state: StateMessage | null;
   scan: ScanMessage | null;
+  slam: SlamMessage | null;
   history: SpeedSample[];
   send: (message: object) => void;
 }
@@ -29,6 +31,7 @@ export function useTelemetry(): Telemetry {
   const [hello, setHello] = useState<HelloMessage | null>(null);
   const [state, setState] = useState<StateMessage | null>(null);
   const [scan, setScan] = useState<ScanMessage | null>(null);
+  const [slam, setSlam] = useState<SlamMessage | null>(null);
   const [history, setHistory] = useState<SpeedSample[]>([]);
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -66,6 +69,9 @@ export function useTelemetry(): Telemetry {
             case 'scan':
               setScan(message);
               break;
+            case 'slam':
+              setSlam(message);
+              break;
           }
         } catch {
           // Ignore malformed frames; the next frame will arrive shortly.
@@ -101,5 +107,5 @@ export function useTelemetry(): Telemetry {
     }
   }, []);
 
-  return { status, hello, state, scan, history, send };
+  return { status, hello, state, scan, slam, history, send };
 }

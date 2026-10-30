@@ -19,6 +19,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Pure pursuit 5-lap benchmark: 46.12 s total, 9.20 s best lap (GT upper bound).
 - Dashboard controller switch and strategy benchmark panel.
 - `awake-sim race` and `awake-sim compare` CLI commands.
+- C++17 2D lidar SLAM front-end: per-beam deskew, occupancy grid, chamfer
+  likelihood, coarse/fine correlative matching with motion prior.
+- Live SLAM occupancy map, ghost pose/trail, ATE and scan-time diagnostics.
+- `awake-sim slam-bench`: 2.89 cm mean ATE, 5.27 cm max, 14.2 ms/scan.
 
 ### Changed
 -

@@ -78,6 +78,8 @@ class LidarModel:
         lidar_z = state.z + (self.mount_height - 0.09)
         origin_x = x_at + np.cos(yaw_at) * self.mount_x - np.sin(yaw_at) * self.mount_y
         origin_y = y_at + np.sin(yaw_at) * self.mount_x + np.cos(yaw_at) * self.mount_y
+        start_origin_x = state.x + math.cos(state.yaw) * self.mount_x - math.sin(state.yaw) * self.mount_y
+        start_origin_y = state.y + math.sin(state.yaw) * self.mount_x + math.cos(state.yaw) * self.mount_y
 
         origins: list[tuple[float, float, float]] = []
         ray_angles: list[float] = []
@@ -91,6 +93,7 @@ class LidarModel:
         ranges = np.full((self.beams, sub_count), np.inf)
         normals = np.zeros((self.beams, sub_count, 3))
         objects = np.full((self.beams, sub_count), -1, dtype=int)
+        points = np.zeros((self.beams, sub_count, 2))
         for k, hit in enumerate(hits):
             if hit is None:
                 continue
@@ -99,12 +102,30 @@ class LidarModel:
             ranges[beam, sub] = hit[0]
             normals[beam, sub] = hit[2]
             objects[beam, sub] = hit[3]
+            points[beam, sub, 0] = hit[1][0]
+            points[beam, sub, 1] = hit[1][1]
 
         best = np.argmin(ranges, axis=1)
         best_range = ranges[np.arange(self.beams), best]
         best_normal = normals[np.arange(self.beams), best]
         best_object = objects[np.arange(self.beams), best]
         hit_mask = np.isfinite(best_range)
+        # Publish the scan in the scan-start lidar frame. A real spinning lidar
+        # measures each beam at a slightly different pose; transforming the hit
+        # point back here is what creates motion distortion for SLAM to remove.
+        scan_angles = self.angles.copy()
+        for i in range(self.beams):
+            if not hit_mask[i]:
+                continue
+            wx = points[i, best[i], 0]
+            wy = points[i, best[i], 1]
+            dx = wx - start_origin_x
+            dy = wy - start_origin_y
+            c = math.cos(state.yaw)
+            s = math.sin(state.yaw)
+            lx = c * dx + s * dy
+            ly = -s * dx + c * dy
+            scan_angles[i] = math.atan2(ly, lx)
 
         # Incidence angle between the ray and the surface normal.
         ray_dir = np.column_stack(
@@ -171,9 +192,13 @@ class LidarModel:
         intensities = np.clip(intensity_signal + intensity_noise, 0.0, 255.0)
         intensities[drop | ~hit_mask] = 0.0
 
+        angle_noise = self.rng.normal(
+            0.0, math.radians(cfg.noise.angle_sigma_deg) * scale, self.beams
+        )
+        scan_angles = scan_angles + angle_noise
         latency = (cfg.latency_ms + self.rng.uniform(0.0, cfg.latency_jitter_ms)) / 1000.0
         return LidarScan(
-            angles=self.angles.copy(),
+            angles=scan_angles,
             ranges=ranges_meas,
             intensities=intensities,
             valid=~np.isnan(ranges_meas),

@@ -1,59 +1,78 @@
 # Project status
 
 > Last updated: 2026-10-30
-> Current milestone: **M2 in progress — racing line + pure pursuit working**
+> Current milestone: **M3 in progress — SLAM front-end live**
 
-![M2 pursuit dashboard](docs/assets/2026-10-30-m2-pursuit.png)
+![M3 SLAM dashboard](docs/assets/2026-10-30-m3-slam.png)
 
-## Headline result
+## Headline results
 
-5 laps on the test track with `realistic` sensors:
+Test track, 5 laps, `realistic` sensors:
 
 | Controller | Total (s) | Best lap (s) | Localization |
 |---|---:|---:|---|
 | Wall-follow (lidar) | 148.34 | 29.46 | lidar only |
 | **Pure pursuit + racing line** | **46.12** | **9.20** | ground truth (upper bound) |
 
-Pure pursuit is **3.22× faster** than wall-follow. It is not yet deployable
-because it uses the ground-truth pose; SLAM/MCL localization is the M3 task.
-Full report: [`docs/experiments/EXP-0001-strategy-baseline.md`](docs/experiments/EXP-0001-strategy-baseline.md).
+SLAM front-end (`slam-bench`, 8 s / 81 scans):
+
+| Metric | Result |
+|---|---:|
+| ATE mean | **2.89 cm** |
+| ATE max | 5.27 cm |
+| Scan time mean | **14.2 ms** |
+| Scan time p95 | **18.9 ms** |
+| Occupied / free cells | 2,255 / 9,179 |
+
+The live dashboard screenshot shows the SLAM occupancy map, blue SLAM ghost
+pose/trail, **0.8 cm ATE**, and 28.7 ms/scan under telemetry load.
 
 ## What works today
 
 - PyBullet 1/10 4WD Ackermann car, 240 Hz physics, 16 cm pipe walls.
 - 720-beam non-ideal lidar: noise, quantization, motion distortion, dropouts,
-  dead beams, intensity, wall-height occlusion, latency.
-- Three non-ideal ultrasonic sensors, IMU/odometry hooks.
+  dead beams, intensity, wall-height occlusion and latency.
+- Three non-ideal ultrasonic sensors; IMU/odometry hooks.
 - Latency-aware control: the last command is held while a scan is in flight.
-- Wall-follow (lidar only) and manual WASD driving.
-- Racing line generation (corner cutting inside the lane) + time-optimal speed
-  profile with lateral/acceleration/braking limits.
-- Pure pursuit controller (ground-truth pose upper bound).
+- Wall-follow (lidar only), manual WASD driving.
+- Racing line + time-optimal speed profile; pure pursuit (GT upper bound).
 - Race manager: 5-lap timing, start-line arming, progress/lateral offset.
+- **C++17 SLAM front-end**: per-beam deskew, occupancy grid, chamfer likelihood,
+  coarse/fine correlative matching with motion prior, pybind11 bindings.
+- Live SLAM visualization: occupancy map texture, SLAM ghost/trail, ATE and
+  scan-time diagnostics.
 - Dashboard: live 3D, lidar, sonars, steering, speed trace, strategy benchmarks,
-  controller switch, auto/manual, speed and camera controls.
-- CLI: `awake-sim race` and `awake-sim compare`.
-- 22 Python tests + C++ CTest green; ruff/mypy clean; frontend builds.
+  controller switch, auto/manual, target speed, camera modes.
+- CLI: `awake-sim race`, `compare`, `slam-bench`.
+- 24 Python tests + C++ CTest green; ruff/mypy clean; frontend builds.
 
-## M1 acceptance (still valid)
+## Milestone status
 
-Five autonomous wall-follow laps with realistic sensors: 29.52, 29.89, 29.68,
-29.46, 29.79 s; total 148.34 s; zero penalties.
+- **M0 ✅** — bootstrap, docs, dashboard, C++ binding.
+- **M1 ✅** — 5 autonomous wall-follow laps, realistic sensors.
+- **M2 core ✅** — racing line, pure pursuit, strategy benchmark; generator,
+  batch matrix, replay and editor still pending.
+- **M3 front-end ✅** — C++ SLAM tracking + live map; pose graph/loop closure,
+  MCL, drift tests and real-log replay pending.
 
-## Next tasks (rest of M2)
+## Next tasks
 
-1. Seeded track generator with obstacles and a simple editor.
-2. Batch matrix runner (controllers × tracks × seeds) with SQLite/CSV results.
-3. Full replay/scrubbing and run recordings.
-4. Live tuning sliders for lookahead, speed scale and friction.
-5. Minimum-curvature racing line refinement vs the heuristic line.
+1. M3b: drifting-odometry test, SE(2) pose graph, loop closure, MCL/global
+   relocalization, map IoU and ATE/RPE reporting.
+2. M2 rest: seeded track generator with obstacles, batch matrix runner, replay,
+   live tuning and track editor.
+3. Calibration against the real car when hardware is chosen.
+4. Pi port and benchmark (deferred).
 
 ## Known issues
 
-- Pure pursuit uses ground truth; not a deployable competition result yet.
-- No obstacle generator/editor, batch matrix or replay yet.
+- SLAM has no loop closure or MCL yet; odometry is GT + noise, not a drifting
+  wheel odometry.
+- Some map artefacts appear outside the lane at high speed; robust map updates
+  are planned.
+- Pure pursuit uses ground truth; the deployable result needs SLAM/MCL pose.
 - Live mode uses one lidar sub-ray per beam; batch high-fidelity uses three.
-- SLAM is still the C++ binding skeleton; algorithms start in M3.
+- No replay, batch matrix or track editor yet.
 - Wall-follow is conservative and slow on the waist corners.
 
 ## How to run
@@ -61,19 +80,24 @@ Five autonomous wall-follow laps with realistic sensors: 29.52, 29.89, 29.68,
 ```bash
 uv run uvicorn awake_sim.server.app:app --port 8000
 cd web && npm run dev -- --port 5173
-# then open http://localhost:5173
+# open http://localhost:5173
 ```
 
-Headless comparison:
+Headless checks and benchmarks:
 
 ```bash
 uv run awake-sim compare --laps 5
+uv run awake-sim slam-bench --duration 20
+uv run pytest -q
+uv run python -m awake_sim.cli test-cpp
 ```
 
 ## Monitoring
 
 - Devlog: [`docs/devlog/2026-10-30.md`](docs/devlog/2026-10-30.md)
-- Experiment: [`docs/experiments/EXP-0001-strategy-baseline.md`](docs/experiments/EXP-0001-strategy-baseline.md)
+- Experiments: [`docs/experiments/EXP-0001`](docs/experiments/EXP-0001-strategy-baseline.md),
+  [`EXP-0002`](docs/experiments/EXP-0002-slam-frontend.md)
 - Architecture: [`docs/02-architecture.md`](docs/02-architecture.md)
+- SLAM: [`docs/06-slam.md`](docs/06-slam.md)
 - Sensors: [`docs/04-sensors.md`](docs/04-sensors.md)
 - Roadmap: [`docs/11-roadmap.md`](docs/11-roadmap.md)

@@ -1,6 +1,12 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import type { ScanMessage, StateMessage, TrackInfo, Vec2 } from '../types';
+import type {
+  ScanMessage,
+  SlamMessage,
+  StateMessage,
+  TrackInfo,
+  Vec2,
+} from '../types';
 
 type CameraMode = 'orbit' | 'top';
 
@@ -25,6 +31,13 @@ export class TrackScene {
   private trail: THREE.Line | null = null;
   private trailPositions: Float32Array = new Float32Array(300 * 3);
   private trailCount = 0;
+  private slamGhost = new THREE.Group();
+  private slamTrail: THREE.Line | null = null;
+  private slamTrailPositions = new Float32Array(600 * 3);
+  private slamTrailCount = 0;
+  private slamMap: THREE.Mesh | null = null;
+  private slamTexture: THREE.CanvasTexture | null = null;
+  private slamCanvas: HTMLCanvasElement | null = null;
   private walls: THREE.InstancedMesh | null = null;
   private startLine: THREE.Mesh | null = null;
   private centerline: THREE.Line | null = null;
@@ -70,6 +83,8 @@ export class TrackScene {
     this.buildCar();
     this.buildLidar();
     this.buildTrail();
+    this.buildSlamGhost();
+    this.buildSlamTrail();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -167,6 +182,48 @@ export class TrackScene {
     this.lidarPoints = new THREE.Points(this.lidarGeometry, material);
     this.lidarPoints.frustumCulled = false;
     this.scene.add(this.lidarPoints);
+  }
+
+  private buildSlamGhost(): void {
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.10, 0.21),
+      new THREE.MeshBasicMaterial({
+        color: 0x58a6ff,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.75,
+      }),
+    );
+    body.position.y = 0.12;
+    this.slamGhost.add(body);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.22, 0.25, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0x58a6ff,
+        transparent: true,
+        opacity: 0.45,
+        side: THREE.DoubleSide,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.02;
+    this.slamGhost.add(ring);
+    this.slamGhost.visible = false;
+    this.scene.add(this.slamGhost);
+  }
+
+  private buildSlamTrail(): void {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.slamTrailPositions, 3));
+    geometry.setDrawRange(0, 0);
+    const material = new THREE.LineBasicMaterial({
+      color: 0x58a6ff,
+      transparent: true,
+      opacity: 0.75,
+    });
+    this.slamTrail = new THREE.Line(geometry, material);
+    this.slamTrail.frustumCulled = false;
+    this.scene.add(this.slamTrail);
   }
 
   private buildTrail(): void {
@@ -381,6 +438,101 @@ export class TrackScene {
     this.lidarGeometry.setDrawRange(0, visible);
     this.lidarGeometry.attributes.position.needsUpdate = true;
     this.lidarGeometry.attributes.color.needsUpdate = true;
+  }
+
+  updateSlam(slam: SlamMessage): void {
+    if (slam.pose) {
+      this.slamGhost.visible = true;
+      this.slamGhost.position.set(slam.pose.x, 0, slam.pose.y);
+      this.slamGhost.rotation.y = -slam.pose.theta;
+      const x = slam.pose.x;
+      const y = slam.pose.y;
+      const last = this.slamTrailCount > 0 ? this.slamTrailCount - 1 : -1;
+      const lx = last >= 0 ? this.slamTrailPositions[last * 3] : NaN;
+      const lz = last >= 0 ? this.slamTrailPositions[last * 3 + 2] : NaN;
+      if (!Number.isFinite(lx) || Math.hypot(x - lx, y - lz) > 0.04) {
+        if (this.slamTrailCount >= this.slamTrailPositions.length / 3) {
+          this.slamTrailPositions.copyWithin(0, 3);
+          this.slamTrailCount -= 1;
+        }
+        const index = this.slamTrailCount * 3;
+        this.slamTrailPositions[index] = x;
+        this.slamTrailPositions[index + 1] = 0.025;
+        this.slamTrailPositions[index + 2] = y;
+        this.slamTrailCount += 1;
+        const geometry = this.slamTrail?.geometry;
+        if (geometry) {
+          geometry.setDrawRange(0, this.slamTrailCount);
+          geometry.attributes.position.needsUpdate = true;
+        }
+      }
+    }
+    if (slam.map) {
+      this.updateSlamMap(slam);
+    }
+  }
+
+  private updateSlamMap(slam: SlamMessage): void {
+    const map = slam.map;
+    if (!map) return;
+    const canvas = this.slamCanvas ?? document.createElement('canvas');
+    canvas.width = map.width;
+    canvas.height = map.height;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const image = context.createImageData(map.width, map.height);
+    const bytes = Uint8Array.from(atob(map.data), (char) => char.charCodeAt(0));
+    for (let i = 0; i < bytes.length; i += 1) {
+      const value = bytes[i];
+      const offset = i * 4;
+      if (value === 100) {
+        image.data[offset] = 255;
+        image.data[offset + 1] = 180;
+        image.data[offset + 2] = 84;
+        image.data[offset + 3] = 220;
+      } else if (value === 0) {
+        image.data[offset] = 40;
+        image.data[offset + 1] = 110;
+        image.data[offset + 2] = 170;
+        image.data[offset + 3] = 38;
+      } else {
+        image.data[offset + 3] = 0;
+      }
+    }
+    context.putImageData(image, 0, 0);
+    this.slamCanvas = canvas;
+
+    if (!this.slamTexture) {
+      this.slamTexture = new THREE.CanvasTexture(canvas);
+      this.slamTexture.flipY = false;
+      this.slamTexture.colorSpace = THREE.SRGBColorSpace;
+    } else {
+      this.slamTexture.needsUpdate = true;
+    }
+
+    const width = map.width * map.resolution;
+    const height = map.height * map.resolution;
+    if (this.slamMap) {
+      this.scene.remove(this.slamMap);
+      this.slamMap.geometry.dispose();
+      (this.slamMap.material as THREE.Material).dispose();
+    }
+    const geometry = new THREE.PlaneGeometry(width, height);
+    const material = new THREE.MeshBasicMaterial({
+      map: this.slamTexture,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.slamMap = new THREE.Mesh(geometry, material);
+    this.slamMap.rotation.x = Math.PI / 2;
+    this.slamMap.position.set(
+      map.origin_x + width / 2,
+      0.007,
+      map.origin_y + height / 2,
+    );
+    this.scene.add(this.slamMap);
   }
 
   setCamera(mode: CameraMode): void {

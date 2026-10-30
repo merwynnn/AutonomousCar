@@ -198,13 +198,58 @@ def batch(
     raise typer.Exit(code=2)
 
 
+@app.command("slam-bench")
+def slam_bench(
+    duration: float = typer.Option(20.0, min=2.0, max=120.0, help="Simulated seconds"),
+    controller: str = typer.Option("pure_pursuit", help="wall_follow or pure_pursuit"),
+) -> None:
+    """Run the live SLAM front-end against ground truth."""
+
+    import numpy as np
+
+    from awake_sim.server.pybullet_sim import PyBulletSimulation
+
+    if controller not in {"wall_follow", "pure_pursuit"}:
+        console.print("[red]controller must be wall_follow or pure_pursuit[/red]")
+        raise typer.Exit(code=2)
+    sim = PyBulletSimulation(enable_slam=True)
+    sim.auto_controller = controller
+    sim.paused = False
+    ates: list[float] = []
+    scan_times: list[float] = []
+    last_scan = 0
+    while sim.sim_time < duration and not sim.finished:
+        sim.step_once()
+        if sim.slam_scan_count != last_scan:
+            last_scan = sim.slam_scan_count
+            ates.append(sim.slam_ate)
+            scan_times.append(sim.slam_scan_ms)
+    occupancy = sim.slam.map_array() if sim.slam is not None else None
+    sim.world.close()
+    if not ates:
+        console.print("[red]no SLAM scans were processed[/red]")
+        raise typer.Exit(code=1)
+    table = Table(title=f"SLAM front-end — {duration:.0f} s {controller}")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Scans", str(len(ates)))
+    table.add_row("ATE mean (cm)", f"{float(np.mean(ates)) * 100:.2f}")
+    table.add_row("ATE max (cm)", f"{float(np.max(ates)) * 100:.2f}")
+    table.add_row("Scan mean (ms)", f"{float(np.mean(scan_times)):.1f}")
+    table.add_row("Scan p95 (ms)", f"{float(np.percentile(scan_times, 95)):.1f}")
+    if occupancy is not None:
+        table.add_row("Occupied cells", str(int(np.count_nonzero(occupancy > 0.5))))
+        table.add_row("Free cells", str(int(np.count_nonzero(occupancy < -0.2))))
+    console.print(table)
+
+
 @app.command("slam-eval")
 def slam_eval(
     recording: Path | None = typer.Argument(None, help="Recording to evaluate"),
 ) -> None:
-    """Evaluate SLAM against ground truth (not implemented until M3)."""
+    """Evaluate a real/sim recording through SLAM (next increment)."""
 
-    console.print("[yellow]SLAM evaluation is planned for M3[/yellow]")
+    console.print("[yellow]Recording replay evaluation is the next SLAM increment[/yellow]")
     if recording:
         console.print(f"recording: {recording}")
     raise typer.Exit(code=2)

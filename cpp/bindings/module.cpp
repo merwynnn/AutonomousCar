@@ -10,7 +10,7 @@ using awake_slam::SlamCore;
 using awake_slam::SlamResult;
 
 PYBIND11_MODULE(_awake_slam, m) {
-    m.doc() = "AWAKE 2027 C++ SLAM core (M0 skeleton; full pipeline in M3)";
+    m.doc() = "AWAKE 2027 2D lidar SLAM core (occupancy grid + correlative matching)";
 
     py::class_<Pose2>(m, "Pose2")
         .def(py::init<>())
@@ -36,13 +36,28 @@ PYBIND11_MODULE(_awake_slam, m) {
     py::class_<SlamResult>(m, "SlamResult")
         .def_readonly("pose", &SlamResult::pose)
         .def_readonly("initialized", &SlamResult::initialized)
-        .def_readonly("scan_count", &SlamResult::scan_count);
+        .def_readonly("scan_count", &SlamResult::scan_count)
+        .def_readonly("match_score", &SlamResult::match_score)
+        .def_readonly("inliers", &SlamResult::inliers);
 
     py::class_<SlamCore>(m, "SlamCore")
-        .def(py::init<double>(), py::arg("map_resolution") = 0.05)
+        .def(py::init<double, int, int, double, double, double, double, double>(),
+             py::arg("map_resolution") = 0.05,
+             py::arg("width_cells") = 300,
+             py::arg("height_cells") = 160,
+             py::arg("origin_x") = 0.0,
+             py::arg("origin_y") = 0.0,
+             py::arg("lidar_offset_x") = 0.10,
+             py::arg("lidar_offset_y") = 0.0,
+             py::arg("max_range") = 12.0)
         .def("process", &SlamCore::process, py::arg("scan"), py::arg("odometry"))
         .def("reset", &SlamCore::reset)
+        .def("map_log_odds", &SlamCore::map_log_odds)
         .def_property_readonly("pose", &SlamCore::pose)
         .def_property_readonly("scan_count", &SlamCore::scan_count)
-        .def_property_readonly("map_resolution", &SlamCore::map_resolution);
+        .def_property_readonly("map_resolution", &SlamCore::map_resolution)
+        .def_property_readonly("map_width", &SlamCore::map_width)
+        .def_property_readonly("map_height", &SlamCore::map_height)
+        .def_property_readonly("map_origin_x", &SlamCore::map_origin_x)
+        .def_property_readonly("map_origin_y", &SlamCore::map_origin_y);
 }
