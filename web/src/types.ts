@@ -85,6 +85,7 @@ export interface StateMessage {
     sonars?: Array<{ name: string; range_m: number | null; valid: boolean }>;
   };
   control_mode?: 'auto' | 'manual';
+  auto_controller?: 'wall_follow' | 'pure_pursuit';
 }
 
 export interface ScanMessage {

@@ -1,82 +1,79 @@
 # Project status
 
 > Last updated: 2026-10-30
-> Current milestone: **M1 complete — M2 next**
+> Current milestone: **M2 in progress — racing line + pure pursuit working**
 
-![M1 PyBullet dashboard](docs/assets/2026-10-30-m1-pybullet.png)
+![M2 pursuit dashboard](docs/assets/2026-10-30-m2-pursuit.png)
 
-## M1 acceptance result
+## Headline result
 
-Headless 5-lap run, `realistic` sensors, 720-beam lidar, 3 ultrasonic sensors,
-wall-follow controller:
+5 laps on the test track with `realistic` sensors:
 
-| Metric | Result |
-|---|---|
-| Laps completed | 5 / 5 |
-| Lap times | 29.52, 29.89, 29.68, 29.46, 29.79 s |
-| Total time | **148.34 s** |
-| Penalties | 0 |
-| Wall time for the run | 94.8 s |
+| Controller | Total (s) | Best lap (s) | Localization |
+|---|---:|---:|---|
+| Wall-follow (lidar) | 148.34 | 29.46 | lidar only |
+| **Pure pursuit + racing line** | **46.12** | **9.20** | ground truth (upper bound) |
 
-The wall-follow controller is deliberately conservative. M2 replaces it with a
-racing line and time-optimal speed profile for real lap-time optimization.
+Pure pursuit is **3.22× faster** than wall-follow. It is not yet deployable
+because it uses the ground-truth pose; SLAM/MCL localization is the M3 task.
+Full report: [`docs/experiments/EXP-0001-strategy-baseline.md`](docs/experiments/EXP-0001-strategy-baseline.md).
 
 ## What works today
 
-- PyBullet headless world with a custom 1/10 4WD Ackermann URDF.
-- Floor and 16 cm pipe-wall collision geometry (768 boxes), fixed 240 Hz physics.
-- Wheel friction, steering servo model, 4WD velocity control.
-- 720-beam raycast lidar with:
-  - range/angle noise, bias, quantization;
-  - per-beam timestamps and motion distortion;
-  - dropouts vs incidence/range, dead beams, dropped scans;
-  - intensity, wall-height occlusion, self-filtering, latency.
-- Three ultrasonic sensors with cone sampling, blind zone, noise, latency,
-  cross-talk/specular dropouts and real ranges.
-- Latency-aware control: commands are held while a scan is in flight; the
-  controller never sees a future scan.
-- Lidar wall-follow + manual keyboard driving (W/S throttle, A/D steering).
-- Race manager: start-line arming, 5-lap timing, progress/lateral offset.
-- Dashboard: live 3D track/car/lidar/trail, race metrics, sonars, steering,
-  speed chart, auto/manual modes, target speed, camera modes.
-- 20 Python tests + C++ CTest green; `ruff`, `mypy` and the frontend build pass.
+- PyBullet 1/10 4WD Ackermann car, 240 Hz physics, 16 cm pipe walls.
+- 720-beam non-ideal lidar: noise, quantization, motion distortion, dropouts,
+  dead beams, intensity, wall-height occlusion, latency.
+- Three non-ideal ultrasonic sensors, IMU/odometry hooks.
+- Latency-aware control: the last command is held while a scan is in flight.
+- Wall-follow (lidar only) and manual WASD driving.
+- Racing line generation (corner cutting inside the lane) + time-optimal speed
+  profile with lateral/acceleration/braking limits.
+- Pure pursuit controller (ground-truth pose upper bound).
+- Race manager: 5-lap timing, start-line arming, progress/lateral offset.
+- Dashboard: live 3D, lidar, sonars, steering, speed trace, strategy benchmarks,
+  controller switch, auto/manual, speed and camera controls.
+- CLI: `awake-sim race` and `awake-sim compare`.
+- 22 Python tests + C++ CTest green; ruff/mypy clean; frontend builds.
+
+## M1 acceptance (still valid)
+
+Five autonomous wall-follow laps with realistic sensors: 29.52, 29.89, 29.68,
+29.46, 29.79 s; total 148.34 s; zero penalties.
+
+## Next tasks (rest of M2)
+
+1. Seeded track generator with obstacles and a simple editor.
+2. Batch matrix runner (controllers × tracks × seeds) with SQLite/CSV results.
+3. Full replay/scrubbing and run recordings.
+4. Live tuning sliders for lookahead, speed scale and friction.
+5. Minimum-curvature racing line refinement vs the heuristic line.
+
+## Known issues
+
+- Pure pursuit uses ground truth; not a deployable competition result yet.
+- No obstacle generator/editor, batch matrix or replay yet.
+- Live mode uses one lidar sub-ray per beam; batch high-fidelity uses three.
+- SLAM is still the C++ binding skeleton; algorithms start in M3.
+- Wall-follow is conservative and slow on the waist corners.
 
 ## How to run
 
 ```bash
-# backend (WSL)
 uv run uvicorn awake_sim.server.app:app --port 8000
-
-# dashboard (second terminal)
-cd web
-npm run dev -- --port 5173
+cd web && npm run dev -- --port 5173
+# then open http://localhost:5173
 ```
 
-Open `http://localhost:5173`. The car auto-starts in wall-follow mode; press
-Pause/Reset or switch to Manual.
+Headless comparison:
 
-## Next tasks (M2)
-
-1. Centreline extraction, minimum-curvature racing line and time-optimal speed
-   profile.
-2. Pure pursuit, Stanley and MPC controllers; compare with wall-follow.
-3. Seeded track generator with obstacles and a simple track editor.
-4. Batch experiment runner, SQLite/CSV results, leaderboard and Pareto plots.
-5. Full replay/scrubbing and live parameter tuning.
-
-## Known issues
-
-- Wall-follow is slow (~0.9 m/s average) and conservative on the waist corners.
-- Live mode uses one lidar sub-ray per beam; batch/high-fidelity mode restores 3.
-- SLAM is still the C++ binding skeleton; algorithms start in M3.
-- No replay yet; runs are not persisted to disk.
-- The simulation runs at roughly 0.85–1.0× real time under the live dashboard.
-- Vite uses polling because inotify is unreliable on `/mnt/c` under WSL2.
+```bash
+uv run awake-sim compare --laps 5
+```
 
 ## Monitoring
 
 - Devlog: [`docs/devlog/2026-10-30.md`](docs/devlog/2026-10-30.md)
+- Experiment: [`docs/experiments/EXP-0001-strategy-baseline.md`](docs/experiments/EXP-0001-strategy-baseline.md)
 - Architecture: [`docs/02-architecture.md`](docs/02-architecture.md)
-- Sensor model: [`docs/04-sensors.md`](docs/04-sensors.md)
+- Sensors: [`docs/04-sensors.md`](docs/04-sensors.md)
 - Roadmap: [`docs/11-roadmap.md`](docs/11-roadmap.md)
-- Screenshots: [`docs/assets/`](docs/assets/)

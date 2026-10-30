@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import typer
@@ -112,13 +113,88 @@ def run(
     console.print(table)
 
 
+def _run_race(controller: str, laps: int, scenario: Path) -> tuple[list[float], float]:
+    from awake_sim.server.pybullet_sim import PyBulletSimulation
+
+    sim = PyBulletSimulation(scenario, enable_lidar=controller == "wall_follow")
+    sim.scenario.race.laps = laps
+    sim.auto_controller = controller
+    sim.paused = False
+    started = time.time()
+    while not sim.finished and sim.sim_time < 240 and time.time() - started < 220:
+        sim.step_once()
+    sim.world.close()
+    return list(sim.lap_times), time.time() - started
+
+
+@app.command()
+def race(
+    controller: str = typer.Option(
+        "pure_pursuit", help="wall_follow or pure_pursuit"
+    ),
+    laps: int = typer.Option(5, min=1, max=5),
+    scenario: Path = typer.Option(
+        ROOT / "configs" / "scenarios" / "test_track_baseline.yaml",
+    ),
+) -> None:
+    """Run a headless race with a selected controller."""
+
+    if controller not in {"wall_follow", "pure_pursuit"}:
+        console.print("[red]controller must be wall_follow or pure_pursuit[/red]")
+        raise typer.Exit(code=2)
+    lap_times, wall = _run_race(controller, laps, scenario)
+    table = Table(title=f"{controller} — {laps} laps")
+    table.add_column("Lap")
+    table.add_column("Time (s)", justify="right")
+    for index, lap_time in enumerate(lap_times, start=1):
+        table.add_row(str(index), f"{lap_time:.2f}")
+    if lap_times:
+        table.add_row("Best", f"{min(lap_times):.2f}")
+        table.add_row("Total", f"{sum(lap_times):.2f}")
+    table.add_row("Wall time", f"{wall:.1f}")
+    console.print(table)
+
+
+@app.command()
+def compare(
+    laps: int = typer.Option(5, min=1, max=5),
+    scenario: Path = typer.Option(
+        ROOT / "configs" / "scenarios" / "test_track_baseline.yaml",
+    ),
+) -> None:
+    """Compare wall-follow and pure pursuit on the test track."""
+
+    rows: list[tuple[str, str, str, str]] = []
+    for controller in ("wall_follow", "pure_pursuit"):
+        lap_times, wall = _run_race(controller, laps, scenario)
+        if lap_times:
+            rows.append(
+                (
+                    controller,
+                    f"{sum(lap_times):.2f}",
+                    f"{min(lap_times):.2f}",
+                    f"{wall:.1f}",
+                )
+            )
+        else:
+            rows.append((controller, "DNF", "—", f"{wall:.1f}"))
+    table = Table(title=f"Controller comparison — {laps} laps")
+    table.add_column("Controller")
+    table.add_column("Total (s)", justify="right")
+    table.add_column("Best (s)", justify="right")
+    table.add_column("Wall (s)", justify="right")
+    for row in rows:
+        table.add_row(*row)
+    console.print(table)
+
+
 @app.command()
 def batch(
     config: Path = typer.Argument(..., help="Batch experiment YAML"),
 ) -> None:
-    """Run a batch experiment (not implemented until M2)."""
+    """Run a full batch matrix (planned for the next M2 increment)."""
 
-    console.print(f"[yellow]Batch runner is planned for M2; config: {config}[/yellow]")
+    console.print(f"[yellow]Batch matrix runner is the next M2 increment; config: {config}[/yellow]")
     raise typer.Exit(code=2)
 
 

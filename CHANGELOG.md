@@ -15,6 +15,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   three ultrasonic sensors, wall-follow and manual driving.
 - Live dashboard with race metrics, sonars, steering, progress and speed trace.
 - M1 5-lap acceptance run: 148.34 s total, 29.46–29.89 s laps, zero penalties.
+- M2 racing line, time-optimal speed profile and pure pursuit controller.
+- Pure pursuit 5-lap benchmark: 46.12 s total, 9.20 s best lap (GT upper bound).
+- Dashboard controller switch and strategy benchmark panel.
+- `awake-sim race` and `awake-sim compare` CLI commands.
 
 ### Changed
 -

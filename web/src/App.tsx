@@ -144,12 +144,19 @@ export default function App() {
   const [speed, setSpeed] = useState(2.4);
   const [cameraMode, setCameraMode] = useState<'orbit' | 'top'>('orbit');
   const [controlMode, setControlMode] = useState<'auto' | 'manual'>('auto');
+  const [autoController, setAutoController] = useState<'wall_follow' | 'pure_pursuit'>(
+    'wall_follow',
+  );
   const keysRef = useRef({ w: false, a: false, s: false, d: false });
   const slamReady = hello?.slam_cpp ?? null;
 
   useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
   }, [controlMode, send]);
+
+  useEffect(() => {
+    send({ type: 'control.controller', controller: autoController });
+  }, [autoController, send]);
 
   useEffect(() => {
     const onDown = (event: KeyboardEvent) => {
@@ -251,9 +258,29 @@ export default function App() {
               Manual
             </button>
           </div>
+          {controlMode === 'auto' ? (
+            <div className="segmented" style={{ marginTop: 6 }}>
+              <button
+                type="button"
+                className={autoController === 'wall_follow' ? 'active' : ''}
+                onClick={() => setAutoController('wall_follow')}
+              >
+                Wall-follow
+              </button>
+              <button
+                type="button"
+                className={autoController === 'pure_pursuit' ? 'active' : ''}
+                onClick={() => setAutoController('pure_pursuit')}
+              >
+                Pursuit
+              </button>
+            </div>
+          ) : null}
           <p className="small-note">
             {controlMode === 'auto'
-              ? 'Lidar wall-follow, no ground truth.'
+              ? autoController === 'wall_follow'
+                ? 'Lidar wall-follow, no ground truth.'
+                : 'Pure pursuit + racing line. Uses GT pose (upper bound).'
               : 'W/S throttle · A/D steer. Keep the page focused.'}
           </p>
         </div>
@@ -369,7 +396,12 @@ export default function App() {
           <TrackCanvas hello={hello} state={state} scan={scan} cameraMode={cameraMode} />
           <div className="viewport-badge">
             <span className="live-dot" /> {controlMode.toUpperCase()} ·{' '}
-            {scanning ? 'Lidar live' : 'Waiting for scan'}
+            {controlMode === 'auto'
+              ? autoController === 'pure_pursuit'
+                ? 'PURSUIT'
+                : 'WALL'
+              : 'MANUAL'}{' '}
+            · {scanning ? 'Lidar live' : 'Waiting for scan'}
           </div>
           <div className="viewport-note">
             Green → blue points are lidar returns. Orange is the travelled path.
@@ -497,15 +529,34 @@ export default function App() {
 
         <div className="panel">
           <div className="card-heading">
-            <span>Milestone</span>
-            <span className="mini-badge">M1</span>
+            <span>Strategy benchmarks</span>
+            <span className="muted">5 laps · test track</span>
+          </div>
+          <div className="sensor-row">
+            <span>Wall-follow (lidar)</span>
+            <strong>148.34 s</strong>
+          </div>
+          <div className="sensor-row">
+            <span>Pure pursuit (GT)</span>
+            <strong>46.12 s</strong>
           </div>
           <p className="small-note">
-            PyBullet 4WD car, raycast lidar with noise/dropouts/latency, three ultrasonic
-            sensors, wall-follow and manual driving. Next: race manager polish and replay.
+            Pure pursuit runs on the ground-truth pose and is an upper bound until
+            SLAM/MCL localization lands in M3.
+          </p>
+        </div>
+
+        <div className="panel">
+          <div className="card-heading">
+            <span>Milestone</span>
+            <span className="mini-badge">M2</span>
+          </div>
+          <p className="small-note">
+            Racing line and pure pursuit are live. Next: track generator, batch experiments,
+            replay and SLAM-based localization.
           </p>
           <div className="progress">
-            <div className="progress-bar" style={{ width: '42%' }} />
+            <div className="progress-bar" style={{ width: '58%' }} />
           </div>
           <div className="small-note">Docs: docs/02-architecture.md · docs/04-sensors.md</div>
         </div>

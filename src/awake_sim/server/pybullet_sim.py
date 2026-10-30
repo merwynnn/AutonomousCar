@@ -15,6 +15,8 @@ from awake_sim.config import (
     load_sensors,
     load_vehicle,
 )
+from awake_sim.control.pure_pursuit import PurePursuitController
+from awake_sim.control.racing_line import build_racing_line
 from awake_sim.control.wall_follow import WallFollowController
 from awake_sim.sensors.lidar import LidarModel, LidarScan
 from awake_sim.sensors.ultrasonic import UltrasonicModel, UltrasonicReading
@@ -29,7 +31,11 @@ ROOT = Path(__file__).resolve().parents[3]
 class PyBulletSimulation:
     """Fixed-step PyBullet simulation with realistic sensors and a race manager."""
 
-    def __init__(self, scenario_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        scenario_path: str | Path | None = None,
+        enable_lidar: bool = True,
+    ) -> None:
         scenario_file = (
             Path(scenario_path)
             if scenario_path
@@ -40,6 +46,7 @@ class PyBulletSimulation:
         self.sensors: SensorsConfig = load_sensors(ROOT / self.scenario.sensors)
         self.track: TrackGeometry = build_test_track(width_m=0.9)
         self.world = PyBulletWorld(self.track, self.vehicle)
+        self.enable_lidar = enable_lidar
         # Live mode uses one sub-ray per beam to keep the dashboard real-time.
         # High-fidelity/batch runs can restore the configured 3 sub-rays.
         live_lidar = self.sensors.lidar.model_copy(deep=True)
@@ -50,6 +57,12 @@ class PyBulletSimulation:
             self.sensors.ultrasonic, self.world, seed=self.scenario.seed
         )
         self.controller = WallFollowController(base_speed=2.4)
+        self.racing_line = build_racing_line(self.track, self.vehicle)
+        self.pure_pursuit = PurePursuitController(
+            self.racing_line,
+            wheelbase_m=self.vehicle.wheelbase_m,
+        )
+        self.auto_controller = "wall_follow"
 
         self.physics_dt = 1.0 / self.scenario.simulation.physics_hz
         self.control_every = 4  # 60 Hz
@@ -93,6 +106,7 @@ class PyBulletSimulation:
     def reset(self) -> None:
         self.world.reset(self.track.sample(self.track.start_s))
         self.controller.reset()
+        self.pure_pursuit.reset()
         self.paused = True
         self.finished = False
         self.sim_time = 0.0
@@ -118,6 +132,8 @@ class PyBulletSimulation:
         self._scan_dirty = True
 
     def _sample_scan(self) -> None:
+        if not self.enable_lidar:
+            return
         self._latest_scan = self.lidar.scan(
             self.world.state(), self.sim_time, self.realism_scale
         )
@@ -134,6 +150,14 @@ class PyBulletSimulation:
             if self.sim_time - self.manual_time > 0.45:
                 self.manual = Actuation(throttle=0.0, steering=self.manual.steering * 0.9)
             self.actuation = self.manual
+            return
+        if self.auto_controller == "pure_pursuit":
+            # M2 upper bound: pure pursuit uses the ground-truth pose. The SLAM/MCL
+            # localization path will replace this in M3.
+            state = self.world.state()
+            self.actuation = self.pure_pursuit.update(
+                state.x, state.y, state.yaw, state.speed
+            )
             return
         scan = self._latest_scan
         if scan is None:
@@ -175,7 +199,7 @@ class PyBulletSimulation:
         self.last_progress = self.progress_m
 
     def step_once(self) -> None:
-        if self.step_count % self.scan_every == 0:
+        if self.enable_lidar and self.step_count % self.scan_every == 0:
             self._sample_scan()
         if self.step_count % self.sonar_every == 0:
             self._sample_sonars()
@@ -291,6 +315,7 @@ class PyBulletSimulation:
                 ],
             },
             "control_mode": self.control_mode,
+            "auto_controller": self.auto_controller,
         }
 
     def scan_message(self) -> dict[str, Any]:
@@ -298,7 +323,17 @@ class PyBulletSimulation:
         if scan is None:
             self._sample_scan()
             scan = self._latest_scan
-        assert scan is not None
+        if scan is None:
+            return {
+                "type": "scan",
+                "t": round(self.sim_time, 4),
+                "seq": self._scan_seq,
+                "frame_id": "lidar",
+                "angles": [],
+                "ranges": [],
+                "intensities": [],
+                "realism": self.scenario.realism,
+            }
         ranges = [
             None if not scan.valid[i] else round(float(scan.ranges[i]), 3)
             for i in range(scan.beam_count)
@@ -326,7 +361,7 @@ class PyBulletSimulation:
             "lap": self.lap,
             "laps": self.scenario.race.laps,
             "track_length_m": round(self.track.length, 3),
-            "controller": self.control_mode,
+            "controller": self.control_mode if self.control_mode == "manual" else self.auto_controller,
             "speed_mps": round(state.speed, 3),
             "slam": False,
         }
@@ -352,6 +387,12 @@ class PyBulletSimulation:
             mode = str(msg.get("mode", "auto"))
             self.control_mode = mode if mode in {"auto", "manual"} else "auto"
             self.manual = Actuation()
+        elif kind == "control.controller":
+            controller = str(msg.get("controller", "wall_follow"))
+            self.auto_controller = (
+                controller if controller in {"wall_follow", "pure_pursuit"} else "wall_follow"
+            )
+            self.actuation = Actuation()
         elif kind == "drive.command":
             self.control_mode = "manual"
             self.manual = Actuation(

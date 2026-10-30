@@ -4,12 +4,12 @@ A physically credible 3D simulator and strategy lab for the AWAKE Challenge 2027
 mini autonomous vehicle: realistic non-ideal sensors, from-scratch 2D lidar SLAM,
 and a browser dashboard for live monitoring, replay and experiments.
 
-> Status: **M1 complete**. PyBullet 4WD car, non-ideal lidar/ultrasonic stack,
-> wall-follow and manual driving are live; 5 autonomous laps completed in
-> 148.34 s. See [`STATUS.md`](STATUS.md) for the live state and `docs/devlog/`
-> for progress.
+> Status: **M2 in progress**. PyBullet car, non-ideal sensors, wall-follow,
+> racing line and pure pursuit are live. Pure pursuit runs 5 laps in 46.12 s
+> (ground-truth upper bound) vs 148.34 s for wall-follow. See
+> [`STATUS.md`](STATUS.md) for the live state.
 
-![AWAKE simulator dashboard](docs/assets/2026-10-30-m1-pybullet.png)
+![AWAKE simulator dashboard](docs/assets/2026-10-30-m2-pursuit.png)
 
 ## Why this exists
 

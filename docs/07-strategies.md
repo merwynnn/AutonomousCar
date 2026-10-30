@@ -143,7 +143,22 @@ The simulator implements the competition essentials:
 7. **Generalization:** 20+ generated tracks; check overfitting.
 8. **Hardware:** sensitivity sweeps to guide the real build.
 
-## 10. Interpreting results
+## 10. Baseline result (2026-10-30)
+
+Test track, 5 laps, `realistic` sensors:
+
+| Controller | Total (s) | Best lap (s) | Localization |
+|---|---:|---:|---|
+| Wall-follow (lidar) | 148.34 | 29.46 | lidar only |
+| Pure pursuit + racing line | 46.12 | 9.20 | ground truth (upper bound) |
+
+Pure pursuit is 3.22× faster, but the result is not yet deployable because it
+uses the ground-truth pose. See
+[`experiments/EXP-0001-strategy-baseline.md`](experiments/EXP-0001-strategy-baseline.md).
+The next comparison must repeat this with odometry-only and SLAM/MCL
+localization, generated tracks and obstacles.
+
+## 11. Interpreting results
 
 - Compare distributions, not single runs.
 - A faster strategy that crashes is not better; report crash rate and penalties.
