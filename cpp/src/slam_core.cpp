@@ -432,6 +432,10 @@ void SlamCore::set_loop_closure_enabled(bool enabled) {
     loop_closure_enabled_ = enabled;
 }
 
+void SlamCore::set_map_frozen(bool frozen) {
+    map_frozen_ = frozen;
+}
+
 void SlamCore::mcl_update(const std::vector<float>& local_x,
                           const std::vector<float>& local_y,
                           const Pose2& odometry) {
@@ -602,6 +606,25 @@ SlamResult SlamCore::process(const Scan& scan, const Pose2& odometry) {
         grid_, local_x, local_y, odometry, 0.20, 6.0 * kPi / 180.0, true, 0.10, 0.08);
     pose_ = front.pose;
     mcl_update(local_x, local_y, odometry);
+
+    if (map_frozen_) {
+        ++scan_count_;
+        SlamResult result;
+        result.pose = pose_;
+        result.initialized = true;
+        result.scan_count = scan_count_;
+        result.match_score = front.score;
+        result.inliers = front.inliers;
+        result.loop_closures = loop_closures_;
+        result.graph_nodes = graph_.node_count();
+        result.graph_edges = graph_.edge_count();
+        result.loop_match_x = last_loop_match_.x;
+        result.loop_match_y = last_loop_match_.y;
+        result.loop_match_theta = last_loop_match_.theta;
+        fill_mcl(result);
+        return result;
+    }
+
     ++scans_since_keyframe_;
 
     const bool keyframe_due =

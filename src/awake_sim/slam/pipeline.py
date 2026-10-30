@@ -86,6 +86,7 @@ class SlamPipeline:
         self.scan_period = scan_period_s
         self._last_odom: tuple[float, float, float] | None = None
         self._last_slam: tuple[float, float, float] | None = None
+        self._mcl_enabled = False
         self.impl = core.SlamCore(
             resolution_m,
             self.width_cells,
@@ -177,10 +178,22 @@ class SlamPipeline:
         )
 
     def set_mcl_enabled(self, enabled: bool) -> None:
+        self._mcl_enabled = enabled
         self.impl.set_mcl_enabled(enabled)
 
     def set_loop_closure_enabled(self, enabled: bool) -> None:
         self.impl.set_loop_closure_enabled(enabled)
+
+    def set_map_frozen(self, frozen: bool) -> None:
+        self.impl.set_map_frozen(frozen)
+
+    def reset_tracking(self) -> None:
+        """Reset odometry prediction and MCL without deleting the map."""
+        self._last_odom = None
+        self._last_slam = None
+        self.impl.set_mcl_enabled(False)
+        if self._mcl_enabled:
+            self.impl.set_mcl_enabled(True)
 
     def mcl_particles(self) -> list[tuple[float, float, float]]:
         particles = self.impl.mcl_particles()

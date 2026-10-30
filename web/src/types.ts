@@ -86,6 +86,8 @@ export interface StateMessage {
   };
   control_mode?: 'auto' | 'manual';
   auto_controller?: 'wall_follow' | 'pure_pursuit';
+  localization_mode?: 'gt' | 'odom' | 'mcl';
+  speed_limit?: number;
 }
 
 export interface ScanMessage {

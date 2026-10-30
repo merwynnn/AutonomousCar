@@ -17,6 +17,7 @@ class PurePursuitController:
         max_steering: float = 0.55,
         max_speed: float = 5.5,
         speed_scale: float = 0.85,
+        speed_limit: float = 3.0,
     ) -> None:
         self.line = line
         self.wheelbase = wheelbase_m
@@ -24,6 +25,7 @@ class PurePursuitController:
         self.max_steering = max_steering
         self.max_speed = max_speed
         self.speed_scale = speed_scale
+        self.speed_limit = speed_limit
 
     def reset(self) -> None:
         pass
@@ -38,7 +40,10 @@ class PurePursuitController:
         steering = math.atan2(2.0 * self.wheelbase * math.sin(alpha), distance)
         steering = max(-self.max_steering, min(self.max_steering, steering))
 
-        target_speed = speed_at(self.line, index) * self.speed_scale
+        target_speed = min(
+            speed_at(self.line, index) * self.speed_scale,
+            self.speed_limit,
+        )
         # Small proportional speed correction; wheel velocity control handles most.
         throttle = target_speed / self.max_speed
         correction = 0.08 * (target_speed - speed)

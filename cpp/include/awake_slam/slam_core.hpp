@@ -96,8 +96,10 @@ public:
 
     void set_mcl_enabled(bool enabled);
     void set_loop_closure_enabled(bool enabled);
+    void set_map_frozen(bool frozen);
     bool mcl_enabled() const { return mcl_enabled_; }
     bool loop_closure_enabled() const { return loop_closure_enabled_; }
+    bool map_frozen() const { return map_frozen_; }
     std::vector<Pose2> mcl_particles() const { return mcl_particles_; }
 
     Pose2 pose() const { return pose_; }
@@ -155,6 +157,7 @@ private:
 
     bool mcl_enabled_ = false;
     bool loop_closure_enabled_ = false;
+    bool map_frozen_ = false;
     bool mcl_initialized_ = false;
     Pose2 mcl_pose_{};
     Pose2 last_mcl_odom_{};

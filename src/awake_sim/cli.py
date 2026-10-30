@@ -13,6 +13,7 @@ from rich.table import Table
 
 from awake_sim import __version__
 from awake_sim.config import load_scenario
+from awake_sim.control.racing_line import build_racing_line
 from awake_sim.server.demo import DemoSimulation
 
 app = typer.Typer(help="AWAKE Challenge 2027 simulator", no_args_is_help=True)
@@ -192,6 +193,166 @@ def compare(
     table.add_column("Total (s)", justify="right")
     table.add_column("Best (s)", justify="right")
     table.add_column("Wall (s)", justify="right")
+    for row in rows:
+        table.add_row(*row)
+    console.print(table)
+
+
+@app.command("map-and-race")
+def map_and_race(
+    laps: int = typer.Option(5, min=1, max=5),
+    mapping_speed: float = typer.Option(1.2, min=0.5, max=3.0),
+) -> None:
+    """Map one slow lap, freeze/save the map, then race it with MCL."""
+
+    import numpy as np
+
+    from awake_sim.server.pybullet_sim import PyBulletSimulation
+
+    sim = PyBulletSimulation(enable_slam=True, lidar_subrays=1)
+    sim.racing_line = build_racing_line(sim.track, sim.vehicle, lateral_margin=0.35)
+    sim.pure_pursuit.line = sim.racing_line
+    sim.scenario.race.laps = 1
+    sim.auto_controller = "pure_pursuit"
+    # Mapping is sensor-only too: MCL localization on the growing SLAM map.
+    sim.localization_mode = "mcl"
+    sim.slam_mcl_enabled = True
+    sim.slam_loop_enabled = False
+    sim.speed_limit = min(mapping_speed, 1.2)
+    sim.pure_pursuit.speed_scale = 0.5
+    sim.pure_pursuit.speed_limit = sim.speed_limit
+    sim.controller.base_speed = sim.speed_limit
+    assert sim.slam is not None
+    sim.slam.set_mcl_enabled(True)
+    sim.slam.set_loop_closure_enabled(False)
+    sim.paused = False
+    started = time.time()
+    while not sim.finished and sim.sim_time < 120 and time.time() - started < 120:
+        sim.step_once()
+    mapping_lap = sim.lap_times[0] if sim.lap_times else float("nan")
+    start = sim.track.sample(sim.track.start_s)
+    final = sim.slam_pose
+    seam = (
+        float(np.hypot(final[0] - start.x, final[1] - start.y))
+        if final is not None
+        else float("nan")
+    )
+    map_path = sim.save_map(
+        ROOT / "data" / "maps" / "test_track_mapping.json",
+        metadata={
+            "mapping_lap_s": mapping_lap,
+            "seam_error_m": seam,
+            "mapping_speed_mps": mapping_speed,
+            "lidar_subrays": 3,
+        },
+    )
+
+    # Race on the frozen map with MCL.
+    sim.scenario.race.laps = laps
+    sim.reset(keep_map=True)
+    sim.localization_mode = "mcl"
+    sim.slam_mcl_enabled = True
+    sim.slam.set_mcl_enabled(True)
+    sim.speed_limit = 1.2
+    sim.pure_pursuit.speed_scale = 0.5
+    sim.pure_pursuit.speed_limit = 1.2
+    sim.controller.base_speed = 1.2
+    sim.paused = False
+    mcl_ates: list[float] = []
+    last_scan = 0
+    started = time.time()
+    max_sim = max(40.0, laps * 30.0)
+    max_wall = max(70.0, laps * 35.0)
+    while not sim.finished and sim.sim_time < max_sim and time.time() - started < max_wall:
+        sim.step_once()
+        if sim.slam_scan_count != last_scan:
+            last_scan = sim.slam_scan_count
+            if sim.slam_mcl_pose is not None:
+                mcl_ates.append(sim.slam_mcl_ate)
+    table = Table(title=f"Map-and-race — {laps} timed laps")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Mapping lap (s)", f"{mapping_lap:.2f}")
+    table.add_row("Map seam (cm)", f"{seam * 100:.1f}")
+    table.add_row("Map file", str(map_path))
+    table.add_row("Race status", "OK" if len(sim.lap_times) >= laps else f"DNF ({len(sim.lap_times)}/{laps})")
+    table.add_row("Race total (s)", f"{sum(sim.lap_times):.2f}")
+    table.add_row("Race best (s)", f"{min(sim.lap_times):.2f}" if sim.lap_times else "—")
+    table.add_row("Race laps", ", ".join(f"{t:.2f}" for t in sim.lap_times) or "—")
+    table.add_row("MCL ATE mean (cm)", f"{float(np.mean(mcl_ates)) * 100:.1f}" if mcl_ates else "—")
+    table.add_row("MCL ATE max (cm)", f"{float(np.max(mcl_ates)) * 100:.1f}" if mcl_ates else "—")
+    console.print(table)
+    sim.world.close()
+
+
+@app.command("localization-bench")
+def localization_bench(
+    laps: int = typer.Option(5, min=1, max=5),
+    controller: str = typer.Option("pure_pursuit", help="wall_follow or pure_pursuit"),
+) -> None:
+    """Compare GT, odometry-only and MCL localization with the racing controller."""
+
+    import numpy as np
+
+    from awake_sim.server.pybullet_sim import PyBulletSimulation
+
+    if controller not in {"wall_follow", "pure_pursuit"}:
+        console.print("[red]controller must be wall_follow or pure_pursuit[/red]")
+        raise typer.Exit(code=2)
+    rows: list[tuple[str, str, str, str, str]] = []
+    for mode in ("gt", "odom", "mcl"):
+        sim = PyBulletSimulation(enable_slam=True)
+        # Use a safe racing line and a moderate speed for all three modes so the
+        # comparison isolates localization rather than corner-cutting risk.
+        sim.racing_line = build_racing_line(sim.track, sim.vehicle, lateral_margin=0.35)
+        sim.pure_pursuit.line = sim.racing_line
+        sim.speed_limit = 1.2
+        sim.pure_pursuit.speed_limit = 1.2
+        sim.controller.base_speed = 1.2
+        sim.scenario.race.laps = laps
+        sim.auto_controller = controller
+        sim.localization_mode = mode
+        sim.paused = False
+        if mode == "mcl":
+            sim.slam_mcl_enabled = True
+            assert sim.slam is not None
+            sim.slam.set_mcl_enabled(True)
+        ates: list[float] = []
+        last_scan = 0
+        started = time.time()
+        max_sim = max(40.0, laps * 30.0)
+        max_wall = max(70.0, laps * 35.0)
+        while not sim.finished and sim.sim_time < max_sim and time.time() - started < max_wall:
+            sim.step_once()
+            if sim.slam_scan_count != last_scan:
+                last_scan = sim.slam_scan_count
+                state = sim.world.state()
+                if mode == "gt":
+                    error = 0.0
+                elif mode == "odom":
+                    odom = sim.odometry.pose
+                    error = float(np.hypot(odom.x - state.x, odom.y - state.y))
+                else:
+                    error = sim.slam_mcl_ate
+                ates.append(error)
+        sim.world.close()
+        table_total = sum(sim.lap_times)
+        table_best = min(sim.lap_times) if sim.lap_times else 0.0
+        rows.append(
+            (
+                mode.upper(),
+                f"{table_total:.2f}" if sim.lap_times else "DNF",
+                f"{table_best:.2f}" if sim.lap_times else "—",
+                f"{float(np.mean(ates)) * 100:.1f}" if ates else "—",
+                f"{float(np.max(ates)) * 100:.1f}" if ates else "—",
+            )
+        )
+    table = Table(title=f"Localization comparison — {laps} laps, {controller}")
+    table.add_column("Pose source")
+    table.add_column("Total (s)", justify="right")
+    table.add_column("Best (s)", justify="right")
+    table.add_column("ATE mean (cm)", justify="right")
+    table.add_column("ATE max (cm)", justify="right")
     for row in rows:
         table.add_row(*row)
     console.print(table)

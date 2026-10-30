@@ -85,9 +85,12 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 - Realism preset (`ideal`, `realistic`, `harsh`).
 - Seed.
 - Controller gains and speed limit (applied by restarting the run).
+- Localization mode: GT / Odom / MCL.
+- Car view: Actual physics pose / Controller pose / SLAM pose.
 - MCL off/on and reset MCL.
 - Loop closure off/on (experimental; default off).
-- Debug layer toggles: map, SLAM, MCL, particles, odometry, GT trail.
+- Speed limit slider applied to pure pursuit and wall-follow.
+- Debug layer toggles: map, SLAM, MCL, particles, odometry, actual trail.
 
 ## 5. WebSocket protocol
 

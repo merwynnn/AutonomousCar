@@ -109,6 +109,7 @@ function TrackCanvas({
   slam,
   cameraMode,
   layers,
+  renderPose,
 }: {
   hello: HelloMessage | null;
   state: StateMessage | null;
@@ -116,6 +117,7 @@ function TrackCanvas({
   slam: SlamMessage | null;
   cameraMode: 'orbit' | 'top';
   layers: DebugLayers;
+  renderPose: 'actual' | 'controller' | 'slam';
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<TrackScene | null>(null);
@@ -154,6 +156,10 @@ function TrackCanvas({
     sceneRef.current?.setLayerVisibility(layers);
   }, [layers]);
 
+  useEffect(() => {
+    sceneRef.current?.setRenderPose(renderPose);
+  }, [renderPose]);
+
   return <div ref={containerRef} className="canvas-host" />;
 }
 
@@ -161,10 +167,12 @@ export default function App() {
   const { status, hello, state, scan, slam, history, send } = useTelemetry();
   const [speed, setSpeed] = useState(2.4);
   const [cameraMode, setCameraMode] = useState<'orbit' | 'top'>('orbit');
+  const [renderPose, setRenderPose] = useState<'actual' | 'controller' | 'slam'>('actual');
   const [controlMode, setControlMode] = useState<'auto' | 'manual'>('auto');
   const [autoController, setAutoController] = useState<'wall_follow' | 'pure_pursuit'>(
     'wall_follow',
   );
+  const [localizationMode, setLocalizationMode] = useState<'gt' | 'odom' | 'mcl'>('gt');
   const [mclEnabled, setMclEnabled] = useState(false);
   const [loopClosureEnabled, setLoopClosureEnabled] = useState(false);
   const [layers, setLayers] = useState<DebugLayers>({
@@ -177,6 +185,10 @@ export default function App() {
   });
   const keysRef = useRef({ w: false, a: false, s: false, d: false });
   const slamReady = hello?.slam_cpp ?? null;
+
+  useEffect(() => {
+    send({ type: 'localization.mode', mode: localizationMode });
+  }, [localizationMode, send]);
 
   useEffect(() => {
     send({
@@ -326,6 +338,36 @@ export default function App() {
           <div className="segmented">
             <button
               type="button"
+              className={localizationMode === 'gt' ? 'active' : ''}
+              onClick={() => setLocalizationMode('gt')}
+            >
+              GT
+            </button>
+            <button
+              type="button"
+              className={localizationMode === 'odom' ? 'active' : ''}
+              onClick={() => setLocalizationMode('odom')}
+            >
+              Odom
+            </button>
+            <button
+              type="button"
+              className={localizationMode === 'mcl' ? 'active' : ''}
+              onClick={() => {
+                setLocalizationMode('mcl');
+                setMclEnabled(true);
+              }}
+            >
+              MCL
+            </button>
+          </div>
+          <p className="small-note">
+            Pose source for pure pursuit. GT is an upper bound; Odom shows drift; MCL
+            is the realistic localization mode.
+          </p>
+          <div className="segmented">
+            <button
+              type="button"
               className={mclEnabled ? '' : 'active'}
               onClick={() => setMclEnabled(false)}
             >
@@ -380,7 +422,7 @@ export default function App() {
                 ['mcl', 'MCL'],
                 ['particles', 'Particles'],
                 ['odom', 'Odometry'],
-                ['gtTrail', 'GT trail'],
+                ['gtTrail', 'Actual trail'],
               ] as Array<[keyof DebugLayers, string]>
             ).map(([key, label]) => (
               <label className="debug-toggle" key={key}>
@@ -422,7 +464,7 @@ export default function App() {
 
         <div className="sidebar-section">
           <div className="section-label">
-            Auto target speed <span className="muted">{speed.toFixed(1)} m/s</span>
+            Speed limit <span className="muted">{speed.toFixed(1)} m/s</span>
           </div>
           <input
             type="range"
@@ -437,6 +479,37 @@ export default function App() {
               send({ type: 'run.set_speed', speed: value });
             }}
           />
+        </div>
+
+        <div className="sidebar-section">
+          <div className="section-label">Car view</div>
+          <div className="segmented">
+            <button
+              type="button"
+              className={renderPose === 'actual' ? 'active' : ''}
+              onClick={() => setRenderPose('actual')}
+            >
+              Actual
+            </button>
+            <button
+              type="button"
+              className={renderPose === 'controller' ? 'active' : ''}
+              onClick={() => setRenderPose('controller')}
+            >
+              Controller
+            </button>
+            <button
+              type="button"
+              className={renderPose === 'slam' ? 'active' : ''}
+              onClick={() => setRenderPose('slam')}
+            >
+              SLAM
+            </button>
+          </div>
+          <p className="small-note">
+            Actual = physics pose. Controller = MCL/odom pose used to drive. Orange
+            ghost shows the actual car when estimated view is selected.
+          </p>
         </div>
 
         <div className="sidebar-section">
@@ -512,18 +585,24 @@ export default function App() {
             slam={slam}
             cameraMode={cameraMode}
             layers={layers}
+            renderPose={renderPose}
           />
           <div className="viewport-badge">
             <span className="live-dot" /> {controlMode.toUpperCase()} ·{' '}
             {controlMode === 'auto'
               ? autoController === 'pure_pursuit'
-                ? 'PURSUIT'
+                ? `PURSUIT · ${localizationMode.toUpperCase()}`
                 : 'WALL'
               : 'MANUAL'}{' '}
             · {scanning ? 'Lidar live' : 'Waiting for scan'}
           </div>
           <div className="viewport-note">
-            Green → blue points are lidar returns. Orange is the travelled path.
+            {renderPose === 'actual'
+              ? 'Main car = actual physics pose.'
+              : renderPose === 'controller'
+                ? 'Main car = pose used by the controller; orange ghost = actual car.'
+                : 'Main car = SLAM estimate; orange ghost = actual car.'}{' '}
+            Lidar points are real sensor returns; orange trail is the actual path.
             {controlMode === 'manual' ? ' Driving: W/S throttle, A/D steer.' : ''}
           </div>
           {warnings.length > 0 ? (

@@ -4,11 +4,11 @@ A physically credible 3D simulator and strategy lab for the AWAKE Challenge 2027
 mini autonomous vehicle: realistic non-ideal sensors, from-scratch 2D lidar SLAM,
 and a browser dashboard for live monitoring and strategy comparison.
 
-> Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line,
-> pure pursuit and a live C++ SLAM front-end are working. MCL and experimental
-> loop closure can be toggled in the dashboard, along with GT/odometry/SLAM/MCL
-> debug layers. Pure pursuit runs 5 laps in 46.12 s (GT upper bound) vs 148.34 s
-> for wall-follow. See [`STATUS.md`](STATUS.md).
+> Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line and
+> pure pursuit are working. MCL drives both the mapping lap and the race with no
+> ground truth in the control loop: 20.40 s vs 20.12 s for GT on a conservative
+> one-lap comparison; sensor-only mapping produced an 8.3 cm map seam. The
+> five-lap MCL race is still under test. See [`STATUS.md`](STATUS.md).
 
 ![AWAKE simulator dashboard](docs/assets/2026-10-30-m3-slam.png)
 
@@ -36,7 +36,7 @@ wheel odometry. This project lets the team:
 | SLAM | C++17 deskew + correlative matching + occupancy grid + 400-particle MCL; live map/ATE and toggles. Loop closure detector experimental |
 | Strategies | Wall-follow, pure pursuit, racing line, time-optimal speed profile |
 | Race analysis | Headless `race` / `compare` commands, lap-time and penalty metrics, experiment reports |
-| Dashboard | Live 3D, sensor views, SLAM/MCL map, charts, controller switch, MCL/loop toggles, debug layers |
+| Dashboard | Live 3D, sensor views, SLAM/MCL map, charts, GT/odom/MCL localization modes, car view selector, toggles and debug layers |
 | Docs | `AGENTS.md`, `STATUS.md`, architecture, requirements traceability, devlog, ADRs, runbook |
 
 ## Documentation

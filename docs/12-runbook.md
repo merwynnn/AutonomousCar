@@ -70,6 +70,12 @@ uv run awake-sim run --scenario configs/scenarios/test_track.yaml
 # controller comparison
 uv run awake-sim compare --laps 5
 
+# localization comparison (GT / odom / MCL)
+uv run awake-sim localization-bench --laps 1
+
+# sensor-only mapping lap, freeze/save map, then MCL race
+uv run awake-sim map-and-race --laps 1
+
 # SLAM front-end benchmark + MCL
 uv run awake-sim slam-bench --duration 20 --mcl
 

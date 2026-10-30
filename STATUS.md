@@ -1,104 +1,82 @@
 # Project status
 
 > Last updated: 2026-10-30
-> Current milestone: **M3 in progress — SLAM front-end + MCL live; loop closure detector disabled**
+> Current milestone: **M3 in progress — MCL drive + map-once/race experiments**
 
-![M3 SLAM dashboard](docs/assets/2026-10-30-m3-slam.png)
+![M3 SLAM/MCL dashboard](docs/assets/2026-10-30-m3-slam.png)
 
 ## Headline results
 
-Test track, 5 laps, `realistic` sensors:
+### Localization comparison (1 lap, 1.2 m/s, safe line)
 
-| Controller | Total (s) | Best lap (s) | Localization |
+| Pose source | Lap time | ATE mean | Status |
 |---|---:|---:|---|
-| Wall-follow (lidar) | 148.34 | 29.46 | lidar only |
-| **Pure pursuit + racing line** | **46.12** | **9.20** | ground truth (upper bound) |
+| GT | 20.12 s | 0.0 cm | OK |
+| Odom | DNF | 17.9 cm | hit wall |
+| **MCL** | **20.40 s** | **22.6 cm** | **OK** |
 
-SLAM front-end (local tracking, 8 s / 81 scans, low-noise odometry):
+**MCL drives the car with no ground truth in the control loop**, only 1.4%
+slower than GT at this conservative speed. Odometry-only fails.
+
+### Map once, race with MCL
 
 | Metric | Result |
 |---|---:|
-| ATE mean | **2.89 cm** |
-| ATE max | 5.27 cm |
-| Scan time mean | **14.2 ms** |
-| Scan time p95 | **18.9 ms** |
-| Occupied / free cells | 2,255 / 9,179 |
+| Mapping lap (MCL, no GT) | 20.81 s |
+| Map seam (start vs end pose) | 8.3 cm |
+| One-lap MCL race | 20.15 s |
+| One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
+| 5-lap attempt | **3/5 laps, DNF** |
+| 5-lap MCL ATE mean / max | 45.3 / 69.7 cm |
 
-MCL on the same map (12 s run, 400 particles):
-
-| Metric | SLAM | MCL |
-|---|---:|---:|
-| ATE mean | 22.6 cm | 22.0 cm |
-| ATE max | 31.5 cm | 41.1 cm |
-| ESS (last) | — | 281 / 400 |
-| Spread (last) | — | 0.20 m |
-
-The live dashboard shows SLAM (blue), MCL (green particles/ghost), odometry
-(grey), the occupancy map and per-estimator ATE. MCL tracks the map but cannot
-correct map drift. The loop-closure detector remains disabled because scan-only
-place recognition produced false matches on the repetitive walls. The SE(2)
-pose-graph back-end is implemented and unit-tested; no forced start-pose reset
-is used.
+A frozen one-lap map supports one MCL lap. Mapping itself is now sensor-only
+(MCL, no GT), with an **8.3 cm seam**. The five-lap result is being measured.
 
 ## What works today
 
 - PyBullet 1/10 4WD Ackermann car, 240 Hz physics, 16 cm pipe walls.
-- 720-beam non-ideal lidar: noise, quantization, motion distortion, dropouts,
-  dead beams, intensity, wall-height occlusion and latency.
-- Three non-ideal ultrasonic sensors; IMU/odometry hooks.
-- Latency-aware control: the last command is held while a scan is in flight.
-- Wall-follow (lidar only), manual WASD driving.
-- Racing line + time-optimal speed profile; pure pursuit (GT upper bound).
-- Race manager: 5-lap timing, start-line arming, progress/lateral offset.
-- **C++17 SLAM front-end**: per-beam deskew, occupancy grid, chamfer likelihood,
-  coarse/fine correlative matching with motion prior, pybind11 bindings.
-- **SE(2) pose graph** with keyframes, sequential edges and a tested optimizer.
-- **400-particle MCL** with ESS/spread diagnostics, map scoring and runtime
-  on/off/reset.
-- Loop-closure detection is **disabled by default** and exposed as an
-  experimental toggle; no forced reset or referee-driven pose correction.
-- Live SLAM visualization: map, SLAM/MCL/odometry ghosts and trails, particle
-  cloud, layer toggles and per-estimator ATE.
-- Debug dashboard: MCL/loop toggles, map/SLAM/MCL/particle/odometry/GT layer
-  switches, odom drift, graph size and match diagnostics.
-- Dashboard: live 3D, lidar, sonars, steering, speed trace, strategy benchmarks,
-  controller switch, auto/manual, target speed, camera modes.
-- CLI: `awake-sim race`, `compare`, `slam-bench`.
-- 24 Python tests + C++ CTest green; ruff/mypy clean; frontend builds.
+- 720-beam non-ideal lidar, three ultrasonic sensors, drifting wheel odometry.
+- Wall-follow, pure pursuit and manual driving.
+- Racing line + speed profile with a speed-limit slider that applies to both
+  controllers.
+- Localization modes: **GT / Odom / MCL**; MCL drives pure pursuit with no GT.
+- 400-particle MCL with ESS/spread diagnostics, on/off/reset.
+- C++ SLAM front-end: deskew, occupancy grid, correlative matching; map freeze
+  and save.
+- SE(2) pose graph with keyframes; loop-closure detector experimental/off.
+- Dashboard: live 3D, SLAM/MCL/odometry ghosts and trails, particles, map,
+  debug layers, **Car view = Actual / Controller / SLAM**.
+- CLI: `race`, `compare`, `localization-bench`, `map-and-race`, `slam-bench`.
+- 24 Python tests + 2 C++ tests; frontend builds.
 
 ## Milestone status
 
 - **M0 ✅** — bootstrap, docs, dashboard, C++ binding.
-- **M1 ✅** — 5 autonomous wall-follow laps, realistic sensors.
-- **M2 core ✅** — racing line, pure pursuit, strategy benchmark; generator and
-  editor still pending.
-- **M3 front-end ✅** — C++ SLAM tracking + live map; pose graph implemented;
-  MCL local localization live; global relocalization and reliable loop closure
-  pending.
+- **M1 ✅** — realistic sensors, wall-follow, 5-lap acceptance.
+- **M2 core ✅** — racing line, pure pursuit, strategy benchmark; generator/editor
+  still pending.
+- **M3 front-end ✅** — SLAM tracking, map, MCL, localization modes, map-once race
+  experiments; reliable loop closure/global MCL pending.
 
 ## Next tasks
 
-1. MCL global relocalization / kidnapped-robot recovery and MCL-based racing
-   (replace GT pose).
-2. M3b: reliable place recognition (Scan Context or a visible start-line
-   landmark), loop-closure verification, map IoU and ATE/RPE reporting.
-3. M2 rest: seeded track generator with obstacles and a simple track editor.
-4. Calibration against the real car when hardware is chosen; Pi port later.
+1. Global MCL relocalization / periodic correction at the start line.
+2. Reliable loop closure or a visible start-line landmark to remove the 19 cm
+   map seam.
+3. More robust controller (Stanley/MPC) for MCL at higher speed.
+4. M2 rest: track generator/editor.
+5. Calibration against the real car; Pi port later.
 
 ## Known issues
 
-- SLAM has no active loop closure. The front-end and MCL drift with realistic
-  wheel odometry; the map is local, not globally corrected.
-- Loop closure is an experimental toggle; scan-only detection is ambiguous on
-  the repetitive pipe walls and can corrupt the map.
-- MCL is local (initialized at the SLAM pose), not global relocalization.
-- MCL is not yet driving the racing controller; pure pursuit still uses GT pose.
-- Some map artefacts appear outside the lane at high speed; robust map updates
-  are planned.
-- Pure pursuit uses ground truth; the deployable result needs SLAM/MCL pose.
-- Live mode uses one lidar sub-ray per beam; high-fidelity mode uses three.
-- No track generator/editor yet.
-- Wall-follow is conservative and slow on the waist corners.
+- 5-lap MCL race is **DNF** after 3 laps; MCL error grows without global
+  correction.
+- Loop closure is experimental and off; scan-only detection false-positives on
+  repetitive walls.
+- MCL is local, not global; no kidnapped-robot recovery.
+- Odom-only pure pursuit fails at the tested settings.
+- Safety/recovery is minimal; the current MCL race uses a conservative 1.2 m/s.
+- Map artefacts near the seam remain.
 
 ## How to run
 
@@ -108,21 +86,31 @@ cd web && npm run dev -- --port 5173
 # open http://localhost:5173
 ```
 
-Headless checks and benchmarks:
+In the dashboard, to drive with **no GT in the control loop**:
 
-```bash
-uv run awake-sim compare --laps 5
-uv run awake-sim slam-bench --duration 20
-uv run pytest -q
-uv run python -m awake_sim.cli test-cpp
+```text
+Driving mode: Auto
+Controller:   Pursuit
+Localization: MCL
+MCL:          On
+Loop closure: Off
+Speed limit:  1.2 m/s
 ```
 
-## Monitoring
+CLI:
 
+```bash
+uv run awake-sim localization-bench --laps 1
+uv run awake-sim map-and-race --laps 1
+uv run awake-sim map-and-race --laps 5
+uv run awake-sim slam-bench --duration 20 --mcl
+```
+
+## Reports
+
+- [`EXP-0001` strategy baseline](docs/experiments/EXP-0001-strategy-baseline.md)
+- [`EXP-0002` SLAM front-end](docs/experiments/EXP-0002-slam-frontend.md)
+- [`EXP-0003` MCL](docs/experiments/EXP-0003-mcl.md)
+- [`EXP-0004` GT vs odom vs MCL](docs/experiments/EXP-0004-localization-bench.md)
+- [`EXP-0005` map once, race with MCL](docs/experiments/EXP-0005-map-and-race.md)
 - Devlog: [`docs/devlog/2026-10-30.md`](docs/devlog/2026-10-30.md)
-- Experiments: [`docs/experiments/EXP-0001`](docs/experiments/EXP-0001-strategy-baseline.md),
-  [`EXP-0002`](docs/experiments/EXP-0002-slam-frontend.md)
-- Architecture: [`docs/02-architecture.md`](docs/02-architecture.md)
-- SLAM: [`docs/06-slam.md`](docs/06-slam.md)
-- Sensors: [`docs/04-sensors.md`](docs/04-sensors.md)
-- Roadmap: [`docs/11-roadmap.md`](docs/11-roadmap.md)

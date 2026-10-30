@@ -40,6 +40,10 @@ export class TrackScene {
   private slamMap: THREE.Mesh | null = null;
   private slamTexture: THREE.CanvasTexture | null = null;
   private slamCanvas: HTMLCanvasElement | null = null;
+  private actualGhost = new THREE.Group();
+  private latestState: StateMessage | null = null;
+  private latestSlam: SlamMessage | null = null;
+  private renderPose: 'actual' | 'controller' | 'slam' = 'actual';
   private odomGhost = new THREE.Group();
   private odomTrail: THREE.Line | null = null;
   private odomTrailPositions = new Float32Array(600 * 3);
@@ -106,6 +110,7 @@ export class TrackScene {
     this.buildTrail();
     this.buildSlamGhost();
     this.buildSlamTrail();
+    this.buildActualGhost();
     this.buildOdomGhost();
     this.buildMclGhost();
     this.buildMclTrail();
@@ -249,6 +254,22 @@ export class TrackScene {
     this.slamTrail = new THREE.Line(geometry, material);
     this.slamTrail.frustumCulled = false;
     this.scene.add(this.slamTrail);
+  }
+
+  private buildActualGhost(): void {
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(0.42, 0.10, 0.21),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb454,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.65,
+      }),
+    );
+    body.position.y = 0.12;
+    this.actualGhost.add(body);
+    this.actualGhost.visible = false;
+    this.scene.add(this.actualGhost);
   }
 
   private buildOdomGhost(): void {
@@ -474,8 +495,10 @@ export class TrackScene {
   }
 
   updateState(state: StateMessage): void {
-    this.carGroup.position.set(state.car.x, 0, state.car.y);
-    this.carGroup.rotation.y = -state.car.theta;
+    this.latestState = state;
+    this.actualGhost.position.set(state.car.x, 0, state.car.y);
+    this.actualGhost.rotation.y = -state.car.theta;
+    this.applyRenderPose();
 
     const x = state.car.x;
     const y = state.car.y;
@@ -541,6 +564,8 @@ export class TrackScene {
   }
 
   updateSlam(slam: SlamMessage): void {
+    this.latestSlam = slam;
+    this.applyRenderPose();
     if (slam.pose) {
       this.slamGhost.visible = this.layers.slam;
       this.slamGhost.position.set(slam.pose.x, 0, slam.pose.y);
@@ -710,6 +735,38 @@ export class TrackScene {
     );
     this.slamMap.visible = this.layers.map;
     this.scene.add(this.slamMap);
+  }
+
+  setRenderPose(mode: 'actual' | 'controller' | 'slam'): void {
+    this.renderPose = mode;
+    this.applyRenderPose();
+  }
+
+  private applyRenderPose(): void {
+    const state = this.latestState;
+    if (!state) return;
+    let x = state.car.x;
+    let y = state.car.y;
+    let theta = state.car.theta;
+    if (this.renderPose === 'slam' && this.latestSlam?.pose) {
+      x = this.latestSlam.pose.x;
+      y = this.latestSlam.pose.y;
+      theta = this.latestSlam.pose.theta;
+    } else if (this.renderPose === 'controller') {
+      const mode = state.localization_mode ?? 'gt';
+      if (mode === 'mcl' && this.latestSlam?.mcl?.pose) {
+        x = this.latestSlam.mcl.pose.x;
+        y = this.latestSlam.mcl.pose.y;
+        theta = this.latestSlam.mcl.pose.theta;
+      } else if (mode === 'odom' && this.latestSlam?.odometry) {
+        x = this.latestSlam.odometry.x;
+        y = this.latestSlam.odometry.y;
+        theta = this.latestSlam.odometry.theta;
+      }
+    }
+    this.carGroup.position.set(x, 0, y);
+    this.carGroup.rotation.y = -theta;
+    this.actualGhost.visible = this.renderPose !== 'actual';
   }
 
   setCamera(mode: CameraMode): void {

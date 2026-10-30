@@ -19,6 +19,7 @@ class OdometryModel:
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
+        self.last_speed = 0.0
         self.yaw_bias = math.radians(config.yaw_bias_deg_s)
         self._speed_bias = config.speed_bias_mps
 
@@ -26,6 +27,7 @@ class OdometryModel:
         self.x = pose.x
         self.y = pose.y
         self.theta = pose.theta
+        self.last_speed = 0.0
         self.yaw_bias = math.radians(self.config.yaw_bias_deg_s)
 
     def update(self, true_speed: float, true_yaw_rate: float, dt: float) -> Pose2:
@@ -41,6 +43,7 @@ class OdometryModel:
             + self.yaw_bias
             + self.rng.normal(0.0, self.config.yaw_noise_rad_s)
         )
+        self.last_speed = measured_speed
         self.x += measured_speed * math.cos(self.theta) * dt
         self.y += measured_speed * math.sin(self.theta) * dt
         self.theta = math.atan2(

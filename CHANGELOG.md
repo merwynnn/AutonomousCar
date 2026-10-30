@@ -30,6 +30,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   layers for GT, odometry, SLAM, MCL, particles and map.
 - `awake-sim slam-bench --mcl`: SLAM 22.6 cm vs MCL 22.0 cm mean ATE over 12 s;
   MCL tracks the map but cannot fix map drift.
+- GT/odom/MCL localization modes; MCL drives pure pursuit with no GT.
+- `localization-bench`: GT 20.12 s, MCL 20.40 s, odometry DNF on one lap.
+- Map freeze/save and `map-and-race`: sensor-only MCL mapping, 20.81 s,
+  8.3 cm seam; one-lap MCL race 20.15 s. Five-lap MCL race under test.
+- Dashboard car-view selector: Actual / Controller / SLAM.
+- Speed-limit slider now applies to pure pursuit as well as wall-follow.
 
 ### Changed
 -

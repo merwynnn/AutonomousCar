@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import math
 import time
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,7 @@ class PyBulletSimulation:
         scenario_path: str | Path | None = None,
         enable_lidar: bool = True,
         enable_slam: bool = True,
+        lidar_subrays: int = 1,
     ) -> None:
         scenario_file = (
             Path(scenario_path)
@@ -57,19 +60,24 @@ class PyBulletSimulation:
         # Live mode uses one sub-ray per beam to keep the dashboard real-time.
         # High-fidelity/batch runs can restore the configured 3 sub-rays.
         live_lidar = self.sensors.lidar.model_copy(deep=True)
-        live_lidar.divergence["subrays"] = 1
+        live_lidar.divergence["subrays"] = max(1, lidar_subrays)
         live_lidar.divergence["live_mode"] = True
         self.lidar = LidarModel(live_lidar, self.world, seed=self.scenario.seed)
         self.ultrasonic = UltrasonicModel(
             self.sensors.ultrasonic, self.world, seed=self.scenario.seed
         )
         self.controller = WallFollowController(base_speed=2.4)
-        self.racing_line = build_racing_line(self.track, self.vehicle)
+        self.racing_line = build_racing_line(
+            self.track, self.vehicle, lateral_margin=0.25
+        )
+        self.speed_limit = 2.4
         self.pure_pursuit = PurePursuitController(
             self.racing_line,
             wheelbase_m=self.vehicle.wheelbase_m,
+            speed_limit=self.speed_limit,
         )
         self.auto_controller = "wall_follow"
+        self.localization_mode = "gt"
 
         mount = self.sensors.lidar.mount.get("position_m", [0.10, 0.0, 0.14])
         self.slam = (
@@ -140,6 +148,10 @@ class PyBulletSimulation:
         self.manual = Actuation()
         self.manual_time = -10.0
         self.actuation = Actuation()
+        self.stuck_time = 0.0
+        self.recovery_time = 0.0
+        self.recovery_steer = 0.0
+        self.control_pose: tuple[float, float, float] | None = None
 
         self._latest_scan: LidarScan | None = None
         self._latest_sonars: list[UltrasonicReading] = []
@@ -152,7 +164,7 @@ class PyBulletSimulation:
         self._sample_sonars()
 
     # ------------------------------------------------------------------ state
-    def reset(self) -> None:
+    def reset(self, keep_map: bool = False) -> None:
         start_pose = self.track.sample(self.track.start_s)
         self.world.reset(start_pose)
         self.odometry.reset(start_pose)
@@ -175,11 +187,21 @@ class PyBulletSimulation:
         self.control_mode = "auto"
         self.manual = Actuation()
         self.actuation = Actuation()
+        self.stuck_time = 0.0
+        self.recovery_time = 0.0
+        self.recovery_steer = 0.0
+        self.control_pose = None
         self._latest_scan = None
         self._latest_sonars = []
         self._scan_seq = 0
         if self.slam is not None:
-            self.slam.reset()
+            if keep_map:
+                self.slam.reset_tracking()
+                self.slam.set_map_frozen(True)
+                self.slam.set_mcl_enabled(self.slam_mcl_enabled)
+            else:
+                self.slam.reset()
+                self.slam.set_map_frozen(False)
         self.slam_pose = None
         self.slam_ate = 0.0
         self.slam_scan_ms = 0.0
@@ -197,7 +219,8 @@ class PyBulletSimulation:
         self.slam_mcl_ess = 0.0
         self.slam_mcl_spread = 0.0
         self.slam_mcl_particles = []
-        self.slam_map_payload = None
+        if not keep_map:
+            self.slam_map_payload = None
         self._slam_dirty = False
         self.odom_drift_m = 0.0
         self._sample_scan()
@@ -267,6 +290,32 @@ class PyBulletSimulation:
             self.slam_map_payload = self.slam.map_payload() if self.slam is not None else None
         self._slam_dirty = True
 
+    def _apply_recovery(self, command: Actuation, true_speed: float) -> None:
+        """Back out and reorient if the car is pinned against a wall.
+
+        This is a sensor/actuator safety layer, not localization cheating. It uses
+        the measured speed and the controller command only.
+        """
+        dt = self.control_every * self.physics_dt
+        if self.recovery_time > 0.0:
+            self.recovery_time -= dt
+            self.actuation = Actuation(
+                throttle=-0.45,
+                steering=self.recovery_steer,
+            )
+            return
+        if abs(true_speed) < 0.05:
+            self.stuck_time += dt
+        else:
+            self.stuck_time = 0.0
+        if self.stuck_time > 0.8:
+            self.recovery_time = 1.2
+            self.stuck_time = 0.0
+            self.recovery_steer = 0.0
+            self.actuation = Actuation(throttle=-0.65, steering=0.0)
+            return
+        self.actuation = command
+
     def _sample_sonars(self) -> None:
         self._latest_sonars = self.ultrasonic.sample(
             self.world.state(), self.sim_time, self.realism_scale
@@ -279,12 +328,36 @@ class PyBulletSimulation:
             self.actuation = self.manual
             return
         if self.auto_controller == "pure_pursuit":
-            # M2 upper bound: pure pursuit uses the ground-truth pose. The SLAM/MCL
-            # localization path will replace this in M3.
             state = self.world.state()
-            self.actuation = self.pure_pursuit.update(
-                state.x, state.y, state.yaw, state.speed
-            )
+            if self.localization_mode == "gt":
+                pose = (state.x, state.y, state.yaw)
+                speed = state.speed
+                self.control_pose = None
+            else:
+                if self.localization_mode == "odom":
+                    odom = self.odometry.pose
+                    raw_pose = (odom.x, odom.y, odom.theta)
+                else:  # mcl
+                    if self.slam_mcl_pose is None:
+                        self.actuation = Actuation(throttle=0.0, steering=0.0)
+                        return
+                    raw_pose = self.slam_mcl_pose
+                speed = self.odometry.last_speed
+                if self.control_pose is None:
+                    pose = raw_pose
+                else:
+                    alpha = 0.35
+                    dtheta = (raw_pose[2] - self.control_pose[2] + math.pi) % (
+                        2.0 * math.pi
+                    ) - math.pi
+                    pose = (
+                        self.control_pose[0] + alpha * (raw_pose[0] - self.control_pose[0]),
+                        self.control_pose[1] + alpha * (raw_pose[1] - self.control_pose[1]),
+                        self.control_pose[2] + alpha * dtheta,
+                    )
+                self.control_pose = pose
+            command = self.pure_pursuit.update(pose[0], pose[1], pose[2], speed)
+            self._apply_recovery(command, state.speed)
             return
         scan = self._latest_scan
         if scan is None:
@@ -445,6 +518,8 @@ class PyBulletSimulation:
             },
             "control_mode": self.control_mode,
             "auto_controller": self.auto_controller,
+            "localization_mode": self.localization_mode,
+            "speed_limit": self.speed_limit,
         }
 
     def scan_message(self) -> dict[str, Any]:
@@ -537,6 +612,25 @@ class PyBulletSimulation:
             message["map"] = self.slam_map_payload
         return message
 
+    def save_map(self, path: str | Path, metadata: dict[str, Any] | None = None) -> Path:
+        if self.slam is None:
+            raise RuntimeError("SLAM is not enabled")
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "map": self.slam.map_payload(),
+            "seed": self.scenario.seed,
+            "track": "test_track",
+            "start_pose": {
+                "x": self.track.sample(self.track.start_s).x,
+                "y": self.track.sample(self.track.start_s).y,
+                "theta": self.track.sample(self.track.start_s).theta,
+            },
+            "metadata": metadata or {},
+        }
+        target.write_text(json.dumps(payload), encoding="utf-8")
+        return target
+
     def status(self) -> dict[str, Any]:
         state = self.world.state()
         return {
@@ -549,6 +643,8 @@ class PyBulletSimulation:
             "laps": self.scenario.race.laps,
             "track_length_m": round(self.track.length, 3),
             "controller": self.control_mode if self.control_mode == "manual" else self.auto_controller,
+            "localization": self.localization_mode,
+            "speed_limit": self.speed_limit,
             "speed_mps": round(state.speed, 3),
             "slam": self.enable_slam,
             "slam_scan_ms": round(self.slam_scan_ms, 2),
@@ -573,7 +669,9 @@ class PyBulletSimulation:
             for _ in range(self.tick_steps):
                 self.step_once()
         elif kind == "run.set_speed":
-            self.controller.base_speed = max(0.5, min(6.0, float(msg.get("speed", 2.2))))
+            self.speed_limit = max(0.5, min(6.0, float(msg.get("speed", 3.0))))
+            self.controller.base_speed = self.speed_limit
+            self.pure_pursuit.speed_limit = self.speed_limit
         elif kind == "control.mode":
             mode = str(msg.get("mode", "auto"))
             self.control_mode = mode if mode in {"auto", "manual"} else "auto"
@@ -584,6 +682,14 @@ class PyBulletSimulation:
                 controller if controller in {"wall_follow", "pure_pursuit"} else "wall_follow"
             )
             self.actuation = Actuation()
+        elif kind == "localization.mode":
+            mode = str(msg.get("mode", "gt"))
+            self.localization_mode = mode if mode in {"gt", "odom", "mcl"} else "gt"
+            self.control_pose = None
+            if self.localization_mode == "mcl" and self.slam is not None:
+                self.slam_mcl_enabled = True
+                self.slam.set_mcl_enabled(True)
+                self._slam_dirty = True
         elif kind == "slam.set_options":
             if self.slam is not None:
                 if "mcl_enabled" in msg:
