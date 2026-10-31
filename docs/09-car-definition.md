@@ -4,12 +4,16 @@ The car is defined once and everything else is derived from it.
 
 ## Sources
 
-- `simulator/configs/vehicle.yaml` — chassis, mass, wheels, drivetrain and body
-  parts.
-- `simulator/configs/sensors.yaml` — lidar, ultrasonic, IMU and encoder
+- `simulator/configs/vehicle_awake2027.yaml` — reference AWAKE 2027 car (BOM in
+  [`10-hardware.md`](10-hardware.md)).
+- `simulator/configs/vehicle.yaml` — generic example car.
+- `simulator/configs/sensors.yaml` / `sensors_awake2027.yaml` — sensor
   characteristics and body-frame mounts.
 - Python — load the same models and modify them, then pass them to
   `Simulation(vehicle=..., sensors=...)`. See `examples/custom_car.py`.
+
+The vehicle config generates both the PyBullet URDF and the MuJoCo MJCF. The
+dashboard car studio reads the same object, so the three cannot silently drift.
 
 ## Body frame
 

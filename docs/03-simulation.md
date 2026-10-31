@@ -22,10 +22,10 @@ next `Observation`.
 - wheel radius, width, mass and vertical offset;
 - drive layout, motor, battery, tires, suspension, aero and steering limits.
 
-`simulator/car_urdf.py` turns that description into a URDF. PyBullet loads the
-generated file, so wheel joints, collision geometry and the dashboard body parts
-cannot silently disagree.
-
+`simulator/car_urdf.py` and `simulator/mjcf.py` turn that description into the
+physics models loaded by the PyBullet and MuJoCo backends. The dashboard uses the
+same object, so wheel joints, collision geometry and the car studio cannot
+silently disagree.
 Physics applications:
 
 - chassis mass and inertia from the configured mass and collision bounds;
@@ -39,9 +39,18 @@ Physics applications:
 ## Frames
 
 World: x forward, y left, z up. Body: x forward, y left, z up, origin at the
-chassis centre. Sensor mounts use the body frame. The world converts PyBullet's
-base centre-of-mass pose back to the body-frame origin so raycast origins and
-sensor heights stay consistent.
+chassis centre. Sensor mounts use the body frame. PyBullet reports the base
+centre-of-mass pose, so the PyBullet world converts it back to the body-frame
+origin; MuJoCo reports the body frame directly. Raycast origins and sensor heights
+therefore use the same convention in both backends.
+
+## Backends
+
+- **MuJoCo** is the default digital twin. It uses a generated MJCF with contact
+  wheels, steering hinges, position-servo actuators and per-wheel torque motors.
+- **PyBullet** is kept as a comparison and debugging backend.
+- Both implement the `World` protocol in `simulator/world_api.py`, so the same
+  lidar, ultrasonic, odometry and dashboard code runs on either.
 
 ## Lap timing
 

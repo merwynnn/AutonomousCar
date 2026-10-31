@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 from algorithms.interface import Actuation, Observation
 from algorithms.template import TemplateController
 from simulator.cli import load_controller
 from simulator.simulation import Simulation
 
+GENERIC_SCENARIO = (
+    Path(__file__).resolve().parents[1] / "simulator" / "configs" / "scenario.yaml"
+)
+
 
 def test_observation_is_sensor_only_and_realtime_filtered() -> None:
-    with Simulation(realism="ideal", lidar_subrays=1) as simulation:
+    with Simulation(GENERIC_SCENARIO, realism="ideal", lidar_subrays=1) as simulation:
         observation = simulation.reset()
         assert isinstance(observation, Observation)
         assert not hasattr(observation, "true_pose")
@@ -32,7 +38,7 @@ def test_observation_is_sensor_only_and_realtime_filtered() -> None:
 
 
 def test_template_controller_and_loader() -> None:
-    with Simulation(realism="ideal", lidar_subrays=1) as simulation:
+    with Simulation(GENERIC_SCENARIO, realism="ideal", lidar_subrays=1) as simulation:
         observation = simulation.reset()
         controller = load_controller("algorithms.template:TemplateController")
         controller.reset()
@@ -44,7 +50,7 @@ def test_template_controller_and_loader() -> None:
 
 
 def test_reset_restores_start_state() -> None:
-    with Simulation(realism="ideal", lidar_subrays=1) as simulation:
+    with Simulation(GENERIC_SCENARIO, realism="ideal", lidar_subrays=1) as simulation:
         first = simulation.reset()
         for _ in range(30):
             simulation.step(Actuation(throttle=0.4, steering=0.1))

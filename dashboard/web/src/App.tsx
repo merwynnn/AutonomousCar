@@ -1101,7 +1101,9 @@ export default function App() {
             <i />
             {statusLabel(status)}
           </span>
-          <span className="menubar-meta">PyBullet · 240 Hz</span>
+          <span className="menubar-meta">
+            {(hello?.backend ?? 'mujoco').toUpperCase()} · 240 Hz
+          </span>
           {hello?.warnings.length ? (
             <span className="menubar-warning" title={hello.warnings.join('\n')}>
               {hello.warnings.length} warning

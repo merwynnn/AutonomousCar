@@ -14,7 +14,8 @@ packet loss, latency/jitter, temperature drift and self-filter warnings.
 The model:
 
 - assigns each beam a capture time during the rotating scan;
-- traces 3D rays from the rotated mount, so mount RPY affects what is measured;
+- traces 3D rays from the rotated mount through the active physics backend, so
+  mount RPY affects what is measured;
 - combines sub-rays for mixed pixels;
 - transforms hits into the scan-start lidar frame, leaving motion distortion for
   downstream algorithms;

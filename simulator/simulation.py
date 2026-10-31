@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from algorithms.interface import (
@@ -21,14 +22,16 @@ from simulator.config import (
     VehicleConfig,
     load_bundle,
 )
+from simulator.mujoco_world import MuJoCoWorld
 from simulator.odometry import OdometryModel
 from simulator.sensors.lidar import LidarModel, LidarScan
 from simulator.sensors.ultrasonic import UltrasonicModel, UltrasonicReading
 from simulator.track import TrackGeometry, build_test_track, project_to_polyline
 from simulator.vehicle import VehicleState
 from simulator.world import PyBulletWorld
+from simulator.world_api import World
 
-DEFAULT_SCENARIO = Path(__file__).resolve().parent / "configs" / "scenario.yaml"
+DEFAULT_SCENARIO = Path(__file__).resolve().parent / "configs" / "awake_2027.yaml"
 
 
 @dataclass(frozen=True)
@@ -50,7 +53,12 @@ class SimulationStatus:
 
 
 class Simulation:
-    """PyBullet simulator implementing the ``RobotAPI`` sensor boundary."""
+    """Fixed-step simulator implementing the ``RobotAPI`` sensor boundary.
+
+    ``backend="pybullet"`` is the legacy world. ``backend="mujoco"`` uses the
+    contact-based MuJoCo digital twin. Both return the same ``Observation`` and
+    expose ground truth only through ``true_state()``.
+    """
 
     def __init__(
         self,
@@ -61,6 +69,7 @@ class Simulation:
         realism: Realism | None = None,
         vehicle: VehicleConfig | None = None,
         sensors: SensorsConfig | None = None,
+        backend: Literal["pybullet", "mujoco"] = "mujoco",
     ) -> None:
         self.bundle: ScenarioBundle = load_bundle(scenario_path or DEFAULT_SCENARIO)
         self.scenario = self.bundle.scenario
@@ -72,6 +81,7 @@ class Simulation:
         # letting code build a car without editing YAML.
         self.vehicle = vehicle if vehicle is not None else self.bundle.vehicle
         self.sensors = sensors if sensors is not None else self.bundle.sensors
+        self.backend = backend
         self.track: TrackGeometry = build_test_track(width_m=0.9)
         self.gui = gui
         self.realism_scale = {"ideal": 0.0, "realistic": 1.0, "harsh": 2.0}[
@@ -92,7 +102,21 @@ class Simulation:
             lidar_config.divergence["subrays"] = max(1, lidar_subrays)
         self._lidar_config = lidar_config
 
-        self.world = PyBulletWorld(self.track, self.vehicle, gui=gui)
+        self.world: World
+        if backend == "mujoco":
+            self.world = MuJoCoWorld(
+                self.track,
+                self.vehicle,
+                physics_hz=cfg.physics_hz,
+                gui=gui,
+            )
+        else:
+            self.world = PyBulletWorld(
+                self.track,
+                self.vehicle,
+                gui=gui,
+                physics_hz=cfg.physics_hz,
+            )
         self.odometry = OdometryModel(self.scenario.odometry, seed=self.scenario.seed)
         self.lidar = LidarModel(
             self._lidar_config, self.world, seed=self.scenario.seed

@@ -1,12 +1,25 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from simulator.config import load_bundle
 from simulator.simulation import DEFAULT_SCENARIO
 from simulator.track import build_test_track, project_to_polyline
 
+ROOT = Path(__file__).resolve().parents[1]
 
-def test_scenario_bundle_resolves_vehicle_and_sensors() -> None:
+
+def test_reference_scenario_is_default() -> None:
     bundle = load_bundle(DEFAULT_SCENARIO)
+    assert bundle.scenario.name == "awake_2027_reference"
+    assert bundle.vehicle.name == "awake_2027_reference_car"
+    assert bundle.sensors.lidar.beams == 450
+    assert len(bundle.sensors.ultrasonic.sensors) == 4
+    assert bundle.scenario.simulation.control_hz == 60.0
+
+
+def test_generic_scenario_bundle_resolves_vehicle_and_sensors() -> None:
+    bundle = load_bundle(ROOT / "simulator" / "configs" / "scenario.yaml")
     assert bundle.scenario.name == "test_track_baseline"
     assert bundle.vehicle.wheelbase_m > 0.0
     assert bundle.sensors.lidar.beams == 720

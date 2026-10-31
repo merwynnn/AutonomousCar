@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import time
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from algorithms.gap_follow import FurthestGapController, GapDebug
 from algorithms.interface import Actuation, Observation
@@ -25,19 +26,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from simulator.car_urdf import build_urdf
 from simulator.config import load_scenario
+from simulator.mjcf import build_mjcf
 from simulator.simulation import DEFAULT_SCENARIO, Simulation
 from simulator.vehicle import VehicleState
 
 from dashboard.spec import sensor_payload, track_payload, vehicle_payload
 
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
+REFERENCE_SCENARIO = (
+    Path(__file__).resolve().parents[1] / "simulator" / "configs" / "awake_2027.yaml"
+)
 
 
 class DashboardSimulation:
     """Owns one simulator instance and turns it into dashboard telemetry."""
 
-    def __init__(self, scenario_path: str | Path | None = None) -> None:
-        self.scenario_path = Path(scenario_path or DEFAULT_SCENARIO)
+    def __init__(self, scenario_path: str | Path | None = None, backend: str | None = None) -> None:
+        default_scenario = (
+            REFERENCE_SCENARIO if REFERENCE_SCENARIO.exists() else DEFAULT_SCENARIO
+        )
+        self.scenario_path = Path(
+            scenario_path or os.environ.get("AWAKE_SCENARIO") or default_scenario
+        )
+        backend_name = backend or os.environ.get("AWAKE_BACKEND", "mujoco")
+        self.backend: Literal["pybullet", "mujoco"] = (
+            "mujoco" if backend_name == "mujoco" else "pybullet"
+        )
         self.scenario = load_scenario(self.scenario_path)
         self.sim = self._build_sim()
         self.paused = True
@@ -58,7 +72,7 @@ class DashboardSimulation:
     def _build_sim(self) -> Simulation:
         # One lidar sub-ray keeps live dashboard frame rates healthy; batch and
         # CLI runs still use the configured fidelity.
-        return Simulation(self.scenario_path, lidar_subrays=1)
+        return Simulation(self.scenario_path, lidar_subrays=1, backend=self.backend)
 
     def reload_config(self) -> None:
         with contextlib.suppress(Exception):
@@ -98,7 +112,8 @@ class DashboardSimulation:
         return {
             "type": "hello",
             "protocol": 1,
-            "mode": "pybullet",
+            "mode": self.backend,
+            "backend": self.backend,
             "scenario": {
                 "name": self.scenario.name,
                 "description": self.scenario.description,
@@ -133,7 +148,8 @@ class DashboardSimulation:
         lap_times = list(self.sim.lap_times)
         return {
             "type": "state",
-            "mode": "pybullet",
+            "mode": self.backend,
+            "backend": self.backend,
             "t": round(self.sim.sim_time, 4),
             "paused": self.paused,
             "finished": self.finished,
@@ -341,7 +357,8 @@ class DashboardSimulation:
 
     def status(self) -> dict[str, Any]:
         return {
-            "mode": "pybullet",
+            "mode": self.backend,
+            "backend": self.backend,
             "scenario": self.scenario.name,
             "paused": self.paused,
             "finished": self.finished,
@@ -396,7 +413,8 @@ app.add_middleware(
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "mode": "pybullet",
+        "mode": manager.backend,
+        "backend": manager.backend,
         "vehicle": manager.sim.vehicle.name,
     }
 
@@ -426,6 +444,19 @@ def car_urdf() -> Response:
         content=build_urdf(manager.sim.vehicle),
         media_type="application/xml",
         headers={"Content-Disposition": 'attachment; filename="car.urdf"'},
+    )
+
+
+@app.get("/api/car/mjcf")
+def car_mjcf() -> Response:
+    return Response(
+        content=build_mjcf(
+            manager.sim.vehicle,
+            manager.sim.track,
+            timestep_s=1.0 / manager.sim.physics_dt,
+        ),
+        media_type="application/xml",
+        headers={"Content-Disposition": 'attachment; filename="car.xml"'},
     )
 
 

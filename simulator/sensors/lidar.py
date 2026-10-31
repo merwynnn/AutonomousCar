@@ -10,7 +10,7 @@ import numpy as np
 from simulator.config import LidarConfig, mount_position, mount_rpy_deg
 from simulator.transforms import rpy_matrix, yaw_matrix
 from simulator.vehicle import VehicleState
-from simulator.world import PyBulletWorld
+from simulator.world_api import World
 
 
 @dataclass
@@ -37,7 +37,7 @@ class LidarModel:
     def __init__(
         self,
         config: LidarConfig,
-        world: PyBulletWorld,
+        world: World,
         seed: int = 0,
     ) -> None:
         self.config = config

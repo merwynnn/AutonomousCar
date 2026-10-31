@@ -1,0 +1,116 @@
+name: awake_2027_reference_car
+description: >
+  Reference AWAKE 2027 1/10 4WD touring car digital twin. One sensored
+  brushless motor, VESC, Ackermann steering, Raspberry Pi 5, LD19 lidar,
+  four ultrasonic sensors, BNO085 IMU, rear-wheel encoders.
+scale: 0.1
+
+dimensions:
+  length_m: 0.42
+  width_m: 0.19
+  height_m: 0.18
+  ground_clearance_m: 0.012
+
+mass_kg: 2.25
+center_of_mass_m: [0.005, 0.0, 0.038]
+
+wheelbase_m: 0.257
+track_width_m: 0.185
+wheel_radius_m: 0.035
+wheel_width_m: 0.028
+wheel_mass_kg: 0.050
+wheel_offset_z_m: -0.055
+drive: 4wd
+
+# Body parts in the vehicle frame (x forward, y left, z up). Keep the collision
+# footprint inside the 45 x 20 x 20 cm competition envelope.
+structure:
+  - name: lower_deck
+    shape: box
+    position_m: [0.0, 0.0, -0.042]
+    size_m: [0.34, 0.150, 0.018]
+    color: "#20262c"
+    collision: true
+  - name: main_body
+    shape: box
+    position_m: [0.0, 0.0, 0.002]
+    size_m: [0.395, 0.178, 0.052]
+    color: "#2b5f78"
+    collision: true
+  - name: electronics_tray
+    shape: box
+    position_m: [-0.055, 0.0, 0.035]
+    size_m: [0.16, 0.15, 0.018]
+    color: "#1a1f24"
+    collision: false
+  - name: cabin
+    shape: box
+    position_m: [-0.065, 0.0, 0.052]
+    size_m: [0.15, 0.125, 0.032]
+    color: "#171c21"
+    collision: false
+  - name: sensor_mast
+    shape: cylinder
+    position_m: [0.105, 0.0, 0.070]
+    size_m: [0.018, 0.018, 0.040]
+    color: "#3a4148"
+    collision: false
+  - name: front_bumper
+    shape: box
+    position_m: [0.205, 0.0, -0.020]
+    size_m: [0.018, 0.170, 0.035]
+    color: "#1f2429"
+    collision: true
+  - name: rear_bumper
+    shape: box
+    position_m: [-0.205, 0.0, -0.020]
+    size_m: [0.018, 0.170, 0.035]
+    color: "#1f2429"
+    collision: true
+  - name: wing
+    shape: box
+    position_m: [-0.190, 0.0, 0.060]
+    size_m: [0.030, 0.165, 0.008]
+    color: "#171c21"
+    collision: false
+
+steering:
+  max_angle_deg: 28.0
+  rate_deg_s: 300.0
+  deadband_deg: 0.5
+  backlash_deg: 0.5
+  latency_ms: 18.0
+
+motor:
+  # 13.5T sensored brushless, approximately 3000-3500 KV class with 2S.
+  max_torque_nm: 0.72
+  max_rpm: 14000.0
+  gear_ratio: 5.0
+  current_limit_a: 60.0
+  torque_lag_ms: 12.0
+
+battery:
+  cells: 2
+  nominal_voltage_v: 7.4
+  capacity_mah: 5000.0
+  internal_resistance_ohm: 0.035
+
+tires:
+  friction_front: 1.15
+  friction_rear: 1.05
+  rolling_resistance: 0.015
+
+suspension:
+  stiffness: 30.0
+  damping: 3.0
+  max_travel_m: 0.015
+
+aero:
+  drag_coefficient: 0.70
+  frontal_area_m2: 0.018
+
+limits:
+  max_length_m: 0.45
+  max_width_m: 0.20
+  max_height_m: 0.20
+  min_ground_clearance_m: 0.005

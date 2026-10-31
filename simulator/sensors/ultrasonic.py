@@ -14,7 +14,7 @@ from simulator.config import (
 )
 from simulator.transforms import rpy_matrix, yaw_matrix
 from simulator.vehicle import VehicleState
-from simulator.world import PyBulletWorld
+from simulator.world_api import World
 
 
 @dataclass
@@ -30,7 +30,7 @@ class UltrasonicModel:
     def __init__(
         self,
         config: UltrasonicConfig,
-        world: PyBulletWorld,
+        world: World,
         seed: int = 0,
     ) -> None:
         self.config = config

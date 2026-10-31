@@ -12,7 +12,7 @@ import argparse
 import importlib
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from algorithms.interface import Controller
 
@@ -50,6 +50,7 @@ def run(
     max_time: float | None,
     vehicle: VehicleConfig | None = None,
     sensors: SensorsConfig | None = None,
+    backend: Literal["pybullet", "mujoco"] = "mujoco",
 ) -> int:
     controller = load_controller(controller_spec)
     with Simulation(
@@ -60,6 +61,7 @@ def run(
         realism=realism,
         vehicle=vehicle,
         sensors=sensors,
+        backend=backend,
     ) as simulation:
         simulation.scenario.race.laps = laps
         observation = simulation.reset()
@@ -121,6 +123,12 @@ def main() -> None:
         help="override the scenario sensor YAML",
     )
     parser.add_argument(
+        "--backend",
+        choices=("mujoco", "pybullet"),
+        default=None,
+        help="physics backend (default: mujoco, or pybullet with --gui)",
+    )
+    parser.add_argument(
         "--controller",
         default="algorithms.template:TemplateController",
         help="module:ClassOrFactory implementing reset() and update()",
@@ -151,6 +159,9 @@ def main() -> None:
         help="simulation-time limit in seconds",
     )
     args = parser.parse_args()
+    backend: Literal["pybullet", "mujoco"] = (
+        args.backend or ("pybullet" if args.gui else "mujoco")
+    )
     raise SystemExit(
         run(
             scenario=args.scenario,
@@ -164,6 +175,7 @@ def main() -> None:
             max_time=args.max_time,
             vehicle=load_vehicle(args.vehicle) if args.vehicle else None,
             sensors=load_sensors(args.sensors) if args.sensors else None,
+            backend=backend,
         )
     )
 

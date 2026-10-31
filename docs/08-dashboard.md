@@ -49,7 +49,7 @@ than a consumer web dashboard:
 
 ## Protocol
 
-REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/track`.
+REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/car/mjcf`, `/api/track`.
 
 WebSocket `/ws/telemetry`:
 
@@ -57,6 +57,9 @@ WebSocket `/ws/telemetry`:
 - client: `run.start`, `run.pause`, `run.reset`, `run.step`,
   `run.set_speed`, `control.mode`, `control.controller`, `drive.command`,
   `config.reload`, `ping`.
+
+The backend defaults to MuJoCo and can be switched with `AWAKE_BACKEND=pybullet`.
+The dashboard displays the active backend in the title bar.
 
 The backend throttles state to 30 Hz and forwards new lidar scans at the sensor
 rate. It drops stale frames rather than delaying physics.

@@ -1,10 +1,16 @@
 # AWAKE 2027 — simulator core & car lab
 
-A physically credible standalone simulator for the AWAKE Challenge 2027 mini
-autonomous vehicle, with a browser car lab, a sensor-only controller boundary and
-a data-driven vehicle definition.
+A physically credible standalone simulator and browser car lab for the AWAKE
+Challenge 2027 mini autonomous vehicle. The default physics backend is a
+MuJoCo digital twin; the original PyBullet backend remains available for
+comparison. Both share one vehicle definition, one sensor-only controller
+boundary and the same dashboard.
 
 ![Car studio](docs/assets/dashboard-car-studio.png)
+
+Reference hardware and calibration:
+[hardware BOM](docs/10-hardware.md) · [calibration protocol](docs/11-calibration.md) ·
+[car definition](docs/09-car-definition.md) · [dashboard](docs/08-dashboard.md).
 
 The core remains deliberately small: **no SLAM, MCL, occupancy grid, racing line
 or telemetry cloud**. The dashboard is a local renderer and operator console for
@@ -18,8 +24,9 @@ Browser (React + Three.js)
 FastAPI dashboard (dashboard/)
     │
 Simulation core (simulator/, 240 Hz physics, 60 Hz control)
-    ├── generated URDF from the vehicle config
-    ├── PyBullet world, track, car, sensors and timing
+    ├── generated URDF/MJCF from the vehicle config
+    ├── MuJoCo digital twin (default) and PyBullet backend
+    ├── track, car, sensors and timing
     └── non-ideal lidar, ultrasonic and drifting odometry
 Algorithms (algorithms/)
     └── Observation -> Actuation controllers (NumPy only)
@@ -40,9 +47,11 @@ Algorithms (algorithms/)
 simulator/
   config.py                 pydantic config models + YAML loading
   car_urdf.py               generates the URDF from VehicleConfig
+  mjcf.py                   generates the MuJoCo MJCF digital twin
   track.py                  peanut track, walls and obstacles
   vehicle.py                VehicleState / Actuation
-  world.py                  PyBullet world, generated car and raycasts
+  world.py                  PyBullet world and raycasts
+  mujoco_world.py           MuJoCo world and raycasts
   transforms.py             body/sensor rotation helpers
   odometry.py               drifting wheel/IMU odometry
   sensors/                  non-ideal lidar and ultrasonic models
@@ -61,8 +70,10 @@ dashboard/
   web/                      React/Three.js dashboard
 examples/
   custom_car.py             fully code-defined car example
-tests/
 docs/
+ 10-hardware.md             reference BOM and wiring
+ 11-calibration.md          measurement and validation protocol
+tests/
 ```
 
 ## 2. Quick start
@@ -81,24 +92,33 @@ npm run dev
 
 Open the Vite URL (usually `http://localhost:5173`). The API runs on
 `http://localhost:8000`. A production build is served by the backend after
-`npm run build`.
+`npm run build`. The dashboard defaults to the reference car in
+`simulator/configs/awake_2027.yaml` and the MuJoCo backend.
 
 Headless simulator:
 
 ```bash
+# MuJoCo digital twin (default)
 uv run python -m simulator.cli --laps 1 --max-time 5
 uv run python -m simulator.cli \
   --controller algorithms.gap_follow:FurthestGapController \
   --laps 1 --realism ideal --lidar-subrays 1
+
+# compare against the PyBullet backend
+uv run python -m simulator.cli --backend pybullet --laps 1 --max-time 5
 ```
+
+Switch the dashboard backend with `AWAKE_BACKEND=pybullet`, and the scenario with
+`AWAKE_SCENARIO=/path/to/scenario.yaml`.
 
 ## 3. The car is data
 
-There is **one** vehicle definition. It generates the URDF that PyBullet loads
-and the geometry that the dashboard draws. There is no second hand-written car
-model.
+There is **one** vehicle definition. It generates the URDF/MJCF that the physics
+backends load and the geometry that the dashboard draws. There is no second
+hand-written car model.
 
-`simulator/configs/vehicle.yaml` defines:
+`simulator/configs/vehicle_awake2027.yaml` defines the reference competition car;
+`simulator/configs/vehicle.yaml` remains the generic example. Both define:
 
 - mass, centre of mass and competition limits;
 - chassis `structure` parts (box / cylinder / sphere, visual and/or collidable);
@@ -172,17 +192,18 @@ See [`examples/custom_car.py`](examples/custom_car.py) for a runnable example:
 uv run python -m examples.custom_car
 ```
 
-Download the generated URDF from the running dashboard:
+Download the generated physics models from the running dashboard:
 
 ```bash
 curl -o car.urdf http://localhost:8000/api/car/urdf
+curl -o car.xml  http://localhost:8000/api/car/mjcf
 ```
 
 ## 4. Dashboard
 
 ### Track view
 
-Live PyBullet scene with the car, walls, obstacles, lidar returns, path trail and
+Live MuJoCo/PyBullet scene with the car, walls, obstacles, lidar returns, path trail and
 odometry trail. Drive manually with `W/A/S/D` or use the two lidar-only demo
 controllers.
 
@@ -203,12 +224,12 @@ Useful controls:
 - `W/A/S/D` — manual drive
 
 After editing `vehicle.yaml` or `sensors.yaml`, click **Reload config**. The
-backend rebuilds the URDF and simulation and pushes a fresh `hello` message to
+backend rebuilds the URDF/MJCF and simulation and pushes a fresh `hello` message to
 the browser.
 
 ### REST and WebSocket
 
-- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/track`
+- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/car/mjcf`, `/api/track`
 - `WS /ws/telemetry` — hello, state and scan messages; commands include
   `run.start`, `run.pause`, `run.reset`, `run.step`, `run.set_speed`,
   `control.mode`, `control.controller`, `drive.command`, `config.reload`.
@@ -306,9 +327,10 @@ python -m simulator.cli \
   --laps 5 --lidar-subrays 1
 ```
 
-The algorithm contract only needs NumPy. PyBullet on a Pi is optional and needs
-a working OpenGL/EGL setup. On the real car, implement `RobotAPI` with your
-serial/CAN adapter.
+The algorithm contract only needs NumPy. MuJoCo and PyBullet are simulation
+dependencies; the real car only needs a `RobotAPI` adapter. PyBullet on a Pi is
+optional and needs a working OpenGL/EGL setup. On the real car, implement
+`RobotAPI` with your serial/CAN adapter.
 
 ## 9. Configuration
 

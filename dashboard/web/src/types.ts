@@ -211,6 +211,7 @@ export interface HelloMessage {
   type: 'hello';
   protocol: number;
   mode: string;
+  backend: 'pybullet' | 'mujoco';
   scenario: {
     name: string;
     description: string;
@@ -234,6 +235,7 @@ export interface HelloMessage {
 export interface StateMessage {
   type: 'state';
   mode: string;
+  backend: 'pybullet' | 'mujoco';
   t: number;
   paused: boolean;
   finished: boolean;

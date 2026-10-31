@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "awake-simulator-core"
-version = "0.1.0"
+version = "0.2.0"
 description = "Standalone PyBullet simulator, sensor-only algorithm boundary and car lab dashboard for the AWAKE 2027 car"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -12,6 +12,7 @@ license = { text = "Proprietary" }
 authors = [{ name = "AWAKE Challenge team" }]
 dependencies = [
     "fastapi>=0.115",
+    "mujoco>=3.17.0",
     "numpy>=1.26",
     "pybullet==3.2.7",
     "pydantic>=2.7",

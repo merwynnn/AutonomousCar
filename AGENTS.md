@@ -27,8 +27,9 @@ Browser (React + Three.js)
 FastAPI dashboard (dashboard/)
     │
 Simulation core (simulator/, 240 Hz physics, 60 Hz control)
-    ├── generated URDF (simulator/car_urdf.py)
-    ├── PyBullet world, track, car and timing
+    ├── generated URDF/MJCF (simulator/car_urdf.py, simulator/mjcf.py)
+    ├── MuJoCo digital twin (default) and PyBullet backend
+    ├── track, car, sensors and timing
     ├── non-ideal lidar, ultrasonic and odometry models
     └── scenario/vehicle/sensor YAML configs
 Algorithms (algorithms/)
@@ -53,6 +54,8 @@ Detailed references:
 - `docs/04-sensors.md` — non-ideal sensor models.
 - `docs/08-dashboard.md` — dashboard views, protocol and UX rules.
 - `docs/09-car-definition.md` — the single-source car specification.
+- `docs/10-hardware.md` — reference BOM, wiring and packaging.
+- `docs/11-calibration.md` — measurement and validation protocol.
 
 ## 3. Quick start
 
@@ -89,8 +92,9 @@ The car is data, not a hand-written URDF.
 - One `VehicleConfig` is the only source of truth for chassis geometry, mass,
   centre of mass, wheelbase, track width, wheel size/position, motor, tires and
   steering limits.
-- `simulator/car_urdf.py` generates the URDF used by PyBullet. Never fork a
-  second vehicle model in the frontend or physics code.
+- `simulator/car_urdf.py` and `simulator/mjcf.py` generate the physics models
+  used by the PyBullet and MuJoCo backends. Never fork a second vehicle model in
+  the frontend or physics code.
 - Sensor mounts live in `SensorsConfig` in the vehicle body frame:
   x forward, y left, z up, origin at the chassis centre.
 - Body parts are `structure` entries. Box, cylinder and sphere parts may be
@@ -98,7 +102,7 @@ The car is data, not a hand-written URDF.
 - A code-defined car is valid: construct `VehicleConfig` and `SensorsConfig` in
   Python and pass them to `Simulation(vehicle=..., sensors=...)`.
 - After changing YAML, use the dashboard **Reload config** action (or restart
-  the server). A reload must rebuild the URDF, sensors and simulation.
+  the server). A reload must rebuild the URDF/MJCF, sensors and simulation.
 - The dashboard's car studio must show only the car, never track walls, surface,
   lidar returns or trails.
 
@@ -207,7 +211,7 @@ Test layers:
 - Do not use GPS (competition rule).
 - Do not let controllers read ground truth or future sensor data.
 - Do not silently replace realistic sensors with perfect ones to make a test pass.
-- Do not duplicate car geometry in the dashboard or a second URDF.
+- Do not duplicate car geometry in the dashboard, a second URDF or a second MJCF.
 - Do not put track geometry in the car-only studio view.
 - Do not add ROS 2, Gazebo or heavy GPU dependencies without an ADR; the MVP is
   deliberately lightweight.
@@ -216,15 +220,17 @@ Test layers:
 ## 11. Directory map
 
 ```text
-simulator/          standalone PyBullet core
+simulator/          standalone physics and sensor core
   config.py         pydantic config models + YAML loading
   car_urdf.py       generated URDF from VehicleConfig
-  world.py          world, walls, car loading and raycasts
+  mjcf.py           generated MuJoCo MJCF from VehicleConfig
+  world.py          PyBullet backend and raycasts
+  mujoco_world.py   MuJoCo backend and raycasts
   sensors/          lidar and ultrasonic models
   simulation.py     fixed-step loop, latency filtering, lap timing
   track.py          test track and procedural obstacles
   configs/          scenario, vehicle and sensor YAML
-  assets/           reference URDF only; runtime URDF is generated
+  assets/           reference URDF only; runtime models are generated
 algorithms/         sensor-only controller contract + demo controllers
 dashboard/          FastAPI backend and React/Three.js car lab
   server.py         REST + WebSocket adapter

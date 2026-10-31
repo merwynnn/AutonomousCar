@@ -7,7 +7,7 @@ FastAPI dashboard (dashboard/server.py)
     │
 DashboardSimulation (adapts simulator.Simulation)
     │
-simulator/  (PyBullet, sensors, track, odometry, timing)
+simulator/  (MuJoCo/PyBullet, sensors, track, odometry, timing)
     │
 algorithms/ (Observation -> Actuation, NumPy only)
 ```
@@ -36,5 +36,5 @@ algorithms/ (Observation -> Actuation, NumPy only)
 `scenario.yaml` references a vehicle and sensor YAML next to it. `Simulation`
 can also receive `VehicleConfig` and `SensorsConfig` directly from Python.
 
-The generated URDF, dashboard car studio and PyBullet collision geometry all use
+The generated URDF/MJCF, dashboard car studio and physics collision geometry all use
 the same `VehicleConfig`; `dashboard/spec.py` serializes it for the browser.

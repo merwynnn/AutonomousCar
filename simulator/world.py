@@ -25,10 +25,11 @@ class PyBulletWorld:
         track: TrackGeometry,
         vehicle: VehicleConfig,
         gui: bool = False,
+        physics_hz: float = 240.0,
     ) -> None:
         self.track = track
         self.vehicle = vehicle
-        self.physics_hz = 240.0
+        self.physics_hz = physics_hz
         self.dt = 1.0 / self.physics_hz
         self.client = p.connect(p.GUI if gui else p.DIRECT)
         if self.client < 0:
@@ -51,7 +52,8 @@ class PyBulletWorld:
                 cameraTargetPosition=[7.5, 4.0, 0.0],
             )
 
-        plane = p.loadURDF("plane.urdf")
+        plane_shape = p.createCollisionShape(p.GEOM_PLANE)
+        plane = p.createMultiBody(baseMass=0.0, baseCollisionShapeIndex=plane_shape)
         p.changeDynamics(plane, -1, lateralFriction=0.9, restitution=0.0)
 
         self.wall_ids = self._build_walls()
