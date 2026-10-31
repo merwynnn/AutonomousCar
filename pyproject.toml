@@ -5,16 +5,18 @@ build-backend = "hatchling.build"
 [project]
 name = "awake-simulator-core"
 version = "0.1.0"
-description = "Standalone PyBullet simulator and sensor-only algorithm boundary for the AWAKE 2027 car"
+description = "Standalone PyBullet simulator, sensor-only algorithm boundary and car lab dashboard for the AWAKE 2027 car"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [{ name = "AWAKE Challenge team" }]
 dependencies = [
+    "fastapi>=0.115",
     "numpy>=1.26",
     "pybullet==3.2.7",
     "pydantic>=2.7",
     "pyyaml>=6.0",
+    "uvicorn[standard]>=0.30",
 ]
 
 [project.optional-dependencies]
@@ -26,9 +28,10 @@ dev = [
 
 [project.scripts]
 awake-sim-core = "simulator.cli:main"
+awake-dashboard = "dashboard.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["simulator", "algorithms"]
+packages = ["simulator", "algorithms", "dashboard", "examples"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -37,7 +40,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["simulator", "algorithms", "tests"]
+src = ["simulator", "algorithms", "dashboard", "tests", "examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -46,7 +49,7 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 mypy_path = "."
-packages = ["simulator", "algorithms"]
+packages = ["simulator", "algorithms", "dashboard", "examples"]
 strict = false
 warn_unused_ignores = true
 warn_redundant_casts = true

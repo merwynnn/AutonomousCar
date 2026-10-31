@@ -7,7 +7,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from simulator.config import UltrasonicConfig
+from simulator.config import (
+    UltrasonicConfig,
+    mount_position,
+    mount_rpy_deg,
+)
+from simulator.transforms import rpy_matrix, yaw_matrix
 from simulator.vehicle import VehicleState
 from simulator.world import PyBulletWorld
 
@@ -47,18 +52,28 @@ class UltrasonicModel:
         scale = max(0.0, realism_scale)
         readings: list[UltrasonicReading] = []
         for sensor in cfg.sensors:
-            mount = sensor.mount
-            position = mount.get("position_m", [0.0, 0.0, 0.08])
-            rpy = mount.get("rpy_deg", [0.0, 0.0, 0.0])
-            local_yaw = math.radians(float(rpy[2]))
-            x = state.x + math.cos(state.yaw) * position[0] - math.sin(state.yaw) * position[1]
-            y = state.y + math.sin(state.yaw) * position[0] + math.cos(state.yaw) * position[1]
-            z = state.z + (float(position[2]) - 0.09)
-            origins = [(x, y, z)] * self.ray_offsets.size
-            angles = [
-                state.yaw + local_yaw + float(offset) for offset in self.ray_offsets
-            ]
-            hits = self.world.raycast_batch(origins, angles, cfg.max_range_m)
+            position = mount_position(sensor.mount)
+            roll, pitch, yaw_deg = mount_rpy_deg(sensor.mount)
+            body_rotation = yaw_matrix(state.yaw)
+            sensor_rotation = body_rotation @ rpy_matrix(
+                math.radians(roll), math.radians(pitch), math.radians(yaw_deg)
+            )
+            origin = np.array([state.x, state.y, state.z]) + (
+                body_rotation @ np.array(position, dtype=float)
+            )
+            origins = [
+                (float(origin[0]), float(origin[1]), float(origin[2]))
+            ] * self.ray_offsets.size
+            directions = []
+            for offset in self.ray_offsets:
+                angle = float(offset)
+                direction = sensor_rotation @ np.array(
+                    [math.cos(angle), math.sin(angle), 0.0]
+                )
+                directions.append(
+                    (float(direction[0]), float(direction[1]), float(direction[2]))
+                )
+            hits = self.world.raycast_vectors(origins, directions, cfg.max_range_m)
             ranges = [hit[0] for hit in hits if hit is not None]
             if not ranges:
                 reading_range: float | None = None

@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from simulator.config import LidarConfig
+from simulator.config import LidarConfig, mount_position, mount_rpy_deg
+from simulator.transforms import rpy_matrix, yaw_matrix
 from simulator.vehicle import VehicleState
 from simulator.world import PyBulletWorld
 
@@ -45,16 +46,16 @@ class LidarModel:
         self.dead_rng = np.random.default_rng(seed + 102)
         self.dropped_scan_rng = np.random.default_rng(seed + 103)
         self.beams = config.beams
-        self.angles = np.linspace(-math.pi, math.pi, self.beams, endpoint=False)
+        direction = -1.0 if config.scan_direction == "clockwise" else 1.0
+        self.angles = direction * np.linspace(-math.pi, math.pi, self.beams, endpoint=False)
         subrays = int(config.divergence.get("subrays", 3))
         half_angle = math.radians(float(config.divergence.get("half_angle_deg", 0.15)))
         self.sub_offsets = np.linspace(-half_angle, half_angle, max(1, subrays))
         dead_fraction = float(config.dead_beams.get("fraction", 0.0))
         self.dead_mask = self.dead_rng.random(self.beams) < dead_fraction
-        mount = config.mount.get("position_m", [0.10, 0.0, 0.14])
-        self.mount_x = float(mount[0])
-        self.mount_y = float(mount[1])
-        self.mount_height = float(mount[2])
+        self.mount_position = np.array(mount_position(config.mount), dtype=float)
+        self.mount_rotation = rpy_matrix(*np.radians(mount_rpy_deg(config.mount)))
+        self.angle_offset = math.radians(config.noise.angle_offset_deg)
 
     def should_drop_scan(self, scale: float) -> bool:
         probability = float(self.config.dropped_scan_probability) * scale
@@ -75,25 +76,39 @@ class LidarModel:
         yaw_at = state.yaw + state.yaw_rate * beam_dt
         x_at = state.x + math.cos(state.yaw) * state.speed * beam_dt
         y_at = state.y + math.sin(state.yaw) * state.speed * beam_dt
-        lidar_z = state.z + (self.mount_height - 0.09)
-        origin_x = x_at + np.cos(yaw_at) * self.mount_x - np.sin(yaw_at) * self.mount_y
-        origin_y = y_at + np.sin(yaw_at) * self.mount_x + np.cos(yaw_at) * self.mount_y
-        start_origin_x = state.x + math.cos(state.yaw) * self.mount_x - math.sin(state.yaw) * self.mount_y
-        start_origin_y = state.y + math.sin(state.yaw) * self.mount_x + math.cos(state.yaw) * self.mount_y
+        z_at = np.full(self.beams, state.z)
+
+        start_body_rotation = yaw_matrix(state.yaw)
+        start_origin = np.array([state.x, state.y, state.z]) + (
+            start_body_rotation @ self.mount_position
+        )
+        start_sensor_rotation = start_body_rotation @ self.mount_rotation
 
         origins: list[tuple[float, float, float]] = []
-        ray_angles: list[float] = []
+        ray_directions: list[tuple[float, float, float]] = []
         for i in range(self.beams):
+            body_rotation = yaw_matrix(float(yaw_at[i]))
+            sensor_rotation = body_rotation @ self.mount_rotation
+            origin = np.array([x_at[i], y_at[i], z_at[i]]) + (
+                body_rotation @ self.mount_position
+            )
             for offset in self.sub_offsets:
-                origins.append((float(origin_x[i]), float(origin_y[i]), float(lidar_z)))
-                ray_angles.append(float(yaw_at[i] + self.angles[i] + offset))
+                angle = float(self.angles[i] + offset)
+                direction = sensor_rotation @ np.array(
+                    [math.cos(angle), math.sin(angle), 0.0]
+                )
+                origins.append((float(origin[0]), float(origin[1]), float(origin[2])))
+                ray_directions.append(
+                    (float(direction[0]), float(direction[1]), float(direction[2]))
+                )
 
-        hits = self.world.raycast_batch(origins, ray_angles, cfg.max_range_m)
+        hits = self.world.raycast_vectors(origins, ray_directions, cfg.max_range_m)
         sub_count = len(self.sub_offsets)
         ranges = np.full((self.beams, sub_count), np.inf)
         normals = np.zeros((self.beams, sub_count, 3))
         objects = np.full((self.beams, sub_count), -1, dtype=int)
-        points = np.zeros((self.beams, sub_count, 2))
+        points = np.zeros((self.beams, sub_count, 3))
+        directions = np.array(ray_directions, dtype=float)
         for k, hit in enumerate(hits):
             if hit is None:
                 continue
@@ -102,8 +117,7 @@ class LidarModel:
             ranges[beam, sub] = hit[0]
             normals[beam, sub] = hit[2]
             objects[beam, sub] = hit[3]
-            points[beam, sub, 0] = hit[1][0]
-            points[beam, sub, 1] = hit[1][1]
+            points[beam, sub] = hit[1]
 
         best = np.argmin(ranges, axis=1)
         best_range = ranges[np.arange(self.beams), best]
@@ -113,30 +127,19 @@ class LidarModel:
         # Publish the scan in the scan-start lidar frame. A real spinning lidar
         # measures each beam at a slightly different pose; transforming the hit
         # point back here is what creates motion distortion for a downstream
-        # estimator to handle.
+        # estimator to handle. The mount RPY is applied here too, so a tilted
+        # sensor changes ranges and angles.
         scan_angles = self.angles.copy()
         for i in range(self.beams):
             if not hit_mask[i]:
                 continue
-            wx = points[i, best[i], 0]
-            wy = points[i, best[i], 1]
-            dx = wx - start_origin_x
-            dy = wy - start_origin_y
-            c = math.cos(state.yaw)
-            s = math.sin(state.yaw)
-            lx = c * dx + s * dy
-            ly = -s * dx + c * dy
-            scan_angles[i] = math.atan2(ly, lx)
+            relative = points[i, best[i]] - start_origin
+            local = start_sensor_rotation.T @ relative
+            scan_angles[i] = math.atan2(local[1], local[0])
 
         # Incidence angle between the ray and the surface normal.
-        ray_dir = np.column_stack(
-            [
-                np.cos(yaw_at + self.angles),
-                np.sin(yaw_at + self.angles),
-                np.zeros(self.beams),
-            ]
-        )
-        cos_incidence = np.abs(np.sum(ray_dir * best_normal, axis=1))
+        best_direction = directions[np.arange(self.beams) * sub_count + best]
+        cos_incidence = np.abs(np.sum(best_direction * best_normal, axis=1))
         cos_incidence = np.clip(cos_incidence, 0.0, 1.0)
 
         ranges_meas = np.full(self.beams, np.nan)
@@ -196,7 +199,7 @@ class LidarModel:
         angle_noise = self.rng.normal(
             0.0, math.radians(cfg.noise.angle_sigma_deg) * scale, self.beams
         )
-        scan_angles = scan_angles + angle_noise
+        scan_angles = scan_angles + angle_noise + self.angle_offset
         latency = (cfg.latency_ms + self.rng.uniform(0.0, cfg.latency_jitter_ms)) / 1000.0
         return LidarScan(
             angles=scan_angles,

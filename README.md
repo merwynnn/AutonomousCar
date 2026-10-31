@@ -1,57 +1,68 @@
-# AWAKE 2027 — standalone simulator core
+# AWAKE 2027 — simulator core & car lab
 
-This branch (`sim-core`) contains **only the reusable simulator and the
-algorithm boundary**. It deliberately has no dashboard, no SLAM, no MCL, no
-occupancy grid, no racing line and no reference controller.
+A physically credible standalone simulator for the AWAKE Challenge 2027 mini
+autonomous vehicle, with a browser car lab, a sensor-only controller boundary and
+a data-driven vehicle definition.
 
-The two folders intended for transfer are:
+![Car studio](docs/assets/dashboard-car-studio.png)
 
-```text
-simulator/     PyBullet world, car, sensors, track, odometry, timing, CLI
-algorithms/    sensor-only controller contract + your controllers
-```
-
-Everything else (`tests/`, this README, `pyproject.toml`) is development
-scaffolding.
+The core remains deliberately small: **no SLAM, MCL, occupancy grid, racing line
+or telemetry cloud**. The dashboard is a local renderer and operator console for
+the simulator.
 
 ## 1. Architecture
 
 ```text
-                 Observation (sensors + odometry only)
- algorithms/  <-------------------------------------------  simulator/
- Controller.update()                                      Simulation.step()
-      |                                                        |
-      +------------------> Actuation (throttle, steering) -----+
+Browser (React + Three.js)
+    │  REST + WebSocket (JSON)
+FastAPI dashboard (dashboard/)
+    │
+Simulation core (simulator/, 240 Hz physics, 60 Hz control)
+    ├── generated URDF from the vehicle config
+    ├── PyBullet world, track, car, sensors and timing
+    └── non-ideal lidar, ultrasonic and drifting odometry
+Algorithms (algorithms/)
+    └── Observation -> Actuation controllers (NumPy only)
 ```
 
 - `simulator/` owns physics, sensor models, latency, the track and lap timing.
-- `algorithms/` owns the driving policy. It imports **only**
+- `dashboard/` owns the browser UI, telemetry transport and car inspection view.
+- `algorithms/` owns the driving policy and imports **only**
   `algorithms.interface` and NumPy.
 - `Observation` has no true pose and no future scan. The only pose is drifting
   wheel/IMU odometry.
-- `Simulation` implements the `RobotAPI` protocol. A real serial/CAN adapter can
-  implement the same protocol and run the same controllers unchanged.
+- The dashboard may show ground truth for debugging; controllers never receive it.
+- A real serial/CAN adapter can implement `RobotAPI` and run the same controllers.
 
 ### Folder layout
 
 ```text
 simulator/
   config.py                 pydantic config models + YAML loading
-  track.py                  peanut track, walls, procedural on-track landmarks
+  car_urdf.py               generates the URDF from VehicleConfig
+  track.py                  peanut track, walls and obstacles
   vehicle.py                VehicleState / Actuation
-  world.py                  PyBullet world and 1/10 4WD Ackermann car
+  world.py                  PyBullet world, generated car and raycasts
+  transforms.py             body/sensor rotation helpers
   odometry.py               drifting wheel/IMU odometry
-  sensors/
-    lidar.py                non-ideal 720-beam 2D lidar
-    ultrasonic.py           three non-ideal ultrasonic sensors
+  sensors/                  non-ideal lidar and ultrasonic models
   simulation.py             fixed-step loop, latency filtering, lap timing
   cli.py                    headless runner
   configs/                  scenario, vehicle and sensor YAML
-  assets/                   1/10 car URDF
+  assets/                   reference URDF only
 algorithms/
   interface.py              Observation, Actuation, Controller, RobotAPI
+  gap_follow.py             lidar-only demo controller
+  wall_follow.py            lidar-only demo controller
   template.py               safe stop placeholder
-  README.md                 algorithm contract and example
+dashboard/
+  server.py                 FastAPI REST + WebSocket adapter
+  spec.py                   car, sensor and track JSON payloads
+  web/                      React/Three.js dashboard
+examples/
+  custom_car.py             fully code-defined car example
+tests/
+docs/
 ```
 
 ## 2. Quick start
@@ -59,33 +70,150 @@ algorithms/
 ```bash
 uv sync --extra dev
 
-# Safe placeholder: the car stays still. Expect DNF; use Ctrl-C or --max-time.
+# backend (terminal 1)
+uv run python -m dashboard.server
+
+# frontend (terminal 2)
+cd dashboard/web
+npm install
+npm run dev
+```
+
+Open the Vite URL (usually `http://localhost:5173`). The API runs on
+`http://localhost:8000`. A production build is served by the backend after
+`npm run build`.
+
+Headless simulator:
+
+```bash
 uv run python -m simulator.cli --laps 1 --max-time 5
-```
-
-After you add a controller:
-
-```bash
 uv run python -m simulator.cli \
-  --controller algorithms.my_controller:MyController \
-  --laps 5
+  --controller algorithms.gap_follow:FurthestGapController \
+  --laps 1 --realism ideal --lidar-subrays 1
 ```
 
-Useful options:
+## 3. The car is data
+
+There is **one** vehicle definition. It generates the URDF that PyBullet loads
+and the geometry that the dashboard draws. There is no second hand-written car
+model.
+
+`simulator/configs/vehicle.yaml` defines:
+
+- mass, centre of mass and competition limits;
+- chassis `structure` parts (box / cylinder / sphere, visual and/or collidable);
+- wheelbase, track width, wheel radius, width, mass and vertical offset;
+- drive layout, motor, battery, tires, suspension, aero and steering limits.
+
+Example body part:
+
+```yaml
+structure:
+  - name: main_body
+    shape: box
+    position_m: [0.0, 0.0, 0.005]
+    size_m: [0.38, 0.18, 0.055]
+    color: "#a53235"
+    collision: true
+```
+
+Positions are in the vehicle body frame: **x forward, y left, z up**, origin at
+the chassis centre. For a cylinder, `size_m` is `[diameter, diameter, height]`;
+for a sphere it is `[diameter, diameter, diameter]`.
+
+Sensor positions and rotations live in `simulator/configs/sensors.yaml` and use
+the same body frame:
+
+```yaml
+lidar:
+  mount:
+    position_m: [0.10, 0.0, 0.05]
+    rpy_deg: [0.0, 0.0, 0.0]
+  beams: 720
+  max_range_m: 12.0
+  noise:
+    range_sigma_m: 0.012
+```
+
+Other sensors follow the same pattern. IMU, encoder and lidar/ultrasonic
+characteristics are all parsed and used by the sensor models.
+
+### Build a car in code
+
+```python
+from simulator.config import BodyPart, load_sensors, load_vehicle
+from simulator.simulation import Simulation
+
+vehicle = load_vehicle("simulator/configs/vehicle.yaml")
+sensors = load_sensors("simulator/configs/sensors.yaml")
+
+vehicle.mass_kg = 2.35
+vehicle.wheelbase_m = 0.27
+vehicle.tires.friction_rear = 1.15
+vehicle.structure.append(
+    BodyPart(
+        name="sensor_pod",
+        shape="cylinder",
+        position_m=(0.0, 0.0, 0.07),
+        size_m=(0.04, 0.04, 0.02),
+        color="#d9dde1",
+        collision=False,
+    )
+)
+sensors.lidar.beams = 540
+sensors.lidar.mount.position_m = (0.105, 0.0, 0.06)
+
+simulation = Simulation(vehicle=vehicle, sensors=sensors, lidar_subrays=1)
+```
+
+See [`examples/custom_car.py`](examples/custom_car.py) for a runnable example:
 
 ```bash
---scenario PATH        scenario YAML
---controller SPEC      module:ClassOrFactory
---laps N               override scenario laps
---seed N               override scenario seed
---realism ideal|realistic|harsh
---lidar-subrays 1|3    speed vs mixed-pixel fidelity
---gui                  open the PyBullet GUI
---realtime             pace the loop in wall-clock time
---max-time SECONDS     simulation-time limit
+uv run python -m examples.custom_car
 ```
 
-## 3. Add an algorithm
+Download the generated URDF from the running dashboard:
+
+```bash
+curl -o car.urdf http://localhost:8000/api/car/urdf
+```
+
+## 4. Dashboard
+
+### Track view
+
+Live PyBullet scene with the car, walls, obstacles, lidar returns, path trail and
+odometry trail. Drive manually with `W/A/S/D` or use the two lidar-only demo
+controllers.
+
+### Car studio
+
+Click **Car only** or press `C`. The studio renders the vehicle in isolation:
+no track surface, walls, obstacles, lidar returns or trails. It shows the body
+parts, wheels, sensor mounts and optional sensor coverage directly from the same
+configuration that drives physics.
+
+Useful controls:
+
+- `Space` — run / pause
+- `R` — reset
+- `C` — track / car studio
+- `1` / `2` / `3` — orbit / top / chase camera
+- `T` — car studio turntable
+- `W/A/S/D` — manual drive
+
+After editing `vehicle.yaml` or `sensors.yaml`, click **Reload config**. The
+backend rebuilds the URDF and simulation and pushes a fresh `hello` message to
+the browser.
+
+### REST and WebSocket
+
+- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/track`
+- `WS /ws/telemetry` — hello, state and scan messages; commands include
+  `run.start`, `run.pause`, `run.reset`, `run.step`, `run.set_speed`,
+  `control.mode`, `control.controller`, `drive.command`, `config.reload`.
+
+## 5. Add an algorithm
 
 1. Create `algorithms/my_controller.py`.
 2. Implement `reset()` and `update(observation)`.
@@ -107,7 +235,6 @@ class MyController:
         if scan is None:
             return Actuation(throttle=0.0, steering=self.steering)
 
-        # Example only: steer toward the longest valid beam in the front sector.
         import numpy as np
 
         front = np.abs(scan.angles_rad) < np.deg2rad(60.0)
@@ -122,30 +249,44 @@ class MyController:
         return Actuation(throttle=0.35, steering=self.steering)
 ```
 
-If your controller needs constructor arguments, expose a factory:
-
-```python
-def make_controller():
-    return MyController(gain=1.2)
-```
-
-Then use `--controller algorithms.my_controller:make_controller`.
-
-### Contract rules
+Contract rules:
 
 - Handle `observation.lidar is None`: the first scan may still be in flight.
-- Use `lidar.t_available` if you keep your own history. Never use data whose
-  `t_available` is in the future.
+- Only use data whose `t_available` is in the past.
 - `observation.odometry` is the only pose. It drifts on purpose.
 - Units are SI: metres, seconds, radians, m/s, rad/s.
 - Keep controllers deterministic for a fixed observation sequence.
-- Do not import `simulator.*` from `algorithms/*`. That is the portability
-  boundary.
+- Do not import `simulator.*` from `algorithms/*`.
 - `throttle` is `-1..1`; `steering` is radians, positive left.
 
-## 4. Raspberry Pi transfer
+## 6. Sensors
 
-Copy only the two deployable folders:
+- Lidar: 720 beams by default, range/angle noise, quantization, per-beam
+  timestamps, motion distortion, divergence/mixed pixels, incidence dropout,
+  dead beams, dropped scans, intensity, wall-height occlusion, mount RPY,
+  latency/jitter and calibration offset. Rays are traced in 3D so a tilted mount
+  changes what is measured.
+- Ultrasonic: cone integration, blind zone, max range, range noise, low update
+  rate, latency, cross-talk, specular dropouts and missed thin objects.
+- Odometry: scale errors, bias, random walk and noise. Encoder characteristics
+  are part of the sensor config.
+- Realism presets: `ideal`, `realistic`, `harsh`; `realistic` is the default.
+
+## 7. Tests and checks
+
+```bash
+uv run pytest
+uv run ruff check simulator algorithms dashboard tests examples
+uv run mypy simulator algorithms dashboard
+cd dashboard/web && npm run build
+```
+
+The tests cover the sensor-only boundary, lidar/ultrasonic latency, deterministic
+reset, configuration limits, generated URDF geometry and dashboard payloads.
+
+## 8. Raspberry Pi transfer
+
+Copy the deployable folders:
 
 ```bash
 scp -r simulator algorithms pi@raspberrypi.local:~/
@@ -159,31 +300,20 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install numpy pydantic pyyaml pybullet
 
-# Headless smoke test
 python -m simulator.cli --laps 1 --max-time 5 --lidar-subrays 1
-
-# With a controller
 python -m simulator.cli \
-  --controller algorithms.my_controller:MyController \
+  --controller algorithms.gap_follow:FurthestGapController \
   --laps 5 --lidar-subrays 1
 ```
 
-Notes:
+The algorithm contract only needs NumPy. PyBullet on a Pi is optional and needs
+a working OpenGL/EGL setup. On the real car, implement `RobotAPI` with your
+serial/CAN adapter.
 
-- The algorithm contract only needs **NumPy**. You can test controllers without
-  PyBullet by feeding recorded `Observation` objects.
-- PyBullet on a Pi is optional and needs a working OpenGL/EGL setup. Use
-  `--lidar-subrays 1` and headless mode for slow boards.
-- On the real car, implement `RobotAPI` with your serial/CAN adapter. Populate
-  `Observation` from the real lidar, ultrasonic, IMU and encoders; call the same
-  `Controller.update()`.
-- Do not copy `tests/` or the development README unless you want them.
-
-## 5. Configuration
+## 9. Configuration
 
 `simulator/configs/scenario.yaml` references `vehicle.yaml` and `sensors.yaml`
-relative to itself. Paths are resolved next to the scenario file, so the folder
-is relocatable.
+relative to itself:
 
 ```yaml
 vehicle: vehicle.yaml
@@ -200,26 +330,3 @@ simulation:
 
 The simulator uses a fixed physics timestep, seeded sensor RNG streams and a
 fixed control period. Rendering never affects results.
-
-## 6. Tests and checks
-
-```bash
-uv run pytest
-uv run ruff check simulator algorithms tests
-uv run mypy simulator algorithms
-```
-
-The tests verify that `Observation` contains no ground truth, that lidar and
-ultrasonic data respect their `t_available` timestamps, that reset is
-deterministic, and that procedural obstacles remain inside the clear track
-boundary.
-
-## 7. What is intentionally missing
-
-- No SLAM, MCL, occupancy map or pose graph.
-- No dashboard, WebSocket or React code.
-- No racing line, pure pursuit, wall-follow or gap-follow implementation.
-- No real-car calibration.
-
-Those live on `main`. This branch is the transferable core and the clean place
-to add a new algorithm.

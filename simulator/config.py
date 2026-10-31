@@ -29,6 +29,36 @@ class Dimensions(StrictModel):
     ground_clearance_m: float = Field(ge=0)
 
 
+class Mount(StrictModel):
+    """Sensor pose in the vehicle body frame.
+
+    x forward, y left, z up; origin at the chassis centre. ``rpy_deg`` is a
+    roll/pitch/yaw rotation applied in that order (URDF convention).
+    """
+
+    position_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rpy_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+class BodyPart(StrictModel):
+    """A visual and/or collision part of the chassis.
+
+    ``size_m`` is the full box extent for ``box`` parts, ``[diameter, diameter,
+    height]`` for ``cylinder`` parts and ``[diameter, diameter, diameter]`` for
+    ``sphere`` parts. Positions are in the chassis body frame.
+    """
+
+    name: str
+    shape: Literal["box", "cylinder", "sphere"] = "box"
+    position_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    rpy_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    size_m: tuple[float, float, float]
+    color: str = "#a53235"
+    opacity: float = Field(default=1.0, gt=0.0, le=1.0)
+    visible: bool = True
+    collision: bool = True
+
+
 class Limits(StrictModel):
     max_length_m: float = 0.45
     max_width_m: float = 0.20
@@ -86,6 +116,9 @@ class VehicleConfig(StrictModel):
     wheelbase_m: float = Field(gt=0)
     track_width_m: float = Field(gt=0)
     wheel_radius_m: float = Field(gt=0)
+    wheel_width_m: float = Field(default=0.028, gt=0)
+    wheel_mass_kg: float = Field(default=0.05, gt=0)
+    wheel_offset_z_m: float = -0.055
     drive: Literal["4wd", "2wd"] = "4wd"
     steering: Steering
     motor: Motor
@@ -94,6 +127,35 @@ class VehicleConfig(StrictModel):
     suspension: Suspension
     aero: Aero
     limits: Limits = Field(default_factory=Limits)
+    structure: list[BodyPart] = Field(default_factory=list)
+
+    @property
+    def ride_height_m(self) -> float:
+        """Height of the body-frame origin above the ground when at rest."""
+
+        return self.wheel_radius_m - self.wheel_offset_z_m
+
+    @property
+    def chassis_mass_kg(self) -> float:
+        return self.mass_kg - 4.0 * self.wheel_mass_kg
+
+    def resolved_structure(self) -> list[BodyPart]:
+        """Return body parts, falling back to a simple chassis box."""
+
+        if self.structure:
+            return list(self.structure)
+        return [
+            BodyPart(
+                name="chassis",
+                size_m=(
+                    self.dimensions.length_m,
+                    self.dimensions.width_m,
+                    max(0.01, self.dimensions.height_m * 0.45),
+                ),
+                position_m=(0.0, 0.0, 0.0),
+                color="#a53235",
+            )
+        ]
 
     @model_validator(mode="after")
     def check_competition_limits(self) -> VehicleConfig:
@@ -110,6 +172,8 @@ class VehicleConfig(StrictModel):
                 f"ground clearance {d.ground_clearance_m} m below "
                 f"{lim.min_ground_clearance_m} m"
             )
+        if self.mass_kg <= 4.0 * self.wheel_mass_kg:
+            raise ValueError("mass_kg must exceed the mass of the four wheels")
         return self
 
 
@@ -130,7 +194,7 @@ class LidarConfig(StrictModel):
     max_range_m: float = Field(gt=0)
     angular_resolution_deg: float = Field(gt=0)
     scan_direction: Literal["clockwise", "counterclockwise"] = "clockwise"
-    mount: dict[str, Any] = Field(default_factory=dict)
+    mount: Mount = Field(default_factory=Mount)
     noise: LidarNoise
     quantization: dict[str, float] = Field(default_factory=dict)
     divergence: dict[str, Any] = Field(default_factory=dict)
@@ -148,7 +212,7 @@ class LidarConfig(StrictModel):
 class UltrasonicSensor(StrictModel):
     name: str
     frame_id: str
-    mount: dict[str, Any] = Field(default_factory=dict)
+    mount: Mount = Field(default_factory=Mount)
 
 
 class UltrasonicConfig(StrictModel):
@@ -169,6 +233,7 @@ class ImuConfig(StrictModel):
     frame_id: str = "imu"
     rate_hz: float = Field(gt=0)
     latency_ms: float = Field(ge=0)
+    mount: Mount = Field(default_factory=Mount)
     gyro: dict[str, float] = Field(default_factory=dict)
     accel: dict[str, float] = Field(default_factory=dict)
     mounting_misalignment_deg: float = 0.0
@@ -224,6 +289,20 @@ class ScenarioConfig(StrictModel):
     race: RaceConfig = Field(default_factory=RaceConfig)
     simulation: SimulationConfig = Field(default_factory=SimulationConfig)
     odometry: OdometryConfig = Field(default_factory=OdometryConfig)
+
+
+def mount_position(mount: Mount | dict[str, Any]) -> tuple[float, float, float]:
+    """Read a mount position from either a validated model or a raw dict."""
+
+    values = mount.position_m if isinstance(mount, Mount) else mount.get("position_m", (0, 0, 0))
+    return (float(values[0]), float(values[1]), float(values[2]))
+
+
+def mount_rpy_deg(mount: Mount | dict[str, Any]) -> tuple[float, float, float]:
+    """Read mount roll/pitch/yaw from either a model or a raw dict."""
+
+    values = mount.rpy_deg if isinstance(mount, Mount) else mount.get("rpy_deg", (0, 0, 0))
+    return (float(values[0]), float(values[1]), float(values[2]))
 
 
 def load_yaml(path: str | Path) -> dict[str, Any]:

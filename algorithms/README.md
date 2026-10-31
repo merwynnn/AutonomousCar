@@ -49,6 +49,15 @@ uv run python -m simulator.cli \
   --controller algorithms.my_controller:make_controller
 ```
 
+## Included demo controllers
+
+- `algorithms/gap_follow.py` — lidar-only furthest-gap steering.
+- `algorithms/wall_follow.py` — lidar-only wall following.
+- `algorithms/template.py` — safe stop placeholder.
+
+The dashboard can drive with either demo controller. They are intentionally
+simple local policies, not a racing stack.
+
 ## Rules
 
 - Handle `observation.lidar is None` at startup and after dropped scans.

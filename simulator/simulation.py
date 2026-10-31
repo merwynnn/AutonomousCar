@@ -14,7 +14,13 @@ from algorithms.interface import (
     UltrasonicObservation,
 )
 
-from simulator.config import Realism, ScenarioBundle, load_bundle
+from simulator.config import (
+    Realism,
+    ScenarioBundle,
+    SensorsConfig,
+    VehicleConfig,
+    load_bundle,
+)
 from simulator.odometry import OdometryModel
 from simulator.sensors.lidar import LidarModel, LidarScan
 from simulator.sensors.ultrasonic import UltrasonicModel, UltrasonicReading
@@ -53,6 +59,8 @@ class Simulation:
         lidar_subrays: int | None = None,
         seed: int | None = None,
         realism: Realism | None = None,
+        vehicle: VehicleConfig | None = None,
+        sensors: SensorsConfig | None = None,
     ) -> None:
         self.bundle: ScenarioBundle = load_bundle(scenario_path or DEFAULT_SCENARIO)
         self.scenario = self.bundle.scenario
@@ -60,8 +68,10 @@ class Simulation:
             self.scenario.seed = seed
         if realism is not None:
             self.scenario.realism = realism
-        self.vehicle = self.bundle.vehicle
-        self.sensors = self.bundle.sensors
+        # Programmatic overrides keep the dashboard/CLI path identical while
+        # letting code build a car without editing YAML.
+        self.vehicle = vehicle if vehicle is not None else self.bundle.vehicle
+        self.sensors = sensors if sensors is not None else self.bundle.sensors
         self.track: TrackGeometry = build_test_track(width_m=0.9)
         self.gui = gui
         self.realism_scale = {"ideal": 0.0, "realistic": 1.0, "harsh": 2.0}[

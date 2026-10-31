@@ -10,7 +10,7 @@ lidar:
   angular_resolution_deg: 0.5
   scan_direction: clockwise
   mount:
-    position_m: [0.10, 0.0, 0.14]
+    position_m: [0.10, 0.0, 0.05]
     rpy_deg: [0.0, 0.0, 0.0]
   noise:
     range_sigma_m: 0.012
@@ -56,23 +56,26 @@ ultrasonic:
     - name: front_left
       frame_id: sonar_fl
       mount:
-        position_m: [0.17, 0.07, 0.08]
+        position_m: [0.192, 0.07, 0.0]
         rpy_deg: [0.0, 0.0, 15.0]
     - name: front_right
       frame_id: sonar_fr
       mount:
-        position_m: [0.17, -0.07, 0.08]
+        position_m: [0.192, -0.07, 0.0]
         rpy_deg: [0.0, 0.0, -15.0]
     - name: rear_center
       frame_id: sonar_rear
       mount:
-        position_m: [-0.18, 0.0, 0.08]
+        position_m: [-0.192, 0.0, 0.0]
         rpy_deg: [0.0, 0.0, 180.0]
 
 imu:
   frame_id: imu
   rate_hz: 200.0
   latency_ms: 5.0
+  mount:
+    position_m: [0.0, 0.0, 0.01]
+    rpy_deg: [0.0, 0.0, 0.0]
   gyro:
     bias_deg_s: 0.8
     noise_deg_s: 0.06

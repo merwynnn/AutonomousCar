@@ -14,7 +14,45 @@ center_of_mass_m: [0.0, 0.0, 0.045]
 wheelbase_m: 0.26
 track_width_m: 0.18
 wheel_radius_m: 0.035
+wheel_width_m: 0.028
+wheel_mass_kg: 0.05
+wheel_offset_z_m: -0.055
 drive: 4wd
+
+# Chassis parts. Positions are body-frame (x forward, y left, z up) and
+# sizes are full extents in metres. box: [length, width, height];
+# cylinder: [diameter, diameter, height]; sphere: [diameter, diameter, diameter].
+structure:
+  - name: lower_deck
+    shape: box
+    position_m: [0.0, 0.0, -0.040]
+    size_m: [0.34, 0.155, 0.020]
+    color: "#262b31"
+    collision: true
+  - name: main_body
+    shape: box
+    position_m: [0.0, 0.0, 0.005]
+    size_m: [0.38, 0.18, 0.055]
+    color: "#a53235"
+    collision: true
+  - name: cabin
+    shape: box
+    position_m: [-0.045, 0.0, 0.046]
+    size_m: [0.155, 0.135, 0.038]
+    color: "#1b2026"
+    collision: false
+  - name: nose
+    shape: box
+    position_m: [0.178, 0.0, 0.005]
+    size_m: [0.044, 0.15, 0.028]
+    color: "#d7d9dc"
+    collision: false
+  - name: rear_wing
+    shape: box
+    position_m: [-0.185, 0.0, 0.062]
+    size_m: [0.030, 0.17, 0.008]
+    color: "#262b31"
+    collision: false
 
 steering:
   max_angle_deg: 25.0

@@ -16,7 +16,7 @@ from typing import Any
 
 from algorithms.interface import Controller
 
-from simulator.config import Realism
+from simulator.config import Realism, SensorsConfig, VehicleConfig, load_sensors, load_vehicle
 from simulator.simulation import DEFAULT_SCENARIO, Simulation
 
 
@@ -48,6 +48,8 @@ def run(
     gui: bool,
     realtime: bool,
     max_time: float | None,
+    vehicle: VehicleConfig | None = None,
+    sensors: SensorsConfig | None = None,
 ) -> int:
     controller = load_controller(controller_spec)
     with Simulation(
@@ -56,6 +58,8 @@ def run(
         lidar_subrays=lidar_subrays,
         seed=seed,
         realism=realism,
+        vehicle=vehicle,
+        sensors=sensors,
     ) as simulation:
         simulation.scenario.race.laps = laps
         observation = simulation.reset()
@@ -105,6 +109,18 @@ def main() -> None:
         help="scenario YAML (vehicle/sensor paths are relative to it)",
     )
     parser.add_argument(
+        "--vehicle",
+        type=Path,
+        default=None,
+        help="override the scenario vehicle YAML",
+    )
+    parser.add_argument(
+        "--sensors",
+        type=Path,
+        default=None,
+        help="override the scenario sensor YAML",
+    )
+    parser.add_argument(
         "--controller",
         default="algorithms.template:TemplateController",
         help="module:ClassOrFactory implementing reset() and update()",
@@ -146,6 +162,8 @@ def main() -> None:
             gui=args.gui,
             realtime=args.realtime,
             max_time=args.max_time,
+            vehicle=load_vehicle(args.vehicle) if args.vehicle else None,
+            sensors=load_sensors(args.sensors) if args.sensors else None,
         )
     )
 
