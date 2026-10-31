@@ -6,7 +6,7 @@ This is a normal algorithm: it sees only ``Observation`` and returns
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -25,7 +25,15 @@ class GapDebug:
     range_m: float = 0.0  # Distance mesurée au centre du trou choisi (mètres)
     clearance_m: float = 0.0  # Distance minimale dans la fenêtre de dégagement (mètres)
     gap_width_rad: float = 0.0  # Largeur angulaire du trou détecté (radians)
+    gap_left_rad: float = 0.0
+    gap_right_rad: float = 0.0
+    front_sector_rad: float = 0.0
+    throttle: float = 0.0
+    min_clearance_m: float = 0.0
     valid: bool = False  # Indique si un trou valide a été trouvé
+    profile: np.ndarray = field(
+        default_factory=lambda: np.zeros((0, 2), dtype=float)
+    )
 
 
 class FurthestGapController:
@@ -228,6 +236,8 @@ class FurthestGapController:
             # Si le meilleur faisceau n'est pas dans une zone libre (cas rare),
             # on estime la largeur avec la taille de la fenêtre de dégagement
             gap_width = float(window * abs(step))
+            lo = max(0, best - window // 2)
+            hi = min(angles.size - 1, best + window // 2)
 
         # Limitation de l'angle souhaité à la direction maximale du véhicule
         # On ne peut pas tourner plus que max_steering (limite mécanique)
@@ -266,6 +276,10 @@ class FurthestGapController:
         # Si speed = max_speed_for_throttle, throttle = 1 (pleine puissance)
         # Si speed est plus petit, throttle est proportionnellement plus petit
         throttle = max(0.0, min(1.0, speed / self.max_speed_for_throttle))
+        sample_step = max(1, angles.size // 90)
+        profile = np.column_stack(
+            [angles[::sample_step], clearance[::sample_step]]
+        )
         # Mise à jour des informations de débogage pour la visualisation dans le dashboard
         # Ces données permettent de voir ce que l'algorithme a calculé (direction, vitesse, trou choisi)
         self.debug = GapDebug(
@@ -274,7 +288,13 @@ class FurthestGapController:
             range_m=best_range,  # Distance au centre du trou
             clearance_m=best_clearance,  # Dégagement minimal
             gap_width_rad=gap_width,  # Largeur angulaire du trou
+            gap_left_rad=float(min(angles[lo], angles[hi])),
+            gap_right_rad=float(max(angles[lo], angles[hi])),
+            front_sector_rad=float(self.front_sector),
+            throttle=throttle,
+            min_clearance_m=float(clearance.min()),
             valid=True,  # Indique que le calcul a réussi
+            profile=profile,
         )
 
         # Retour des commandes pour le véhicule

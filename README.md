@@ -223,16 +223,48 @@ Useful controls:
 - `T` — car studio turntable
 - `W/A/S/D` — manual drive
 
-After editing `vehicle.yaml` or `sensors.yaml`, click **Reload config**. The
-backend rebuilds the URDF/MJCF and simulation and pushes a fresh `hello` message to
-the browser.
+### Tuning console
+
+Click **Tune** in the toolbar or details panel. The modal edits the raw vehicle
+and sensor configs, including:
+
+- mass, dimensions, structure parts, wheels, motor, battery, tires, suspension,
+  aero and steering;
+- all lidar/ultrasonic/IMU/encoder fields and body-frame mounts;
+- steering `rate_deg_s` (the servo slew-rate limit), latency, deadband and max
+  angle in the quick-tune strip.
+
+Use **Apply live** to rebuild without touching disk, or **Apply & save YAML** to
+persist the values in `vehicle_awake2027.yaml` / `sensors_awake2027.yaml`.
+`Ctrl+Z` / `Ctrl+Y` undo and redo draft edits; `Esc` closes the console.
+
+### Random track generator
+
+Click **Test track** (or **Random track**) in the outliner. The details panel
+exposes a seed, lane width and **object density** (0 = empty, 1 = maximum
+crates/poles). Generated tracks stay inside the 15 × 8 m arena. The **Default**
+button always restores the reference test track.
+
+### Gap-solver debug
+
+When the gap-follow controller is active, the viewport shows:
+
+- the chosen gap and opening fan in 3D;
+- a live clearance-vs-bearing profile;
+- bearing, steering, clearance, opening and throttle values.
+
+Use the **Gap solver** layer toggle to hide or show the debug overlay.
+
+After editing YAML, click **Reload config**. The backend rebuilds the URDF/MJCF
+and simulation and pushes a fresh `hello` message to the browser.
 
 ### REST and WebSocket
 
-- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/car/mjcf`, `/api/track`
+- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/car/mjcf`, `/api/track`, `/api/config`
 - `WS /ws/telemetry` — hello, state and scan messages; commands include
   `run.start`, `run.pause`, `run.reset`, `run.step`, `run.set_speed`,
-  `control.mode`, `control.controller`, `drive.command`, `config.reload`.
+  `control.mode`, `control.controller`, `drive.command`, `config.reload`,
+  `config.apply`, `track.generate`, `track.default`.
 
 ## 5. Add an algorithm
 

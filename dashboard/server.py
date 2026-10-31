@@ -14,7 +14,7 @@ import asyncio
 import contextlib
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableMapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -24,10 +24,14 @@ from algorithms.wall_follow import WallFollowController
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
+from ruamel.yaml import YAML
 from simulator.car_urdf import build_urdf
-from simulator.config import load_scenario
+from simulator.config import SensorsConfig, VehicleConfig, load_scenario
 from simulator.mjcf import build_mjcf
+from simulator.random_track import build_random_track
 from simulator.simulation import DEFAULT_SCENARIO, Simulation
+from simulator.track import build_test_track
 from simulator.vehicle import VehicleState
 
 from dashboard.spec import sensor_payload, track_payload, vehicle_payload
@@ -53,6 +57,11 @@ class DashboardSimulation:
             "mujoco" if backend_name == "mujoco" else "pybullet"
         )
         self.scenario = load_scenario(self.scenario_path)
+        self.track = build_test_track(width_m=0.9)
+        self.track_mode: Literal["default", "random"] = "default"
+        self.track_seed = 2027
+        self.track_density = 0.25
+        self.track_width_m = 0.9
         self.sim = self._build_sim()
         self.paused = True
         self.finished = False
@@ -65,6 +74,8 @@ class DashboardSimulation:
         self._queues: set[asyncio.Queue[dict[str, Any]]] = set()
         self._task: asyncio.Task[None] | None = None
         self._reload_pending = False
+        self._pending_config: dict[str, Any] | None = None
+        self._pending_track: dict[str, Any] | None = None
         self.gap_follow = FurthestGapController()
         self.wall_follow = WallFollowController(base_speed=self.speed_limit)
 
@@ -72,7 +83,12 @@ class DashboardSimulation:
     def _build_sim(self) -> Simulation:
         # One lidar sub-ray keeps live dashboard frame rates healthy; batch and
         # CLI runs still use the configured fidelity.
-        return Simulation(self.scenario_path, lidar_subrays=1, backend=self.backend)
+        return Simulation(
+            self.scenario_path,
+            lidar_subrays=1,
+            backend=self.backend,
+            track=self.track,
+        )
 
     def reload_config(self) -> None:
         with contextlib.suppress(Exception):
@@ -87,6 +103,126 @@ class DashboardSimulation:
         self.wall_follow.reset()
         self.wall_follow.base_speed = self.speed_limit
         self._broadcast(self.hello_message())
+
+    @staticmethod
+    def _merge_yaml(target: MutableMapping[str, Any], source: dict[str, Any]) -> None:
+        for key in list(target.keys()):
+            if key not in source:
+                del target[key]
+        for key, value in source.items():
+            current = target.get(key)
+            if isinstance(current, MutableMapping) and isinstance(value, dict):
+                DashboardSimulation._merge_yaml(current, value)
+            else:
+                target[key] = value
+
+    def _write_yaml(self, path: Path, data: dict[str, Any]) -> None:
+        """Write values while preserving existing comments where possible."""
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        yaml.indent(mapping=2, sequence=4, offset=2)
+        if path.exists():
+            with path.open("r", encoding="utf-8") as handle:
+                document = yaml.load(handle)
+            if document is None:
+                document = data
+            else:
+                self._merge_yaml(document, data)
+        else:
+            document = data
+        with path.open("w", encoding="utf-8") as handle:
+            yaml.dump(document, handle)
+
+    def _apply_config(self, message: dict[str, Any]) -> None:
+        vehicle_data = message.get("vehicle")
+        sensor_data = message.get("sensors")
+        save = bool(message.get("save", False))
+        if not isinstance(vehicle_data, dict) or not isinstance(sensor_data, dict):
+            self._broadcast(
+                {
+                    "type": "config.result",
+                    "ok": False,
+                    "saved": False,
+                    "message": "Vehicle and sensor configs are required.",
+                }
+            )
+            return
+        try:
+            vehicle = VehicleConfig.model_validate(vehicle_data)
+            sensors = SensorsConfig.model_validate(sensor_data)
+        except ValidationError as exc:
+            self._broadcast(
+                {
+                    "type": "config.result",
+                    "ok": False,
+                    "saved": False,
+                    "message": exc.errors()[0].get("msg", str(exc)),
+                    "detail": exc.errors(),
+                }
+            )
+            return
+
+        try:
+            new_sim = Simulation(
+                self.scenario_path,
+                lidar_subrays=1,
+                backend=self.backend,
+                vehicle=vehicle,
+                sensors=sensors,
+                track=self.track,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._broadcast(
+                {
+                    "type": "config.result",
+                    "ok": False,
+                    "saved": False,
+                    "message": f"Could not build the car model: {exc}",
+                }
+            )
+            return
+
+        if save:
+            root = self.scenario_path.parent
+            try:
+                self._write_yaml(root / self.scenario.vehicle, vehicle.model_dump(mode="json"))
+                self._write_yaml(root / self.scenario.sensors, sensors.model_dump(mode="json"))
+            except Exception as exc:  # noqa: BLE001
+                new_sim.close()
+                self._broadcast(
+                    {
+                        "type": "config.result",
+                        "ok": False,
+                        "saved": False,
+                        "message": f"Could not save YAML: {exc}",
+                    }
+                )
+                return
+
+        with contextlib.suppress(Exception):
+            self.sim.close()
+        self.sim = new_sim
+        self.scenario = load_scenario(self.scenario_path)
+        self.paused = True
+        self.finished = False
+        self.manual = Actuation()
+        self._scan_key = None
+        self.gap_follow.reset()
+        self.wall_follow.reset()
+        self.wall_follow.base_speed = self.speed_limit
+        self._broadcast(self.hello_message())
+        self._broadcast(self.state_message())
+        self._broadcast(self.scan_message())
+        self._broadcast(
+            {
+                "type": "config.result",
+                "ok": True,
+                "saved": save,
+                "message": "Saved to YAML and rebuilt." if save else "Applied live.",
+            }
+        )
 
     def reset_run(self) -> None:
         self.sim.reset()
@@ -123,7 +259,22 @@ class DashboardSimulation:
             },
             "vehicle": vehicle_payload(vehicle),
             "sensors": sensor_payload(sensors, vehicle),
-            "track": track_payload(self.sim.track),
+            "config": {
+                "vehicle": vehicle.model_dump(mode="json"),
+                "sensors": sensors.model_dump(mode="json"),
+            },
+            "track": {
+                **track_payload(self.sim.track),
+                "name": (
+                    "random_track" if self.track_mode == "random" else "test_track"
+                ),
+            },
+            "track_meta": {
+                "mode": self.track_mode,
+                "seed": self.track_seed,
+                "object_density": round(self.track_density, 3),
+                "width_m": round(self.track_width_m, 3),
+            },
             "race": {"laps": self.scenario.race.laps},
             "warnings": warnings,
             "paths": {
@@ -237,7 +388,76 @@ class DashboardSimulation:
             "range_m": round(debug.range_m, 3),
             "clearance_m": round(debug.clearance_m, 3),
             "width_rad": round(debug.gap_width_rad, 4),
+            "gap_left_rad": round(debug.gap_left_rad, 4),
+            "gap_right_rad": round(debug.gap_right_rad, 4),
+            "front_sector_rad": round(debug.front_sector_rad, 4),
+            "throttle": round(debug.throttle, 3),
+            "min_clearance_m": round(debug.min_clearance_m, 3),
+            "profile": [
+                [round(float(angle), 4), round(float(clearance), 3)]
+                for angle, clearance in debug.profile
+            ],
         }
+
+    # ---------------------------------------------------------------- track
+    def _swap_track(self, track: Any, mode: Literal["default", "random"], message: str) -> None:
+        try:
+            new_sim = Simulation(
+                self.scenario_path,
+                lidar_subrays=1,
+                backend=self.backend,
+                vehicle=self.sim.vehicle,
+                sensors=self.sim.sensors,
+                track=track,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._broadcast(
+                {
+                    "type": "track.result",
+                    "ok": False,
+                    "message": f"Could not build track: {exc}",
+                }
+            )
+            return
+        with contextlib.suppress(Exception):
+            self.sim.close()
+        self.sim = new_sim
+        self.track = track
+        self.track_mode = mode
+        self.paused = True
+        self.finished = False
+        self.manual = Actuation()
+        self._scan_key = None
+        self.gap_follow.reset()
+        self.wall_follow.reset()
+        self.wall_follow.base_speed = self.speed_limit
+        self._broadcast(self.hello_message())
+        self._broadcast(self.state_message())
+        self._broadcast(self.scan_message())
+        self._broadcast(
+            {"type": "track.result", "ok": True, "message": message}
+        )
+
+    def _generate_track(self, message: dict[str, Any]) -> None:
+        seed = int(message.get("seed", 2027))
+        density = float(message.get("object_density", 0.25))
+        width = float(message.get("width_m", 0.9))
+        track = build_random_track(
+            seed=seed,
+            width_m=width,
+            object_density=density,
+        )
+        self.track_seed = seed
+        self.track_density = max(0.0, min(1.0, density))
+        self.track_width_m = max(0.8, min(1.0, width))
+        self._swap_track(track, "random", f"Random track generated (seed {seed}).")
+
+    def _default_track(self) -> None:
+        track = build_test_track(width_m=0.9)
+        self.track_seed = 2027
+        self.track_density = 0.25
+        self.track_width_m = 0.9
+        self._swap_track(track, "default", "Default test track restored.")
 
     # ---------------------------------------------------------------- control
     def _auto_command(self, observation: Observation) -> Actuation:
@@ -304,6 +524,12 @@ class DashboardSimulation:
             self.manual_time = time.monotonic()
         elif kind == "config.reload":
             self._reload_pending = True
+        elif kind == "config.apply":
+            self._pending_config = message
+        elif kind == "track.generate":
+            self._pending_track = message
+        elif kind == "track.default":
+            self._pending_track = {"type": "track.default"}
         elif kind == "ping":
             pass
 
@@ -333,6 +559,17 @@ class DashboardSimulation:
         telemetry_count = 0
         while True:
             next_tick += tick_period
+            if self._pending_config is not None:
+                pending = self._pending_config
+                self._pending_config = None
+                self._apply_config(pending)
+            if self._pending_track is not None:
+                pending_track = self._pending_track
+                self._pending_track = None
+                if pending_track.get("type") == "track.default":
+                    self._default_track()
+                else:
+                    self._generate_track(pending_track)
             if self._reload_pending:
                 self._reload_pending = False
                 with contextlib.suppress(Exception):
@@ -434,6 +671,15 @@ def car() -> dict[str, Any]:
     return {
         "vehicle": vehicle_payload(manager.sim.vehicle),
         "sensors": sensor_payload(manager.sim.sensors, manager.sim.vehicle),
+        "paths": manager.hello_message()["paths"],
+    }
+
+
+@app.get("/api/config")
+def config() -> dict[str, Any]:
+    return {
+        "vehicle": manager.sim.vehicle.model_dump(mode="json"),
+        "sensors": manager.sim.sensors.model_dump(mode="json"),
         "paths": manager.hello_message()["paths"],
     }
 

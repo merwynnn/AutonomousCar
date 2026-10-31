@@ -29,6 +29,10 @@
   - live track scene with lidar returns, trail and odometry;
   - **Car studio** showing only the car, with body parts, wheels and sensor
     mounts from the same config;
+  - **Tuning console** for all vehicle/sensor parameters, live apply,
+    save-to-YAML and undo/redo;
+  - **gap-follow debug** with 3D opening overlay and live clearance profile;
+  - **random track generator** with object density and default-track restore;
   - desktop engineering UI inspired by the provided reference;
   - outliner/details inspector, run controls, manual driving, speed limit,
     config reload.

@@ -34,6 +34,11 @@ Physics applications:
 - front/rear tire friction from `tires`;
 - motor speed/torque limits and 2WD/4WD drive layout;
 - steering angle and rate limits;
+
+`steering.rate_deg_s` is a command slew-rate limit. It should match the rate
+limiter in the real low-level firmware, not the servo's no-load datasheet speed.
+A loaded servo usually follows the command slew limit more repeatably than its
+open-loop speed specification.
 - rolling resistance and aero damping.
 
 ## Frames

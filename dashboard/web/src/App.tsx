@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { TrackScene } from './scene/TrackScene';
+import { TuningPanel } from './TuningPanel';
+import { GapDebugPanel } from './GapDebugPanel';
 import type {
   BodyPart,
   CameraMode,
@@ -367,7 +369,7 @@ function Outliner({
         <div className="tree-section">Environment</div>
         <TreeRow
           icon="track"
-          label="Test track"
+          label={hello.track.name === 'random_track' ? 'Random track' : 'Test track'}
           selected={selection === 'track'}
           onClick={() => onSelect('track')}
         />
@@ -518,6 +520,9 @@ function DetailsPanel({
   viewMode,
   speed,
   onSpeed,
+  onOpenTune,
+  onGenerateTrack,
+  onDefaultTrack,
 }: {
   hello: HelloMessage | null;
   state: StateMessage | null;
@@ -525,6 +530,9 @@ function DetailsPanel({
   viewMode: ViewMode;
   speed: number;
   onSpeed: (speed: number) => void;
+  onOpenTune: () => void;
+  onGenerateTrack: (seed: number, density: number, width: number) => void;
+  onDefaultTrack: () => void;
 }) {
   if (!hello) {
     return (
@@ -559,7 +567,13 @@ function DetailsPanel({
   } else if (selection === 'structure') {
     content = <StructureDetails hello={hello} />;
   } else if (selection === 'track') {
-    content = <TrackDetails hello={hello} />;
+    content = (
+      <TrackDetails
+        hello={hello}
+        onGenerateTrack={onGenerateTrack}
+        onDefaultTrack={onDefaultTrack}
+      />
+    );
   } else if (selection === 'scenario') {
     content = <ScenarioDetails hello={hello} />;
   } else if (selection === 'race') {
@@ -582,7 +596,12 @@ function DetailsPanel({
     <aside className="details-panel">
       <div className="panel-heading">
         <span>Details</span>
-        <span className="panel-heading-count">{selectionLabel(selection)}</span>
+        <div className="panel-heading-actions">
+          <button type="button" className="panel-action" onClick={onOpenTune} title="Edit vehicle and sensor parameters">
+            Tune
+          </button>
+          <span className="panel-heading-count">{selectionLabel(selection)}</span>
+        </div>
       </div>
       <div className="details-scroll">{content}</div>
     </aside>
@@ -782,8 +801,27 @@ function EncoderDetails({ hello }: { hello: HelloMessage }) {
   );
 }
 
-function TrackDetails({ hello }: { hello: HelloMessage }) {
+function TrackDetails({
+  hello,
+  onGenerateTrack,
+  onDefaultTrack,
+}: {
+  hello: HelloMessage;
+  onGenerateTrack: (seed: number, density: number, width: number) => void;
+  onDefaultTrack: () => void;
+}) {
   const track = hello.track;
+  const meta = hello.track_meta;
+  const [seed, setSeed] = useState(meta.seed);
+  const [density, setDensity] = useState(meta.object_density);
+  const [width, setWidth] = useState(meta.width_m);
+
+  useEffect(() => {
+    setSeed(meta.seed);
+    setDensity(meta.object_density);
+    setWidth(meta.width_m);
+  }, [meta.seed, meta.object_density, meta.width_m]);
+
   return (
     <>
       <div className="details-identity">
@@ -791,10 +829,71 @@ function TrackDetails({ hello }: { hello: HelloMessage }) {
           <Icon name="track" />
         </div>
         <div>
-          <h2>{track.name}</h2>
-          <p>Procedural indoor circuit</p>
+          <h2>{meta.mode === 'random' ? 'Random track' : 'Test track'}</h2>
+          <p>
+            {meta.mode === 'random'
+              ? `seed ${meta.seed} · ${track.obstacles.length} obstacles`
+              : 'Default PDF-like peanut circuit'}
+          </p>
         </div>
       </div>
+      <PropertyGroup title="Generator">
+        <label className="details-field">
+          <span>Seed</span>
+          <input type="number" step="1" value={seed} onChange={(event) => setSeed(Number(event.target.value))} />
+        </label>
+        <label className="details-field">
+          <span>Object density</span>
+          <div className="details-slider">
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={density}
+              onChange={(event) => setDensity(Number(event.target.value))}
+            />
+            <strong>{density.toFixed(2)}</strong>
+          </div>
+        </label>
+        <label className="details-field">
+          <span>Lane width</span>
+          <div className="details-slider">
+            <input
+              type="range"
+              min="0.8"
+              max="1.0"
+              step="0.01"
+              value={width}
+              onChange={(event) => setWidth(Number(event.target.value))}
+            />
+            <strong>{width.toFixed(2)} m</strong>
+          </div>
+        </label>
+        <div className="button-row details-actions">
+          <button
+            type="button"
+            className="primary"
+            onClick={() => onGenerateTrack(seed, density, width)}
+            title="Generate a random closed track with collidable obstacles"
+          >
+            Generate
+          </button>
+          <button
+            type="button"
+            className="ghost"
+            onClick={onDefaultTrack}
+            title="Restore the default test track"
+          >
+            Default
+          </button>
+        </div>
+        <p className="small-note">
+          Object density 0 = empty circuit, 1 = maximum crates/poles. Generated
+          tracks stay inside the 15 × 8 m arena. <strong>Default</strong> restores
+          the reference test track.
+        </p>
+      </PropertyGroup>
       <PropertyGroup title="Geometry">
         <PropertyRow label="Track length" value={num(track.track_length_m, 2)} unit="m" tone="accent" />
         <PropertyRow label="Lane width" value={num(track.width_m, 2)} unit="m" />
@@ -805,8 +904,8 @@ function TrackDetails({ hello }: { hello: HelloMessage }) {
         <PropertyRow label="Obstacles" value={`${track.obstacles.length}`} />
       </PropertyGroup>
       <div className="details-hint">
-        Switch to <strong>Car only</strong> in the viewport tabs to inspect the car
-        without track walls, surface, lidar returns or trails.
+        The default track is always available. Random tracks rebuild the physics
+        world and reset the car to the new start line.
       </div>
     </>
   );
@@ -987,7 +1086,7 @@ function ViewportHud({
 }
 
 export default function App() {
-  const { status, hello, state, scan, send } = useTelemetry();
+  const { status, hello, state, scan, send, configResult, trackResult } = useTelemetry();
   const [viewMode, setViewMode] = useState<ViewMode>('track');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [turntable, setTurntable] = useState(true);
@@ -1001,10 +1100,28 @@ export default function App() {
     sensors: true,
     coverage: false,
     labels: false,
+    gap: true,
   });
   const [selection, setSelection] = useState<Selection>('vehicle');
+  const [tuningOpen, setTuningOpen] = useState(false);
+  const [tuningTab, setTuningTab] = useState<'vehicle' | 'sensors'>('vehicle');
+  const [toast, setToast] = useState<string | null>(null);
   const keysRef = useRef({ w: false, a: false, s: false, d: false });
   const running = state ? !state.paused && !state.finished : false;
+
+  useEffect(() => {
+    if (!configResult) return;
+    setToast(configResult.message);
+    const timer = window.setTimeout(() => setToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [configResult]);
+
+  useEffect(() => {
+    if (!trackResult) return;
+    setToast(trackResult.message);
+    const timer = window.setTimeout(() => setToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [trackResult]);
 
   useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
@@ -1019,7 +1136,7 @@ export default function App() {
   }, [speed, send]);
 
   useEffect(() => {
-    if (controlMode !== 'manual') return;
+    if (controlMode !== 'manual' || tuningOpen) return;
     const timer = window.setInterval(() => {
       const keys = keysRef.current;
       const throttle = (keys.w ? 1 : 0) - (keys.s ? 0.7 : 0);
@@ -1027,10 +1144,11 @@ export default function App() {
       send({ type: 'drive.command', throttle, steering });
     }, 50);
     return () => window.clearInterval(timer);
-  }, [controlMode, send]);
+  }, [controlMode, send, tuningOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (tuningOpen) return;
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       const key = event.key.toLowerCase();
@@ -1071,14 +1189,36 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [controlMode, running, send, state?.paused]);
+  }, [controlMode, running, send, state?.paused, tuningOpen]);
 
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
+  const openTune = (tab: 'vehicle' | 'sensors') => {
+    setTuningTab(tab);
+    setTuningOpen(true);
+  };
+  const selectionTab: 'vehicle' | 'sensors' =
+    selection === 'sensors' ||
+    selection === 'lidar' ||
+    selection === 'ultrasonic' ||
+    selection === 'imu' ||
+    selection === 'encoders' ||
+    selection.startsWith('sonar:')
+      ? 'sensors'
+      : 'vehicle';
   const onSpeed = (value: number) => {
     setSpeed(value);
     send({ type: 'run.set_speed', speed: value });
   };
+  const onGenerateTrack = (seed: number, density: number, width: number) => {
+    send({
+      type: 'track.generate',
+      seed: Math.round(seed),
+      object_density: density,
+      width_m: width,
+    });
+  };
+  const onDefaultTrack = () => send({ type: 'track.default' });
 
   return (
     <div className="app-shell">
@@ -1234,6 +1374,12 @@ export default function App() {
         <div className="toolbar-spacer" />
         <div className="tool-group">
           <ToolButton
+            icon="settings"
+            label="Tune"
+            title="Edit all vehicle and sensor parameters (Ctrl+Z / Ctrl+Y)"
+            onClick={() => openTune(selectionTab)}
+          />
+          <ToolButton
             icon="reload"
             label="Reload config"
             title="Reload vehicle.yaml, sensors.yaml and scenario.yaml"
@@ -1271,6 +1417,7 @@ export default function App() {
               turntable={turntable}
             />
             <ViewportHud hello={hello} state={state} viewMode={viewMode} scan={scan} />
+            <GapDebugPanel state={state} layers={layers} />
             {hello?.warnings.length ? (
               <div className="warning-strip">{hello.warnings.join(' · ')}</div>
             ) : null}
@@ -1290,13 +1437,14 @@ export default function App() {
                   ['sensors', 'Sensors'],
                   ['coverage', 'Coverage'],
                   ['labels', 'Labels'],
+                  ['gap', 'Gap solver'],
                 ] as Array<[keyof DebugLayers, string]>
               ).map(([key, label]) => (
-                <label key={key} className={`layer-toggle ${viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry') ? 'disabled' : ''}`}>
+                <label key={key} className={`layer-toggle ${viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'gap') ? 'disabled' : ''}`}>
                   <input
                     type="checkbox"
                     checked={layers[key]}
-                    disabled={viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry')}
+                    disabled={viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'gap')}
                     onChange={(event) =>
                       setLayers((current) => ({ ...current, [key]: event.target.checked }))
                     }
@@ -1320,6 +1468,9 @@ export default function App() {
           viewMode={viewMode}
           speed={speed}
           onSpeed={onSpeed}
+          onOpenTune={() => openTune(selectionTab)}
+          onGenerateTrack={onGenerateTrack}
+          onDefaultTrack={onDefaultTrack}
         />
       </div>
 
@@ -1340,6 +1491,16 @@ export default function App() {
         <span className="status-divider" />
         <span>F3 · preferences</span>
       </footer>
+
+      <TuningPanel
+        open={tuningOpen}
+        initialTab={tuningTab}
+        hello={hello}
+        configResult={configResult}
+        onClose={() => setTuningOpen(false)}
+        onSend={send}
+      />
+      {toast ? <div className="toast">{toast}</div> : null}
     </div>
   );
 }

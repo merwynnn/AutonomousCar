@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-10-31 — Tuning console, gap debug and random tracks
+
+- Added a dashboard tuning console for the full vehicle and sensor configs.
+  - Apply live or save to YAML; comments are preserved where possible.
+  - Quick-tune strip for steering rate/latency/max angle/deadband.
+  - `Ctrl+Z` / `Ctrl+Y` undo/redo draft edits.
+- Lowered the reference steering rate to a more realistic 180 °/s and documented
+  the real-car slew-rate limiter.
+- Added gap-follow debug data: clearance profile, chosen bearing, opening edges,
+  clearance, throttle and min clearance.
+- Added a 3D gap fan/line overlay and a live clearance-vs-bearing chart.
+- Added a random track generator with seed, lane width and object density.
+  - Default test track can always be restored from the dashboard.
+  - Generated tracks stay inside the 15 × 8 m arena.
+
 ## 2026-10-31 — MuJoCo digital twin and AWAKE reference car
 
 - Added a generated MuJoCo MJCF backend with contact wheels, steering hinges,

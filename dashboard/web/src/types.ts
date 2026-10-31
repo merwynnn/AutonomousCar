@@ -4,6 +4,12 @@ export type Vec3 = [number, number, number];
 export type Realism = 'ideal' | 'realistic' | 'harsh';
 export type ViewMode = 'track' | 'car';
 export type CameraMode = 'orbit' | 'top' | 'chase';
+export type JsonObject = Record<string, unknown>;
+
+export interface ConfigPayload {
+  vehicle: JsonObject;
+  sensors: JsonObject;
+}
 
 export interface Dimensions {
   length_m: number;
@@ -221,7 +227,14 @@ export interface HelloMessage {
   };
   vehicle: VehicleSpec;
   sensors: SensorsSpec;
+  config: ConfigPayload;
   track: TrackInfo;
+  track_meta: {
+    mode: 'default' | 'random';
+    seed: number;
+    object_density: number;
+    width_m: number;
+  };
   race: { laps: number };
   warnings: string[];
   paths: { scenario: string; vehicle: string; sensors: string };
@@ -276,6 +289,12 @@ export interface StateMessage {
     range_m: number;
     clearance_m: number;
     width_rad: number;
+    gap_left_rad: number;
+    gap_right_rad: number;
+    front_sector_rad: number;
+    throttle: number;
+    min_clearance_m: number;
+    profile: Array<[number, number]>;
   };
 }
 
@@ -289,6 +308,20 @@ export interface ScanMessage {
   intensities: number[];
 }
 
+export interface ConfigResultMessage {
+  type: 'config.result';
+  ok: boolean;
+  saved: boolean;
+  message: string;
+  detail?: unknown;
+}
+
+export interface TrackResultMessage {
+  type: 'track.result';
+  ok: boolean;
+  message: string;
+}
+
 export interface DebugLayers {
   scan: boolean;
   trail: boolean;
@@ -296,6 +329,12 @@ export interface DebugLayers {
   sensors: boolean;
   coverage: boolean;
   labels: boolean;
+  gap: boolean;
 }
 
-export type ServerMessage = HelloMessage | StateMessage | ScanMessage;
+export type ServerMessage =
+  | HelloMessage
+  | StateMessage
+  | ScanMessage
+  | ConfigResultMessage
+  | TrackResultMessage;

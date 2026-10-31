@@ -76,7 +76,7 @@ structure:
 
 steering:
   max_angle_deg: 28.0
-  rate_deg_s: 300.0
+  rate_deg_s: 180.0
   deadband_deg: 0.5
   backlash_deg: 0.5
   latency_ms: 18.0

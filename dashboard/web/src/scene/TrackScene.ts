@@ -93,6 +93,12 @@ export class TrackScene {
   private studioGrid: THREE.GridHelper | null = null;
   private studioLidarRing: THREE.Mesh | null = null;
 
+  private gapGroup = new THREE.Group();
+  private gapLine: THREE.Line | null = null;
+  private gapFan: THREE.Mesh | null = null;
+  private gapDot: THREE.Mesh | null = null;
+  private readonly gapFanPositions = new Float32Array((33 + 1) * 3);
+
   private latestState: StateMessage | null = null;
   private lidarHeight = 0.14;
   private viewMode: ViewMode = 'track';
@@ -104,6 +110,7 @@ export class TrackScene {
     sensors: false,
     coverage: false,
     labels: true,
+    gap: true,
   };
 
   private animationFrame = 0;
@@ -155,6 +162,7 @@ export class TrackScene {
     this.buildLidar();
     this.buildTrail();
     this.buildOdomTrail();
+    this.buildGapMarker();
 
     this.studioGroup.visible = false;
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -684,8 +692,105 @@ export class TrackScene {
     this.scene.add(this.odomTrail);
   }
 
+  private buildGapMarker(): void {
+    const fanGeometry = new THREE.BufferGeometry();
+    fanGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.gapFanPositions, 3),
+    );
+    const indices: number[] = [];
+    for (let index = 0; index < 33; index += 1) {
+      indices.push(0, index + 1, index + 2);
+    }
+    fanGeometry.setIndex(indices);
+    this.gapFan = new THREE.Mesh(
+      fanGeometry,
+      new THREE.MeshBasicMaterial({
+        color: 0xd7a84b,
+        transparent: true,
+        opacity: 0.13,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    this.gapFan.renderOrder = 4;
+    this.gapGroup.add(this.gapFan);
+
+    const lineGeometry = new THREE.BufferGeometry();
+    lineGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(new Float32Array(6), 3),
+    );
+    this.gapLine = new THREE.Line(
+      lineGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0xe7a85b,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+      }),
+    );
+    this.gapLine.renderOrder = 5;
+    this.gapGroup.add(this.gapLine);
+
+    this.gapDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.032, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xe7a85b, depthTest: false }),
+    );
+    this.gapDot.renderOrder = 6;
+    this.gapGroup.add(this.gapDot);
+    this.gapGroup.visible = false;
+    this.scene.add(this.gapGroup);
+  }
+
+  private updateGapMarker(state: StateMessage): void {
+    const gap = state.gap;
+    const visible =
+      this.viewMode === 'track' &&
+      state.auto_controller === 'gap_follow' &&
+      gap.valid &&
+      this.layers.gap;
+    this.gapGroup.visible = visible;
+    if (!visible) return;
+    const range = Math.max(0.35, Math.min(gap.range_m, 3.0));
+    const y = 0.035;
+    const startX = state.car.x;
+    const startZ = state.car.y;
+    const arcCount = 33;
+    this.gapFanPositions[0] = startX;
+    this.gapFanPositions[1] = y;
+    this.gapFanPositions[2] = startZ;
+    for (let index = 0; index <= arcCount; index += 1) {
+      const fraction = index / arcCount;
+      const angle =
+        state.car.theta +
+        gap.gap_left_rad +
+        (gap.gap_right_rad - gap.gap_left_rad) * fraction;
+      const offset = (index + 1) * 3;
+      this.gapFanPositions[offset] = startX + Math.cos(angle) * range;
+      this.gapFanPositions[offset + 1] = y;
+      this.gapFanPositions[offset + 2] = startZ + Math.sin(angle) * range;
+    }
+    if (this.gapFan) {
+      this.gapFan.geometry.attributes.position.needsUpdate = true;
+      this.gapFan.geometry.computeBoundingSphere();
+    }
+    const chosen = state.car.theta + gap.angle_rad;
+    const targetX = startX + Math.cos(chosen) * range;
+    const targetZ = startZ + Math.sin(chosen) * range;
+    if (this.gapLine) {
+      const positions = this.gapLine.geometry.attributes.position as THREE.BufferAttribute;
+      positions.setXYZ(0, startX, y + 0.002, startZ);
+      positions.setXYZ(1, targetX, y + 0.002, targetZ);
+      positions.needsUpdate = true;
+      this.gapLine.geometry.computeBoundingSphere();
+    }
+    this.gapDot?.position.set(targetX, y + 0.002, targetZ);
+  }
+
   updateState(state: StateMessage): void {
     this.latestState = state;
+    this.updateGapMarker(state);
     const heading = state.car.theta;
     const wheelSpin = state.car.speed * 0.5;
 
@@ -813,6 +918,7 @@ export class TrackScene {
     if (this.trail) this.trail.visible = !carMode && this.layers.trail;
     if (this.odomTrail) this.odomTrail.visible = !carMode && this.layers.odometry;
     if (this.centerline) this.centerline.visible = !carMode;
+    if (carMode) this.gapGroup.visible = false;
     this.scene.background = new THREE.Color(carMode ? STUDIO_BACKGROUND : TRACK_BACKGROUND);
     this.scene.fog = carMode ? null : new THREE.Fog(TRACK_BACKGROUND, 20, 38);
     this.controls.autoRotate = carMode && this.turntable;
@@ -856,6 +962,8 @@ export class TrackScene {
     if (this.trail) this.trail.visible = this.layers.trail && !carMode;
     if (this.odomTrail) this.odomTrail.visible = this.layers.odometry && !carMode;
     if (this.studioLidarRing) this.studioLidarRing.visible = this.layers.coverage;
+    if (this.latestState) this.updateGapMarker(this.latestState);
+    else this.gapGroup.visible = false;
   }
 
   private applyCameraForView(): void {

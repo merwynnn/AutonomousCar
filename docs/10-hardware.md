@@ -71,6 +71,9 @@ for a 5-lap reliability run.
   wheel slip.
 - **Steering feedback**: AS5600 on the steering linkage. The stock servo does not
   report its actual angle.
+- **Steering speed**: the servo's no-load speed is fixed by its internal control;
+  for repeatable behaviour, implement a configurable command slew-rate limit in
+  the low-level firmware. The simulator parameter is `steering.rate_deg_s`.
 - **Camera**: optional; do not make it a dependency for the first working car.
 
 ## Power and safety

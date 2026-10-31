@@ -51,9 +51,15 @@ generated URDF, physics and dashboard model in one step.
 ## Reloading
 
 After editing YAML, click **Reload config** in the dashboard. The backend
-reloads the scenario, rebuilds the URDF and sensor models and sends a fresh car
-payload to the browser. Code-defined cars are rebuilt by constructing a new
-`Simulation`.
+reloads the scenario, rebuilds the URDF/MJCF and sensor models and sends a fresh
+car payload to the browser.
+
+The **Tune** console edits the raw vehicle and sensor configs in the browser.
+**Apply live** rebuilds without writing files; **Apply & save YAML** validates,
+writes both YAML files (preserving comments where possible) and rebuilds.
+`Ctrl+Z`/`Ctrl+Y` undo/redo draft values.
+
+Code-defined cars are rebuilt by constructing a new `Simulation`.
 
 ## Validation
 

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  ConfigResultMessage,
   HelloMessage,
   ScanMessage,
   ServerMessage,
   StateMessage,
+  TrackResultMessage,
 } from './types';
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'error';
@@ -20,6 +22,8 @@ export interface Telemetry {
   state: StateMessage | null;
   scan: ScanMessage | null;
   history: SpeedSample[];
+  configResult: ConfigResultMessage | null;
+  trackResult: TrackResultMessage | null;
   send: (message: object) => void;
 }
 
@@ -31,6 +35,8 @@ export function useTelemetry(): Telemetry {
   const [state, setState] = useState<StateMessage | null>(null);
   const [scan, setScan] = useState<ScanMessage | null>(null);
   const [history, setHistory] = useState<SpeedSample[]>([]);
+  const [configResult, setConfigResult] = useState<ConfigResultMessage | null>(null);
+  const [trackResult, setTrackResult] = useState<TrackResultMessage | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
@@ -70,6 +76,12 @@ export function useTelemetry(): Telemetry {
             case 'scan':
               setScan(message);
               break;
+            case 'config.result':
+              setConfigResult(message);
+              break;
+            case 'track.result':
+              setTrackResult(message);
+              break;
           }
         } catch {
           // Ignore malformed frames; the next frame will arrive shortly.
@@ -105,5 +117,5 @@ export function useTelemetry(): Telemetry {
     }
   }, []);
 
-  return { status, hello, state, scan, history, send };
+  return { status, hello, state, scan, history, configResult, trackResult, send };
 }

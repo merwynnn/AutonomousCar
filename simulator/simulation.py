@@ -70,6 +70,7 @@ class Simulation:
         vehicle: VehicleConfig | None = None,
         sensors: SensorsConfig | None = None,
         backend: Literal["pybullet", "mujoco"] = "mujoco",
+        track: TrackGeometry | None = None,
     ) -> None:
         self.bundle: ScenarioBundle = load_bundle(scenario_path or DEFAULT_SCENARIO)
         self.scenario = self.bundle.scenario
@@ -82,7 +83,7 @@ class Simulation:
         self.vehicle = vehicle if vehicle is not None else self.bundle.vehicle
         self.sensors = sensors if sensors is not None else self.bundle.sensors
         self.backend = backend
-        self.track: TrackGeometry = build_test_track(width_m=0.9)
+        self.track: TrackGeometry = track if track is not None else build_test_track(width_m=0.9)
         self.gui = gui
         self.realism_scale = {"ideal": 0.0, "realistic": 1.0, "harsh": 2.0}[
             self.scenario.realism
