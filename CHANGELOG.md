@@ -14,6 +14,7 @@
 - Added a random track generator with seed, lane width and object density.
   - Default test track can always be restored from the dashboard.
   - Generated tracks stay inside the 15 × 8 m arena.
+- Switched manual driving to ZQSD; physical WASD and arrow keys also work.
 
 ## 2026-10-31 — MuJoCo digital twin and AWAKE reference car
 

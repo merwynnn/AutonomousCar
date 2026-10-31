@@ -204,7 +204,7 @@ curl -o car.xml  http://localhost:8000/api/car/mjcf
 ### Track view
 
 Live MuJoCo/PyBullet scene with the car, walls, obstacles, lidar returns, path trail and
-odometry trail. Drive manually with `W/A/S/D` or use the two lidar-only demo
+odometry trail. Drive manually with `Z/Q/S/D` or use the two lidar-only demo
 controllers.
 
 ### Car studio
@@ -221,7 +221,7 @@ Useful controls:
 - `C` — track / car studio
 - `1` / `2` / `3` — orbit / top / chase camera
 - `T` — car studio turntable
-- `W/A/S/D` — manual drive
+- `Z/Q/S/D` — manual drive (WASD also works)
 
 ### Tuning console
 

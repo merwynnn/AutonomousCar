@@ -6,7 +6,7 @@
 
 Live 3D view of the car, track surface, pipe walls, obstacles, lidar returns,
 path trail and optional odometry trail. The viewport header shows run state,
-controller, lap and timing. Manual driving uses W/A/S/D.
+controller, lap and timing. Manual driving uses Z/Q/S/D.
 
 ### Car studio
 
@@ -57,7 +57,7 @@ width and object density. **Default** restores the reference test track.
 - Layer toggles: lidar, trail, odometry, sensors, coverage, labels.
 
 Keyboard shortcuts: `Space` run/pause, `R` reset, `C` view, `1`/`2`/`3` camera,
-`T` turntable, `W/A/S/D` manual drive.
+`T` turntable, `Z/Q/S/D` manual drive (WASD also works).
 
 ## Design language
 

@@ -1076,7 +1076,7 @@ function ViewportHud({
         <strong>{num(state ? state.car.theta * 180 / Math.PI : undefined, 1)}<em> °</em></strong>
       </div>
       <div className="viewport-hints">
-        <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
+        <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
         <span><kbd>Space</kbd> run / pause</span>
         <span><kbd>R</kbd> reset</span>
         <span><kbd>C</kbd> view</span>
@@ -1084,6 +1084,21 @@ function ViewportHud({
     </>
   );
 }
+
+type DriveKey = 'forward' | 'back' | 'left' | 'right';
+
+const DRIVE_KEYS: Record<string, DriveKey> = {
+  KeyW: 'forward',
+  KeyZ: 'forward',
+  ArrowUp: 'forward',
+  KeyS: 'back',
+  ArrowDown: 'back',
+  KeyA: 'left',
+  KeyQ: 'left',
+  ArrowLeft: 'left',
+  KeyD: 'right',
+  ArrowRight: 'right',
+};
 
 export default function App() {
   const { status, hello, state, scan, send, configResult, trackResult } = useTelemetry();
@@ -1106,7 +1121,12 @@ export default function App() {
   const [tuningOpen, setTuningOpen] = useState(false);
   const [tuningTab, setTuningTab] = useState<'vehicle' | 'sensors'>('vehicle');
   const [toast, setToast] = useState<string | null>(null);
-  const keysRef = useRef({ w: false, a: false, s: false, d: false });
+  const keysRef = useRef<Record<DriveKey, boolean>>({
+    forward: false,
+    back: false,
+    left: false,
+    right: false,
+  });
   const running = state ? !state.paused && !state.finished : false;
 
   useEffect(() => {
@@ -1139,8 +1159,8 @@ export default function App() {
     if (controlMode !== 'manual' || tuningOpen) return;
     const timer = window.setInterval(() => {
       const keys = keysRef.current;
-      const throttle = (keys.w ? 1 : 0) - (keys.s ? 0.7 : 0);
-      const steering = (keys.a ? 0.45 : 0) - (keys.d ? 0.45 : 0);
+      const throttle = (keys.forward ? 1 : 0) - (keys.back ? 0.7 : 0);
+      const steering = (keys.left ? 0.45 : 0) - (keys.right ? 0.45 : 0);
       send({ type: 'drive.command', throttle, steering });
     }, 50);
     return () => window.clearInterval(timer);
@@ -1151,14 +1171,15 @@ export default function App() {
       if (tuningOpen) return;
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
-      const key = event.key.toLowerCase();
-      if (key in keysRef.current) {
+      const driveKey = DRIVE_KEYS[event.code];
+      if (driveKey) {
         event.preventDefault();
-        keysRef.current[key as keyof typeof keysRef.current] = true;
+        keysRef.current[driveKey] = true;
         setControlMode('manual');
-        if (controlMode === 'manual' && state?.paused) send({ type: 'run.start' });
+        if (state?.paused) send({ type: 'run.start' });
         return;
       }
+      const key = event.key.toLowerCase();
       if (event.code === 'Space') {
         event.preventDefault();
         send({ type: running ? 'run.pause' : 'run.start' });
@@ -1177,10 +1198,10 @@ export default function App() {
       }
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      if (key in keysRef.current) {
+      const driveKey = DRIVE_KEYS[event.code];
+      if (driveKey) {
         event.preventDefault();
-        keysRef.current[key as keyof typeof keysRef.current] = false;
+        keysRef.current[driveKey] = false;
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -1189,7 +1210,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [controlMode, running, send, state?.paused, tuningOpen]);
+  }, [running, send, state?.paused, tuningOpen]);
 
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
