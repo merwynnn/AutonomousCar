@@ -481,6 +481,7 @@ export class TrackScene {
   }
 
   setTrack(track: TrackInfo): void {
+    this.clearTrails();
     for (const child of [...this.trackGroup.children]) {
       this.trackGroup.remove(child);
       this.disposeObject(child);
@@ -743,6 +744,16 @@ export class TrackScene {
     this.scene.add(this.gapGroup);
   }
 
+  private clearTrails(): void {
+    this.trailCount = 0;
+    this.odomTrailCount = 0;
+    for (const trail of [this.trail, this.odomTrail]) {
+      if (!trail) continue;
+      trail.geometry.setDrawRange(0, 0);
+      trail.geometry.attributes.position.needsUpdate = true;
+    }
+  }
+
   private updateGapMarker(state: StateMessage): void {
     const gap = state.gap;
     const visible =
@@ -789,6 +800,11 @@ export class TrackScene {
   }
 
   updateState(state: StateMessage): void {
+    if (this.latestState && state.t < this.latestState.t - 1e-6) {
+      this.clearTrails();
+      this.lidarGeometry?.setDrawRange(0, 0);
+      this.gapGroup.visible = false;
+    }
     this.latestState = state;
     this.updateGapMarker(state);
     const heading = state.car.theta;
