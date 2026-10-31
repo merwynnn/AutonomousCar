@@ -8,45 +8,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
-
-# C++ / CMake
-build/
-cmake-build-*/
-*.o
-*.so
-*.dylib
-*.dll
-compile_commands.json
-CMakeFiles/
-CMakeCache.txt
-
-# Node / web
-node_modules/
-web/dist/
-web/.vite/
-*.tsbuildinfo
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Runtime data
-data/
-logs/
-recordings/
-*.sqlite
-*.sqlite3
-*.db
-*.npz
-*.csv
-*.jsonl
-
-# Keep track/config assets
-!configs/**/*.yaml
-!configs/**/*.json
-!docs/assets/*.png
-!docs/assets/*.gif
-!docs/assets/*.jpg
-!docs/assets/*.webp
+dist/
 
 # OS / editor
 .DS_Store

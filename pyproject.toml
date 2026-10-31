@@ -3,73 +3,51 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "awake-sim"
+name = "awake-simulator-core"
 version = "0.1.0"
-description = "Physically credible simulator and strategy lab for the AWAKE Challenge 2027 autonomous car"
+description = "Standalone PyBullet simulator and sensor-only algorithm boundary for the AWAKE 2027 car"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11"
 license = { text = "Proprietary" }
 authors = [{ name = "AWAKE Challenge team" }]
 dependencies = [
     "numpy>=1.26",
-    "scipy>=1.11",
     "pybullet==3.2.7",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
-    "websockets>=12",
     "pydantic>=2.7",
-    "pydantic-settings>=2.3",
     "pyyaml>=6.0",
-    "typer>=0.12",
-    "rich>=13.7",
-    "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.2",
-    "pytest-cov>=5.0",
-    "httpx>=0.27",
     "ruff>=0.6",
     "mypy>=1.10",
-    "pybind11>=2.13",
 ]
 
 [project.scripts]
-awake-sim = "awake_sim.cli:app"
+awake-sim-core = "simulator.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/awake_sim"]
+packages = ["simulator", "algorithms"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
-markers = [
-    "slow: long-running integration tests",
-    "cpp: requires the compiled C++ extension",
-]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests"]
+src = ["simulator", "algorithms", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
 
-[tool.ruff.lint.per-file-ignores]
-"src/awake_sim/cli.py" = ["B008"]  # Typer declares options in defaults by design
-
 [tool.mypy]
 python_version = "3.11"
-mypy_path = "src"
-packages = ["awake_sim"]
+mypy_path = "."
+packages = ["simulator", "algorithms"]
 strict = false
 warn_unused_ignores = true
 warn_redundant_casts = true
 ignore_missing_imports = true
-
-[tool.coverage.run]
-source = ["awake_sim"]

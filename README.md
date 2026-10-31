@@ -1,88 +1,225 @@
-# AWAKE Challenge 2027 — Autonomous Car Simulator
+# AWAKE 2027 — standalone simulator core
 
-A physically credible 3D simulator and strategy lab for the AWAKE Challenge 2027
-mini autonomous vehicle: realistic non-ideal sensors, from-scratch 2D lidar SLAM,
-and a browser dashboard for live monitoring and strategy comparison.
+This branch (`sim-core`) contains **only the reusable simulator and the
+algorithm boundary**. It deliberately has no dashboard, no SLAM, no MCL, no
+occupancy grid, no racing line and no reference controller.
 
-> Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line,
-> pure pursuit and a lidar-only furthest-gap benchmark are working. MCL drives
-> both the mapping lap and the race with no ground truth in the control loop.
-> The five-lap sensor-only MCL race completes at 0.9 m/s: **5/5 laps, 132.94 s**.
-> The furthest-gap benchmark completes at 3.2 m/s: **5/5 laps, 85.65 s**.
-> Eight on-track crates/poles on the outside of corners add distinctive SLAM
-> features; faster MCL runs still lose lock near the map seam. See
-> [`STATUS.md`](STATUS.md).
+The two folders intended for transfer are:
 
-![AWAKE simulator dashboard](docs/assets/2026-10-30-m3-slam.png)
-
-## Why this exists
-
-The competition car must complete five consecutive laps of an unknown indoor track
-as fast as possible, using a lidar, at least three ultrasonic sensors, an IMU and
-wheel odometry. This project lets the team:
-
-- compare control and planning strategies before touching the real car;
-- see how sensor imperfections (noise, dropouts, latency, motion distortion)
-  change lap times and SLAM quality;
-- develop a SLAM pipeline that can later be ported to the Raspberry Pi;
-- generate many track variants so the strategy does not overfit the training
-  circuit;
-- monitor every run through a browser dashboard and compare controllers with
-  headless `race` / `compare` runs.
-
-## Planned features
-
-| Area | Features |
-|---|---|
-| Simulation | PyBullet 3D, generic 1/10 4WD Ackermann car, fixed 240 Hz physics, track walls and obstacles |
-| Sensors | LD06-class 2D lidar, 3 ultrasonic, IMU, encoders, steering sensor; non-ideal by default |
-| SLAM | C++17 deskew + correlative matching + occupancy grid + 400-particle MCL; live map/ATE and toggles. Loop closure detector experimental |
-| Strategies | Wall-follow, pure pursuit, lidar-only furthest-gap, racing line, time-optimal speed profile |
-| Race analysis | Headless `race` / `compare` commands, lap-time and penalty metrics, experiment reports |
-| Dashboard | Live 3D, sensor views, SLAM/MCL map, charts, GT/odom/MCL localization modes, car view selector, toggles and debug layers |
-| Docs | `AGENTS.md`, `STATUS.md`, architecture, requirements traceability, devlog, ADRs, runbook |
-
-## Documentation
-
-Start here:
-
-- [`AGENTS.md`](AGENTS.md) — rules for working in this repo.
-- [`STATUS.md`](STATUS.md) — current state and how to run it.
-- [`docs/README.md`](docs/README.md) — documentation index.
-- [`docs/02-architecture.md`](docs/02-architecture.md) — system architecture.
-- [`docs/04-sensors.md`](docs/04-sensors.md) — non-ideal sensor models.
-- [`docs/06-slam.md`](docs/06-slam.md) — SLAM design.
-
-## Quick start
-
-```bash
-# toolchain (one-time)
-sudo apt install -y build-essential cmake ninja-build libeigen3-dev
-
-# Python 3.11 + dependencies
-uv sync --all-extras
-
-# backend
-uv run uvicorn awake_sim.server.app:app --reload --port 8000
-
-# dashboard (second terminal)
-cd web
-npm install
-npm run dev
+```text
+simulator/     PyBullet world, car, sensors, track, odometry, timing, CLI
+algorithms/    sensor-only controller contract + your controllers
 ```
 
-Open the dashboard at the URL printed by Vite (usually `http://localhost:5173`).
+Everything else (`tests/`, this README, `pyproject.toml`) is development
+scaffolding.
 
-## Competition context
+## 1. Architecture
 
-The source specification is `Cahier des charges 2027.pdf` (AWAKE Group). Key
-constraints: 1/10 scale, ≤45 × 20 × 20 cm, electric, 4WD recommended, ≥5 mm ground
-clearance, at least three ultrasonic sensors plus a lidar, GPS forbidden, indoor
-track 15 × 8 m with 80–100 cm lanes and 16 cm high pipe walls, five consecutive
-laps, penalties for wall deformation and interventions. See
-[`docs/01-requirements.md`](docs/01-requirements.md) for the traceable list.
+```text
+                 Observation (sensors + odometry only)
+ algorithms/  <-------------------------------------------  simulator/
+ Controller.update()                                      Simulation.step()
+      |                                                        |
+      +------------------> Actuation (throttle, steering) -----+
+```
 
-## License / use
+- `simulator/` owns physics, sensor models, latency, the track and lap timing.
+- `algorithms/` owns the driving policy. It imports **only**
+  `algorithms.interface` and NumPy.
+- `Observation` has no true pose and no future scan. The only pose is drifting
+  wheel/IMU odometry.
+- `Simulation` implements the `RobotAPI` protocol. A real serial/CAN adapter can
+  implement the same protocol and run the same controllers unchanged.
 
-Internal team project for the AWAKE Challenge 2027. The competition specification
-remains the property of AWAKE Group.
+### Folder layout
+
+```text
+simulator/
+  config.py                 pydantic config models + YAML loading
+  track.py                  peanut track, walls, procedural on-track landmarks
+  vehicle.py                VehicleState / Actuation
+  world.py                  PyBullet world and 1/10 4WD Ackermann car
+  odometry.py               drifting wheel/IMU odometry
+  sensors/
+    lidar.py                non-ideal 720-beam 2D lidar
+    ultrasonic.py           three non-ideal ultrasonic sensors
+  simulation.py             fixed-step loop, latency filtering, lap timing
+  cli.py                    headless runner
+  configs/                  scenario, vehicle and sensor YAML
+  assets/                   1/10 car URDF
+algorithms/
+  interface.py              Observation, Actuation, Controller, RobotAPI
+  template.py               safe stop placeholder
+  README.md                 algorithm contract and example
+```
+
+## 2. Quick start
+
+```bash
+uv sync --extra dev
+
+# Safe placeholder: the car stays still. Expect DNF; use Ctrl-C or --max-time.
+uv run python -m simulator.cli --laps 1 --max-time 5
+```
+
+After you add a controller:
+
+```bash
+uv run python -m simulator.cli \
+  --controller algorithms.my_controller:MyController \
+  --laps 5
+```
+
+Useful options:
+
+```bash
+--scenario PATH        scenario YAML
+--controller SPEC      module:ClassOrFactory
+--laps N               override scenario laps
+--seed N               override scenario seed
+--realism ideal|realistic|harsh
+--lidar-subrays 1|3    speed vs mixed-pixel fidelity
+--gui                  open the PyBullet GUI
+--realtime             pace the loop in wall-clock time
+--max-time SECONDS     simulation-time limit
+```
+
+## 3. Add an algorithm
+
+1. Create `algorithms/my_controller.py`.
+2. Implement `reset()` and `update(observation)`.
+3. Return an `Actuation`.
+4. Run it with `--controller algorithms.my_controller:MyController`.
+
+Minimal example:
+
+```python
+from algorithms.interface import Actuation, Observation
+
+
+class MyController:
+    def reset(self) -> None:
+        self.steering = 0.0
+
+    def update(self, observation: Observation) -> Actuation:
+        scan = observation.lidar
+        if scan is None:
+            return Actuation(throttle=0.0, steering=self.steering)
+
+        # Example only: steer toward the longest valid beam in the front sector.
+        import numpy as np
+
+        front = np.abs(scan.angles_rad) < np.deg2rad(60.0)
+        valid = front & scan.valid & np.isfinite(scan.ranges_m)
+        if not np.any(valid):
+            return Actuation(throttle=0.0, steering=self.steering)
+
+        ranges = np.where(valid, scan.ranges_m, -1.0)
+        best = int(np.argmax(ranges))
+        target = float(scan.angles_rad[best])
+        self.steering += 0.25 * (target - self.steering)
+        return Actuation(throttle=0.35, steering=self.steering)
+```
+
+If your controller needs constructor arguments, expose a factory:
+
+```python
+def make_controller():
+    return MyController(gain=1.2)
+```
+
+Then use `--controller algorithms.my_controller:make_controller`.
+
+### Contract rules
+
+- Handle `observation.lidar is None`: the first scan may still be in flight.
+- Use `lidar.t_available` if you keep your own history. Never use data whose
+  `t_available` is in the future.
+- `observation.odometry` is the only pose. It drifts on purpose.
+- Units are SI: metres, seconds, radians, m/s, rad/s.
+- Keep controllers deterministic for a fixed observation sequence.
+- Do not import `simulator.*` from `algorithms/*`. That is the portability
+  boundary.
+- `throttle` is `-1..1`; `steering` is radians, positive left.
+
+## 4. Raspberry Pi transfer
+
+Copy only the two deployable folders:
+
+```bash
+scp -r simulator algorithms pi@raspberrypi.local:~/
+```
+
+On the Pi:
+
+```bash
+cd ~
+python3 -m venv .venv
+. .venv/bin/activate
+pip install numpy pydantic pyyaml pybullet
+
+# Headless smoke test
+python -m simulator.cli --laps 1 --max-time 5 --lidar-subrays 1
+
+# With a controller
+python -m simulator.cli \
+  --controller algorithms.my_controller:MyController \
+  --laps 5 --lidar-subrays 1
+```
+
+Notes:
+
+- The algorithm contract only needs **NumPy**. You can test controllers without
+  PyBullet by feeding recorded `Observation` objects.
+- PyBullet on a Pi is optional and needs a working OpenGL/EGL setup. Use
+  `--lidar-subrays 1` and headless mode for slow boards.
+- On the real car, implement `RobotAPI` with your serial/CAN adapter. Populate
+  `Observation` from the real lidar, ultrasonic, IMU and encoders; call the same
+  `Controller.update()`.
+- Do not copy `tests/` or the development README unless you want them.
+
+## 5. Configuration
+
+`simulator/configs/scenario.yaml` references `vehicle.yaml` and `sensors.yaml`
+relative to itself. Paths are resolved next to the scenario file, so the folder
+is relocatable.
+
+```yaml
+vehicle: vehicle.yaml
+sensors: sensors.yaml
+seed: 42
+realism: realistic
+race:
+  laps: 5
+simulation:
+  physics_hz: 240
+  control_hz: 60
+  max_time_s: 240
+```
+
+The simulator uses a fixed physics timestep, seeded sensor RNG streams and a
+fixed control period. Rendering never affects results.
+
+## 6. Tests and checks
+
+```bash
+uv run pytest
+uv run ruff check simulator algorithms tests
+uv run mypy simulator algorithms
+```
+
+The tests verify that `Observation` contains no ground truth, that lidar and
+ultrasonic data respect their `t_available` timestamps, that reset is
+deterministic, and that procedural obstacles remain inside the clear track
+boundary.
+
+## 7. What is intentionally missing
+
+- No SLAM, MCL, occupancy map or pose graph.
+- No dashboard, WebSocket or React code.
+- No racing line, pure pursuit, wall-follow or gap-follow implementation.
+- No real-car calibration.
+
+Those live on `main`. This branch is the transferable core and the clean place
+to add a new algorithm.
