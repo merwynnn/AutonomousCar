@@ -55,6 +55,10 @@ export class TrackScene {
   private mclParticles: THREE.Points | null = null;
   private mclParticleGeometry: THREE.BufferGeometry | null = null;
   private mclParticlePositions: Float32Array = new Float32Array(400 * 3);
+  private gapMarker = new THREE.Group();
+  private gapLine: THREE.Line | null = null;
+  private gapDot: THREE.Mesh | null = null;
+  private gapPositions: Float32Array = new Float32Array(6);
   private layers: DebugLayers = {
     map: true,
     slam: true,
@@ -62,6 +66,7 @@ export class TrackScene {
     particles: true,
     odom: false,
     gtTrail: true,
+    gap: true,
   };
   private walls: THREE.InstancedMesh | null = null;
   private startLine: THREE.Mesh | null = null;
@@ -116,6 +121,7 @@ export class TrackScene {
     this.buildMclGhost();
     this.buildMclTrail();
     this.buildMclParticles();
+    this.buildGapMarker();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -348,6 +354,60 @@ export class TrackScene {
     this.scene.add(this.mclParticles);
   }
 
+  private buildGapMarker(): void {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(this.gapPositions, 3));
+    geometry.setDrawRange(0, 2);
+    this.gapLine = new THREE.Line(
+      geometry,
+      new THREE.LineBasicMaterial({
+        color: 0xff5dd6,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+      }),
+    );
+    this.gapLine.frustumCulled = false;
+    this.gapLine.renderOrder = 12;
+    this.gapMarker.add(this.gapLine);
+
+    this.gapDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.035, 12, 8),
+      new THREE.MeshBasicMaterial({ color: 0xff5dd6, depthTest: false }),
+    );
+    this.gapDot.renderOrder = 13;
+    this.gapMarker.add(this.gapDot);
+    this.gapMarker.visible = false;
+    this.scene.add(this.gapMarker);
+  }
+
+  private updateGapMarker(state: StateMessage): void {
+    const gap = state.gap;
+    const visible =
+      state.auto_controller === 'gap_follow' &&
+      this.layers.gap &&
+      Boolean(gap?.valid) &&
+      (gap?.range_m ?? 0) > 0;
+    this.gapMarker.visible = visible;
+    if (!visible || !gap) return;
+    const range = Math.max(0.1, Math.min(gap.range_m, 8));
+    const angle = state.car.theta + gap.angle_rad;
+    const x = state.car.x + Math.cos(angle) * range;
+    const z = state.car.y + Math.sin(angle) * range;
+    this.gapPositions[0] = state.car.x;
+    this.gapPositions[1] = 0.14;
+    this.gapPositions[2] = state.car.y;
+    this.gapPositions[3] = x;
+    this.gapPositions[4] = 0.14;
+    this.gapPositions[5] = z;
+    const geometry = this.gapLine?.geometry;
+    if (geometry) {
+      geometry.setDrawRange(0, 2);
+      geometry.attributes.position.needsUpdate = true;
+    }
+    this.gapDot?.position.set(x, 0.14, z);
+  }
+
   private buildTrail(): void {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
@@ -553,6 +613,7 @@ export class TrackScene {
         geometry.attributes.position.needsUpdate = true;
       }
     }
+    this.updateGapMarker(state);
   }
 
   updateScan(scan: ScanMessage, state: StateMessage): void {
@@ -703,6 +764,7 @@ export class TrackScene {
     }
     if (this.slamMap) this.slamMap.visible = layers.map;
     if (this.trail) this.trail.visible = layers.gtTrail;
+    if (this.latestState) this.updateGapMarker(this.latestState);
   }
 
   private updateSlamMap(slam: SlamMessage): void {

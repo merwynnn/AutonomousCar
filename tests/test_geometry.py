@@ -6,6 +6,7 @@ from awake_sim.tracks.geometry import (
     build_test_track,
     catmull_rom_closed,
     offset_polyline,
+    project_to_polyline,
     ramp_scan,
     raycast_segments,
 )
@@ -37,6 +38,20 @@ def test_test_track_geometry() -> None:
     sep = np.linalg.norm(track.inner - track.outer, axis=1)
     assert np.median(sep) == np.median(sep)  # finite
     assert 0.7 < float(np.median(sep)) < 1.2
+
+
+def test_obstacles_are_on_track_and_clear_of_the_wall() -> None:
+    track = build_test_track(width_m=0.9)
+    wall_inner = track.width_m / 2.0 - 0.08
+    for obstacle in track.obstacles:
+        _, lateral, _ = project_to_polyline(track.centerline, (obstacle.x, obstacle.y))
+        half_width = (
+            obstacle.radius if obstacle.kind == "cylinder" else obstacle.width / 2.0
+        )
+        # The whole obstacle must be inside the clear floor, not embedded in the
+        # wall pipe, and it must be visibly inside the lane.
+        assert abs(lateral) + half_width < wall_inner
+        assert abs(lateral) < track.width_m / 2.0 - half_width
 
 
 def test_sample_wraps() -> None:

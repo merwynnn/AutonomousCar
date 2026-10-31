@@ -42,8 +42,9 @@ Everything needed to debug perception, SLAM and control:
 
 ### Strategy view
 
-- controller selection (wall-follow, pure pursuit);
+- controller selection (wall-follow, pure pursuit, furthest-gap);
 - benchmark panel with 5-lap totals and best laps;
+- gap readout: bearing, range, clearance, opening width and steering command;
 - track generator controls and editor;
 - seed and realism preset;
 - links to experiment reports.
@@ -68,6 +69,7 @@ Everything needed to debug perception, SLAM and control:
 | Occupancy map | CanvasTexture on the floor, log-odds colour map |
 | Trajectories | Lines: GT, odometry, SLAM, planned path |
 | Ghost poses | Blue = SLAM, green = MCL, grey = odometry |
+| Gap vector | Magenta line + dot from the car to the chosen furthest opening |
 | Racing line | Thick line with speed colour |
 | Particles | Green points for MCL |
 | Collisions | Flash/marker at contact point |
@@ -90,8 +92,8 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 - MCL off/on and reset MCL.
 - Global relocalization off/on, plus a manual Relocalize action.
 - Loop closure off/on (experimental; default off).
-- Speed limit slider applied to pure pursuit and wall-follow.
-- Debug layer toggles: map, SLAM, MCL, particles, odometry, actual trail.
+- Speed limit slider applied to pure pursuit, wall-follow and furthest-gap.
+- Debug layer toggles: map, SLAM, MCL, particles, odometry, actual trail, gap.
 
 ## 5. WebSocket protocol
 
@@ -110,6 +112,7 @@ shortcuts: WASD manual driving, space pause, R reset, C camera, L lidar, M map.
 {"type": "run.set_speed", "speed": 2.4}
 {"type": "control.mode", "mode": "auto"}
 {"type": "control.controller", "controller": "pure_pursuit"}
+{"type": "control.controller", "controller": "gap_follow"}
 {"type": "drive.command", "throttle": 0.4, "steering": 0.1}
 {"type": "slam.set_options", "mcl_enabled": true, "loop_closure_enabled": false, "global_relocalization_enabled": true}
 {"type": "slam.relocalize"}

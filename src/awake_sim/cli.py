@@ -123,12 +123,24 @@ def run(
     console.print(table)
 
 
-def _run_race(controller: str, laps: int, scenario: Path) -> tuple[list[float], float]:
+def _run_race(
+    controller: str,
+    laps: int,
+    scenario: Path,
+    speed: float = 2.4,
+) -> tuple[list[float], float]:
     from awake_sim.server.pybullet_sim import PyBulletSimulation
 
-    sim = PyBulletSimulation(scenario, enable_lidar=controller == "wall_follow")
+    sim = PyBulletSimulation(
+        scenario,
+        enable_lidar=controller in {"wall_follow", "gap_follow"},
+        enable_slam=False,
+    )
     sim.scenario.race.laps = laps
     sim.auto_controller = controller
+    sim.speed_limit = speed
+    sim.pure_pursuit.speed_limit = speed
+    sim.controller.base_speed = speed
     sim.paused = False
     started = time.time()
     while not sim.finished and sim.sim_time < 240 and time.time() - started < 220:
@@ -140,20 +152,23 @@ def _run_race(controller: str, laps: int, scenario: Path) -> tuple[list[float], 
 @app.command()
 def race(
     controller: str = typer.Option(
-        "pure_pursuit", help="wall_follow or pure_pursuit"
+        "pure_pursuit", help="wall_follow, pure_pursuit or gap_follow"
     ),
     laps: int = typer.Option(5, min=1, max=5),
+    speed: float = typer.Option(2.4, min=0.5, max=6.0, help="Speed limit in m/s"),
     scenario: Path = typer.Option(
         ROOT / "configs" / "scenarios" / "test_track_baseline.yaml",
     ),
 ) -> None:
     """Run a headless race with a selected controller."""
 
-    if controller not in {"wall_follow", "pure_pursuit"}:
-        console.print("[red]controller must be wall_follow or pure_pursuit[/red]")
+    if controller not in {"wall_follow", "pure_pursuit", "gap_follow"}:
+        console.print(
+            "[red]controller must be wall_follow, pure_pursuit or gap_follow[/red]"
+        )
         raise typer.Exit(code=2)
-    lap_times, wall = _run_race(controller, laps, scenario)
-    table = Table(title=f"{controller} — {laps} laps")
+    lap_times, wall = _run_race(controller, laps, scenario, speed)
+    table = Table(title=f"{controller} — {laps} laps at {speed:.1f} m/s")
     table.add_column("Lap")
     table.add_column("Time (s)", justify="right")
     for index, lap_time in enumerate(lap_times, start=1):
@@ -168,15 +183,16 @@ def race(
 @app.command()
 def compare(
     laps: int = typer.Option(5, min=1, max=5),
+    speed: float = typer.Option(2.4, min=0.5, max=6.0, help="Speed limit in m/s"),
     scenario: Path = typer.Option(
         ROOT / "configs" / "scenarios" / "test_track_baseline.yaml",
     ),
 ) -> None:
-    """Compare wall-follow and pure pursuit on the test track."""
+    """Compare wall-follow, pure pursuit and furthest-gap on the test track."""
 
     rows: list[tuple[str, str, str, str]] = []
-    for controller in ("wall_follow", "pure_pursuit"):
-        lap_times, wall = _run_race(controller, laps, scenario)
+    for controller in ("wall_follow", "pure_pursuit", "gap_follow"):
+        lap_times, wall = _run_race(controller, laps, scenario, speed)
         if lap_times:
             rows.append(
                 (
@@ -188,13 +204,39 @@ def compare(
             )
         else:
             rows.append((controller, "DNF", "—", f"{wall:.1f}"))
-    table = Table(title=f"Controller comparison — {laps} laps")
+    table = Table(title=f"Controller comparison — {laps} laps at {speed:.1f} m/s")
     table.add_column("Controller")
     table.add_column("Total (s)", justify="right")
     table.add_column("Best (s)", justify="right")
     table.add_column("Wall (s)", justify="right")
     for row in rows:
         table.add_row(*row)
+    console.print(table)
+
+
+@app.command("gap-bench")
+def gap_bench(
+    laps: int = typer.Option(5, min=1, max=5),
+    speed: float = typer.Option(3.2, min=0.5, max=6.0, help="Speed limit in m/s"),
+    scenario: Path = typer.Option(
+        ROOT / "configs" / "scenarios" / "test_track_baseline.yaml",
+    ),
+) -> None:
+    """Lidar-only furthest-gap benchmark: steer at the widest opening, max speed.
+
+    No map, no localization pose and no ground truth are used by the controller.
+    """
+
+    lap_times, wall = _run_race("gap_follow", laps, scenario, speed)
+    table = Table(title=f"Furthest-gap benchmark — {laps} laps at {speed:.1f} m/s")
+    table.add_column("Metric")
+    table.add_column("Value", justify="right")
+    table.add_row("Controller", "furthest gap (lidar only)")
+    table.add_row("Status", "OK" if len(lap_times) == laps else f"DNF ({len(lap_times)}/{laps})")
+    table.add_row("Total (s)", f"{sum(lap_times):.2f}" if lap_times else "—")
+    table.add_row("Best lap (s)", f"{min(lap_times):.2f}" if lap_times else "—")
+    table.add_row("Lap times (s)", ", ".join(f"{t:.2f}" for t in lap_times) or "—")
+    table.add_row("Wall time (s)", f"{wall:.1f}")
     console.print(table)
 
 

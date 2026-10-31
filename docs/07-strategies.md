@@ -156,6 +156,25 @@ uses the ground-truth pose. See
 The next comparison must repeat this with odometry-only and SLAM/MCL
 localization, generated tracks and obstacles.
 
+### 10.1 Furthest-gap benchmark (lidar only, 2026-10-30)
+
+The furthest-gap controller uses one lidar scan, no map and no pose. It finds the
+direction whose surrounding 60° cone has the largest minimum range, steers
+toward it, and holds the configured speed limit. Five laps at **3.2 m/s**:
+
+| Metric | Result |
+|---|---:|
+| Completed | **5 / 5** |
+| Total | **85.65 s** |
+| Best lap | **15.72 s** |
+| Lap times | 18.32, 17.40, 17.25, 16.97, 15.72 s |
+| Inputs | lidar only (no map, no GT) |
+
+It is faster than the validated 0.9 m/s MCL race (132.94 s) but is a local,
+greedy strategy with no route memory. The 2.8 m/s run DNF while 3.2 m/s
+completed, so the speed result is not a safety proof. See
+[`experiments/EXP-0006-gap-follow.md`](experiments/EXP-0006-gap-follow.md).
+
 ## 11. Interpreting results
 
 - Compare distributions, not single runs.

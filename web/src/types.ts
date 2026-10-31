@@ -98,9 +98,17 @@ export interface StateMessage {
     sonars?: Array<{ name: string; range_m: number | null; valid: boolean }>;
   };
   control_mode?: 'auto' | 'manual';
-  auto_controller?: 'wall_follow' | 'pure_pursuit';
+  auto_controller?: 'wall_follow' | 'pure_pursuit' | 'gap_follow';
   localization_mode?: 'gt' | 'odom' | 'mcl';
   speed_limit?: number;
+  gap?: {
+    valid: boolean;
+    angle_rad: number;
+    steering_rad: number;
+    range_m: number;
+    clearance_m: number;
+    width_rad: number;
+  };
 }
 
 export interface ScanMessage {
@@ -169,6 +177,7 @@ export interface DebugLayers {
   particles: boolean;
   odom: boolean;
   gtTrail: boolean;
+  gap: boolean;
 }
 
 export type ServerMessage = HelloMessage | StateMessage | ScanMessage | SlamMessage;

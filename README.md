@@ -4,13 +4,14 @@ A physically credible 3D simulator and strategy lab for the AWAKE Challenge 2027
 mini autonomous vehicle: realistic non-ideal sensors, from-scratch 2D lidar SLAM,
 and a browser dashboard for live monitoring and strategy comparison.
 
-> Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line and
-> pure pursuit are working. MCL drives both the mapping lap and the race with no
-> ground truth in the control loop: 20.40 s vs 20.12 s for GT on a conservative
-> one-lap comparison; sensor-only mapping produced an 8.3 cm map seam. The
-> five-lap sensor-only MCL race completes at 0.9 m/s: **5/5 laps, 136.00 s**.
-> Procedural wall-side obstacles add distinctive SLAM features; faster MCL runs
-> still stick near the map seam. See [`STATUS.md`](STATUS.md).
+> Status: **M3 in progress**. PyBullet car, non-ideal sensors, racing line,
+> pure pursuit and a lidar-only furthest-gap benchmark are working. MCL drives
+> both the mapping lap and the race with no ground truth in the control loop.
+> The five-lap sensor-only MCL race completes at 0.9 m/s: **5/5 laps, 132.94 s**.
+> The furthest-gap benchmark completes at 3.2 m/s: **5/5 laps, 85.65 s**.
+> Eight on-track crates/poles on the outside of corners add distinctive SLAM
+> features; faster MCL runs still lose lock near the map seam. See
+> [`STATUS.md`](STATUS.md).
 
 ![AWAKE simulator dashboard](docs/assets/2026-10-30-m3-slam.png)
 
@@ -36,7 +37,7 @@ wheel odometry. This project lets the team:
 | Simulation | PyBullet 3D, generic 1/10 4WD Ackermann car, fixed 240 Hz physics, track walls and obstacles |
 | Sensors | LD06-class 2D lidar, 3 ultrasonic, IMU, encoders, steering sensor; non-ideal by default |
 | SLAM | C++17 deskew + correlative matching + occupancy grid + 400-particle MCL; live map/ATE and toggles. Loop closure detector experimental |
-| Strategies | Wall-follow, pure pursuit, racing line, time-optimal speed profile |
+| Strategies | Wall-follow, pure pursuit, lidar-only furthest-gap, racing line, time-optimal speed profile |
 | Race analysis | Headless `race` / `compare` commands, lap-time and penalty metrics, experiment reports |
 | Dashboard | Live 3D, sensor views, SLAM/MCL map, charts, GT/odom/MCL localization modes, car view selector, toggles and debug layers |
 | Docs | `AGENTS.md`, `STATUS.md`, architecture, requirements traceability, devlog, ADRs, runbook |

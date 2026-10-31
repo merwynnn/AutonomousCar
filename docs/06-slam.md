@@ -28,13 +28,15 @@
 MCL tracks the map but cannot correct map drift; the map is still the limiting
 factor.
 
-**Five-lap sensor-only result:** with a frozen one-lap map and procedural
-wall-side landmarks, MCL completes 5/5 laps at **0.9 m/s**, 136.00 s total,
-MCL ATE 22.4 cm mean / 80.5 cm max, global relocalization off. Tuned MCL: 400
+**Five-lap sensor-only result:** with a frozen one-lap map and eight on-track
+landmarks, MCL completes 5/5 laps at **0.9 m/s**, 132.94 s total, MCL ATE
+25.7 cm mean / 91.0 cm max, global relocalization off. Tuned MCL: 400
 particles, rank_keep 0.99, stride 3, softmax 10. Aggressive rank pruning
 0.95/0.9 improved one lap but failed the five-lap run. At 1.2 m/s the car still
-sticks near the seam. The landmarks help: odometry-only drifts to 36.4 cm mean
-and DNF, while MCL completes the one-lap comparison.
+sticks near the seam. The landmarks are placed on the outside of corners,
+inside the wall pipe's clear boundary. They help odometry-only fail (20.0 cm
+mean, DNF), but the growing-map one-lap MCL test is worse (27.56 s, 39.2 cm
+mean), so on-track landmarks still need a better map or a local avoidance layer.
 See [`experiments/EXP-0005-map-and-race.md`](experiments/EXP-0005-map-and-race.md).
 
 **Honest status:** the front-end tracks locally but drifts under realistic wheel

@@ -31,12 +31,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `awake-sim slam-bench --mcl`: SLAM 22.6 cm vs MCL 22.0 cm mean ATE over 12 s;
   MCL tracks the map but cannot fix map drift.
 - GT/odom/MCL localization modes; MCL drives pure pursuit with no GT.
-- `localization-bench`: GT 20.12 s, MCL 20.40 s, odometry DNF on one lap.
-- Map freeze/save and `map-and-race`: sensor-only MCL mapping, 20.81 s,
-  sensor-only mapping; five-lap MCL race 5/5 in 136.00 s at 0.9 m/s
-  (MCL ATE 22.4 cm mean, rank_keep 0.99). Global relocalization experimental/off.
-- Procedural wall-side crates/poles as collidable, lidar-visible SLAM landmarks;
-  included in the track hello message and 3D dashboard.
+- `localization-bench`: GT 20.12 s, MCL 27.56 s (ATE 39.2 cm), odometry DNF
+  on one lap with on-track landmarks.
+- Map freeze/save and `map-and-race`: sensor-only MCL mapping, 24.04 s,
+  five-lap MCL race 5/5 in 132.94 s at 0.9 m/s (MCL ATE 25.7 cm mean,
+  rank_keep 0.99). Global relocalization experimental/off.
+- Procedural on-track crates/poles as collidable, lidar-visible SLAM landmarks,
+  placed on the outside of corners and clear of the wall pipes; included in the
+  track hello message and 3D dashboard.
+- Lidar-only furthest-gap controller and `gap-bench` command: steer toward the
+  most open 60° clearance cone at the speed limit. Five-lap benchmark at
+  3.2 m/s: 5/5, 85.65 s, best 15.72 s.
+- Dashboard **Gap** controller mode with a magenta gap vector, bearing/range/
+  clearance/opening readout, and a Gap layer toggle.
 - Dashboard car-view selector: Actual / Controller / SLAM.
 - Speed-limit slider now applies to pure pursuit as well as wall-follow.
 

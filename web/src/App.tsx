@@ -166,12 +166,13 @@ function TrackCanvas({
 export default function App() {
   const { status, hello, state, scan, slam, history, send } = useTelemetry();
   const [speed, setSpeed] = useState(2.4);
+  const gapBenchSpeed = 3.2;
   const [cameraMode, setCameraMode] = useState<'orbit' | 'top'>('orbit');
   const [renderPose, setRenderPose] = useState<'actual' | 'controller' | 'slam'>('actual');
   const [controlMode, setControlMode] = useState<'auto' | 'manual'>('auto');
-  const [autoController, setAutoController] = useState<'wall_follow' | 'pure_pursuit'>(
-    'wall_follow',
-  );
+  const [autoController, setAutoController] = useState<
+    'wall_follow' | 'pure_pursuit' | 'gap_follow'
+  >('wall_follow');
   const [localizationMode, setLocalizationMode] = useState<'gt' | 'odom' | 'mcl'>('gt');
   const [mclEnabled, setMclEnabled] = useState(false);
   const [globalRelocEnabled, setGlobalRelocEnabled] = useState(false);
@@ -183,6 +184,7 @@ export default function App() {
     particles: true,
     odom: false,
     gtTrail: true,
+    gap: true,
   });
   const keysRef = useRef({ w: false, a: false, s: false, d: false });
   const slamReady = hello?.slam_cpp ?? null;
@@ -261,6 +263,7 @@ export default function App() {
   }, [send, state?.paused]);
 
   const race = state?.race;
+  const gap = state?.gap;
   const finitePoints = scan?.ranges.filter((range) => range !== null).length ?? 0;
   const scanning = scan?.ranges.length ?? 0;
   const running = state ? !state.paused && !state.finished : false;
@@ -272,6 +275,7 @@ export default function App() {
     particles: 'Show or hide the green MCL particle cloud.',
     odom: 'Show or hide the grey odometry ghost and trail.',
     gtTrail: 'Show or hide the orange actual-car trail (ground truth/reference only).',
+    gap: 'Show or hide the magenta furthest-gap direction and target point.',
   };
 
   return (
@@ -336,15 +340,57 @@ export default function App() {
               >
                 Pursuit
               </button>
+              <button
+                type="button"
+                title={`Lidar-only furthest-gap benchmark at ${gapBenchSpeed.toFixed(1)} m/s: steer at the most open direction. No map, no pose, no ground truth.`}
+                className={autoController === 'gap_follow' ? 'active' : ''}
+                onClick={() => {
+                  setAutoController('gap_follow');
+                  setSpeed(gapBenchSpeed);
+                  send({ type: 'run.set_speed', speed: gapBenchSpeed });
+                }}
+              >
+                Gap
+              </button>
             </div>
           ) : null}
           <p className="small-note">
             {controlMode === 'auto'
               ? autoController === 'wall_follow'
                 ? 'Lidar wall-follow, no ground truth.'
-                : `Pure pursuit + racing line using ${localizationMode.toUpperCase()} pose.`
+                : autoController === 'gap_follow'
+                  ? `Furthest-gap lidar steering at ${gapBenchSpeed.toFixed(1)} m/s. No map or ground truth.`
+                  : `Pure pursuit + racing line using ${localizationMode.toUpperCase()} pose.`
               : 'W/S throttle · A/D steer. Keep the page focused.'}
           </p>
+          {controlMode === 'auto' && autoController === 'gap_follow' ? (
+            <div className="gap-readout">
+              <div className="sensor-row">
+                <span>Gap bearing</span>
+                <strong>
+                  {gap?.valid ? `${((gap.angle_rad * 180) / Math.PI).toFixed(1)}°` : '—'}
+                </strong>
+              </div>
+              <div className="sensor-row">
+                <span>Gap range / clearance</span>
+                <strong>
+                  {gap?.valid
+                    ? `${gap.range_m.toFixed(2)} / ${gap.clearance_m.toFixed(2)} m`
+                    : '—'}
+                </strong>
+              </div>
+              <div className="sensor-row">
+                <span>Opening</span>
+                <strong>
+                  {gap?.valid ? `${((gap.width_rad * 180) / Math.PI).toFixed(1)}°` : '—'}
+                </strong>
+              </div>
+              <p className="small-note">
+                Magenta line = chosen furthest opening. Steering command{' '}
+                {gap?.valid ? `${((gap.steering_rad * 180) / Math.PI).toFixed(1)}°` : '—'}.
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="sidebar-section">
@@ -472,6 +518,7 @@ export default function App() {
                 ['particles', 'Particles'],
                 ['odom', 'Odometry'],
                 ['gtTrail', 'Actual trail'],
+                ['gap', 'Gap vector'],
               ] as Array<[keyof DebugLayers, string]>
             ).map(([key, label]) => (
               <label className="debug-toggle" key={key} title={layerHelp[key]}>
@@ -872,12 +919,17 @@ export default function App() {
             <strong>148.34 s</strong>
           </div>
           <div className="sensor-row">
-            <span>Pure pursuit (GT)</span>
-            <strong>46.12 s</strong>
+            <span>Pure pursuit (GT, 2.4 m/s)</span>
+            <strong>52.20 s</strong>
+          </div>
+          <div className="sensor-row">
+            <span>Furthest gap (lidar, 3.2 m/s)</span>
+            <strong>85.65 s</strong>
           </div>
           <p className="small-note">
-            Pure pursuit runs on the ground-truth pose and is an upper bound until
-            SLAM/MCL localization lands in M3.
+            Gap is lidar-only and has no route memory. Pure pursuit uses the
+            ground-truth pose here; the validated no-GT MCL race is 132.94 s at
+            0.9 m/s.
           </p>
         </div>
 

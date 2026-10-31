@@ -2,9 +2,10 @@
 
 - Date: 2026-10-30
 - Mapping: one slow lap, **MCL control** on the growing SLAM map, 1.2 m/s, safe line, lidar 1 sub-ray
-- Race: frozen one-lap map, MCL control, 1.2 m/s, safe line
+- Race: frozen one-lap map, MCL control, 0.9 m/s, safe line
 - Loop closure: off
-- Track: PDF-like test track
+- Global relocalization: off
+- Track: PDF-like test track with eight on-track landmarks
 
 ## Question
 
@@ -15,56 +16,50 @@ and no ground truth in the control loop?
 
 | Metric | Result |
 |---|---:|
-| Mapping lap (MCL control, no GT) | 20.68 s |
-| Map seam (start vs end pose) | **11.9 cm** |
-| One-lap MCL race | 20.15 s |
-| One-lap MCL ATE mean / max | 23.8 / 47.6 cm |
+| Mapping lap (MCL control, no GT) | 24.04 s |
+| Map seam (start vs end pose) | **20.5 cm** |
+| One-lap MCL race (first race lap) | 26.40 s |
 | Race speed | 0.9 m/s |
-| Global relocalization | off |
 | MCL tuning | 400 particles, rank_keep 0.99, stride 3, softmax 10 |
 | 5-lap attempt: completed | **5 / 5** |
-| 5-lap attempt: total | **136.00 s** |
-| 5-lap attempt: lap times | 27.13, 27.32, 27.24, 27.28, 27.03 s |
-| 5-lap attempt: MCL ATE mean / max | 22.4 / 80.5 cm |
+| 5-lap attempt: total | **132.94 s** |
+| 5-lap attempt: lap times | 26.40, 26.84, 26.99, 26.41, 26.31 s |
+| 5-lap attempt: MCL ATE mean / max | 25.7 / 91.0 cm |
 | 5-lap attempt: status | **OK** |
 
 ## Interpretation
 
-- A sensor-only MCL mapping lap produced a **8.3 cm seam** (slower speed and a
-  safer line than the previous GT mapping test). It is good enough for one MCL
-  lap at 1.2 m/s, but not yet proven for five consecutive laps.
-- MCL error grows across laps (22.6 cm mean in the one-lap comparison, 45.3 cm
-  in the 5-lap attempt). Without a global correction, particles slowly lock onto
-  the drifting local map.
-- With the procedural obstacles, all five laps completed at **0.9 m/s**, MCL ATE
-  22.4 cm mean / 80.5 cm max. The obstacles add distinctive scan features and
-  make odometry-only fail much earlier (36.4 cm mean, DNF). Speed is still the
-  safety margin that keeps MCL tracking through the seam.
+- A sensor-only MCL mapping lap produced a **20.5 cm seam**. It is good enough
+  for five MCL laps at 0.9 m/s, but not for faster runs.
+- MCL error is not monotonically growing: the frozen-map race averages 25.7 cm
+  but reaches 91.0 cm near the seam. Without a global correction, particles can
+  lock onto the drifting local map.
+- The on-track landmarks add distinctive scan features. They also make the
+  growing-map one-lap test harder: MCL ATE rises to 39.2 cm and odometry drifts
+  into a wall. The frozen-map race remains the stronger result.
 - Tuning result: aggressive rank pruning (0.95/0.9) improved one lap but failed
   the 5-lap run. A mild **rank_keep 0.99** with 400 particles and stride 3 is the
   reliable setting. Ranking is applied only when resampling is triggered.
 - Global relocalization was tested and made the run worse on this symmetric
   track: the scan-only scatter can converge to the wrong place. It is now
   experimental, off by default, and triggered only manually or when stuck.
-- Mapping is faster than the race only because it was configured at 1.5 m/s and
-  a shorter line; at equal settings GT is 20.12 s, MCL 20.40 s.
+- The mapping lap is slower than the race because it uses the stable no-rank
+  MCL settings and a conservative speed profile. That trade is intentional:
+  mapping quality first, then race reliability.
 
 ## What this means
 
-A **one-lap frozen map is promising but not sufficient** for a five-lap MCL race.
-The next fixes are:
+A **one-lap frozen map is sufficient for five MCL laps at 0.9 m/s**, but the
+20.5 cm seam and 91.0 cm maximum error are still the limiting factors. The next
+fixes are:
 
-1. global MCL relocalization or periodic localization reset at the start line;
-2. reliable loop closure (or a visible start-line landmark) to remove the map
+1. a local obstacle-avoidance safety layer so pure pursuit tolerates on-track
+   landmarks with MCL pose error;
+2. global MCL relocalization or periodic correction at the start line;
+3. reliable loop closure (or a visible start-line landmark) to remove the map
    seam;
-3. lower race speed until MCL drift is bounded;
-4. a more robust controller (Stanley/MPC) that tolerates larger pose error.
-
-The map seam is the key diagnostic: the sensor-only mapping lap reduced it to
-8.3 cm. At 0.9 m/s, five laps complete with MCL ATE staying at tens of
-centimetres. At 1.2 m/s the car sticks near the seam. The next gains must come
-from global relocalization done properly, loop closure, or a more robust
-controller.
+4. lower race speed until MCL drift is bounded;
+5. a more robust controller (Stanley/MPC) that tolerates larger pose error.
 
 ## Reproduction
 
@@ -75,6 +70,7 @@ uv run awake-sim map-and-race --laps 5
 
 ## Decision
 
-Keep the map-once/race-with-MCL workflow as an experiment, but do not claim a
-successful five-lap MCL race yet. Add global relocalization or a proper loop
-closure before increasing race speed.
+Keep the map-once/race-with-MCL workflow as the main sensor-only experiment. It
+completes five laps at 0.9 m/s; higher speeds and stronger on-track landmarks
+still need a better map/seam or a local avoidance layer before they can be
+claimed as reliable.

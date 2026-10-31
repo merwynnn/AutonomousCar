@@ -18,16 +18,18 @@ quality cost in lap time?
 | Pose source | Lap time | ATE mean | ATE max | Status |
 |---|---:|---:|---:|---|
 | GT | 20.12 s | 0.0 cm | 0.0 cm | OK |
-| Odom | DNF | 36.4 cm | 75.1 cm | hit wall |
-| MCL | **20.57 s** | **23.0 cm** | 38.8 cm | OK |
+| Odom | DNF | 20.0 cm | 37.5 cm | hit wall |
+| MCL | **27.56 s** | **39.2 cm** | 68.2 cm | OK |
 
 ## Interpretation
 
-- **MCL is only ~2% slower than ground truth** at this conservative speed.
-- **Odometry-only fails**: with the procedural landmarks the run drifts to
-  36.4 cm mean / 75.1 cm max and hits a wall.
-- MCL is not perfect, but it completes the lap and is clearly more robust than
-  odometry.
+- **MCL completes the lap with no ground truth**, while odometry drifts into a
+  wall. Robustness, not local accuracy, is the current MCL benefit.
+- The on-track landmarks made this growing-map test harder: MCL is 7.4 s slower
+  than GT and its ATE is 39.2 cm. The frozen-map five-lap race (EXP-0005) is
+  better at 25.7 cm mean, but still reaches 91.0 cm near the seam.
+- MCL is not perfect, but it completes the lap and is more robust than
+  odometry-only control.
 - The safe line matters: with the aggressive line, MCL/odometry crashed at the
   right lobe even with the same localization.
 - No ground truth enters the MCL control loop. GT is only the comparison mode.

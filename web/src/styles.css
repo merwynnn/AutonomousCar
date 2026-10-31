@@ -530,6 +530,16 @@ input[type='range'] {
   font-size: 11px;
 }
 
+.gap-readout {
+  margin-top: 6px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.gap-readout .sensor-row {
+  padding: 4px 0;
+}
+
 .sensor-row:last-child {
   border-bottom: 0;
 }

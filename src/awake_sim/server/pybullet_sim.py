@@ -20,6 +20,7 @@ from awake_sim.config import (
     load_sensors,
     load_vehicle,
 )
+from awake_sim.control.gap_follow import FurthestGapController
 from awake_sim.control.pure_pursuit import PurePursuitController
 from awake_sim.control.racing_line import build_racing_line
 from awake_sim.control.wall_follow import WallFollowController
@@ -67,6 +68,7 @@ class PyBulletSimulation:
             self.sensors.ultrasonic, self.world, seed=self.scenario.seed
         )
         self.controller = WallFollowController(base_speed=2.4)
+        self.gap_follow = FurthestGapController()
         self.racing_line = build_racing_line(
             self.track, self.vehicle, lateral_margin=0.25
         )
@@ -175,6 +177,7 @@ class PyBulletSimulation:
         self.world.reset(start_pose)
         self.odometry.reset(start_pose)
         self.controller.reset()
+        self.gap_follow.reset()
         self.pure_pursuit.reset()
         self.paused = True
         self.finished = False
@@ -374,6 +377,21 @@ class PyBulletSimulation:
             command = self.pure_pursuit.update(pose[0], pose[1], pose[2], speed)
             self._apply_recovery(command, state.speed)
             return
+        if self.auto_controller == "gap_follow":
+            state = self.world.state()
+            scan = self._latest_scan
+            if scan is None:
+                self.actuation = Actuation()
+                return
+            if self.sim_time < scan.t_available:
+                # Lidar-only controller: hold the last command until the scan
+                # has actually arrived (no future data).
+                return
+            command = self.gap_follow.update(
+                scan, self.control_every * self.physics_dt, self.speed_limit
+            )
+            self._apply_recovery(command, state.speed)
+            return
         scan = self._latest_scan
         if scan is None:
             self.actuation = Actuation()
@@ -549,6 +567,17 @@ class PyBulletSimulation:
             "auto_controller": self.auto_controller,
             "localization_mode": self.localization_mode,
             "speed_limit": self.speed_limit,
+            "gap": {
+                "valid": (
+                    self.auto_controller == "gap_follow"
+                    and self.gap_follow.debug.valid
+                ),
+                "angle_rad": round(self.gap_follow.debug.angle_rad, 4),
+                "steering_rad": round(self.gap_follow.debug.steering_rad, 4),
+                "range_m": round(self.gap_follow.debug.range_m, 3),
+                "clearance_m": round(self.gap_follow.debug.clearance_m, 3),
+                "width_rad": round(self.gap_follow.debug.gap_width_rad, 4),
+            },
         }
 
     def scan_message(self) -> dict[str, Any]:
@@ -711,8 +740,11 @@ class PyBulletSimulation:
         elif kind == "control.controller":
             controller = str(msg.get("controller", "wall_follow"))
             self.auto_controller = (
-                controller if controller in {"wall_follow", "pure_pursuit"} else "wall_follow"
+                controller
+                if controller in {"wall_follow", "pure_pursuit", "gap_follow"}
+                else "wall_follow"
             )
+            self.gap_follow.reset()
             self.actuation = Actuation()
         elif kind == "localization.mode":
             mode = str(msg.get("mode", "gt"))

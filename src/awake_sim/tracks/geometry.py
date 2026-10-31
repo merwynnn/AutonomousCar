@@ -138,11 +138,15 @@ def build_obstacles(
     centerline: np.ndarray,
     width_m: float,
     seed: int = 2027,
+    wall_radius_m: float = 0.08,
 ) -> list[Obstacle]:
-    """Deterministic wall-side crates/poles used as SLAM landmarks.
+    """Deterministic on-track crates/poles used as SLAM landmarks.
 
-    They sit near the walls, outside the safe racing line, so they add distinctive
-    scan features without blocking the lane.
+    The wall pipes are not at the nominal lane edge: a pipe of radius
+    ``wall_radius_m`` centred at ``width_m / 2`` leaves only
+    ``width_m / 2 - wall_radius_m`` of clear floor. The obstacles are placed
+    just inside that clear boundary so they are visibly on the track and not
+    embedded in the wall.
     """
 
     rng = np.random.default_rng(seed)
@@ -155,11 +159,23 @@ def build_obstacles(
 
     # Fractions along the centreline, avoiding the start/finish area.
     fractions = [0.10, 0.22, 0.34, 0.46, 0.60, 0.72, 0.84, 0.94]
+    wall_inner = width_m / 2.0 - wall_radius_m
+    prev_tangent = np.roll(tangent, 1, axis=0)
+    next_tangent = np.roll(tangent, -1, axis=0)
+    turn_sign = (
+        prev_tangent[:, 0] * next_tangent[:, 1]
+        - prev_tangent[:, 1] * next_tangent[:, 0]
+    )
     obstacles: list[Obstacle] = []
     for i, fraction in enumerate(fractions):
         idx = int((fraction * len(pts) + rng.integers(0, 5)) % len(pts))
-        side = 1.0 if i % 2 == 0 else -1.0
-        offset = side * (width_m / 2.0 - 0.06)
+        if abs(turn_sign[idx]) > 1e-4:
+            # Outside of the corner: the racing line cuts to the inside, so the
+            # landmark stays on track without sitting on the racing line.
+            side = -1.0 if turn_sign[idx] > 0.0 else 1.0
+        else:
+            side = 1.0 if i % 2 == 0 else -1.0
+        offset = side * (wall_inner - 0.07)
         x = float(pts[idx, 0] + normal[idx, 0] * offset)
         y = float(pts[idx, 1] + normal[idx, 1] * offset)
         yaw = float(np.arctan2(tangent[idx, 1], tangent[idx, 0]))
@@ -171,9 +187,9 @@ def build_obstacles(
                     x=x,
                     y=y,
                     yaw=yaw,
-                    length=0.16,
-                    width=0.07,
-                    height=0.22,
+                    length=0.13,
+                    width=0.05,
+                    height=0.20,
                 )
             )
         else:
@@ -184,8 +200,8 @@ def build_obstacles(
                     x=x,
                     y=y,
                     yaw=yaw,
-                    height=0.30,
-                    radius=0.035,
+                    height=0.28,
+                    radius=0.025,
                 )
             )
     return obstacles

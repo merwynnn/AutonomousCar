@@ -70,6 +70,12 @@ uv run awake-sim run --scenario configs/scenarios/test_track.yaml
 # controller comparison
 uv run awake-sim compare --laps 5
 
+# lidar-only furthest-gap benchmark (no map, no pose)
+uv run awake-sim gap-bench --laps 5 --speed 3.2
+
+# controller-specific race
+uv run awake-sim race --controller gap_follow --laps 5 --speed 3.2
+
 # localization comparison (GT / odom / MCL)
 uv run awake-sim localization-bench --laps 1
 
