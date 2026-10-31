@@ -1160,7 +1160,9 @@ export default function App() {
     const timer = window.setInterval(() => {
       const keys = keysRef.current;
       const throttle = (keys.forward ? 1 : 0) - (keys.back ? 0.7 : 0);
-      const steering = (keys.left ? 0.45 : 0) - (keys.right ? 0.45 : 0);
+      // Mirror the manual steering command relative to the simulator's
+      // positive-left convention, matching the dashboard's on-screen Q/D feel.
+      const steering = (keys.right ? 0.45 : 0) - (keys.left ? 0.45 : 0);
       send({ type: 'drive.command', throttle, steering });
     }, 50);
     return () => window.clearInterval(timer);
