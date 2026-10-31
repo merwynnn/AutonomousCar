@@ -95,9 +95,13 @@ export class TrackScene {
 
   private gapGroup = new THREE.Group();
   private gapLine: THREE.Line | null = null;
+  private gapRim: THREE.Line | null = null;
+  private gapBoundary: THREE.LineSegments | null = null;
   private gapFan: THREE.Mesh | null = null;
   private gapDot: THREE.Mesh | null = null;
-  private readonly gapFanPositions = new Float32Array((33 + 1) * 3);
+  private readonly gapFanPositions = new Float32Array((33 + 2) * 3);
+  private readonly gapRimPositions = new Float32Array((33 + 1) * 3);
+  private readonly gapBoundaryPositions = new Float32Array(4 * 3);
 
   private latestState: StateMessage | null = null;
   private lidarHeight = 0.14;
@@ -707,15 +711,49 @@ export class TrackScene {
     this.gapFan = new THREE.Mesh(
       fanGeometry,
       new THREE.MeshBasicMaterial({
-        color: 0xd7a84b,
+        color: 0x5f9fc7,
         transparent: true,
-        opacity: 0.13,
+        opacity: 0.05,
         side: THREE.DoubleSide,
         depthWrite: false,
       }),
     );
     this.gapFan.renderOrder = 4;
     this.gapGroup.add(this.gapFan);
+
+    const rimGeometry = new THREE.BufferGeometry();
+    rimGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.gapRimPositions, 3),
+    );
+    this.gapRim = new THREE.Line(
+      rimGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0x8ec7ef,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: false,
+      }),
+    );
+    this.gapRim.renderOrder = 5;
+    this.gapGroup.add(this.gapRim);
+
+    const boundaryGeometry = new THREE.BufferGeometry();
+    boundaryGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.gapBoundaryPositions, 3),
+    );
+    this.gapBoundary = new THREE.LineSegments(
+      boundaryGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0x8ec7ef,
+        transparent: true,
+        opacity: 0.35,
+        depthTest: false,
+      }),
+    );
+    this.gapBoundary.renderOrder = 5;
+    this.gapGroup.add(this.gapBoundary);
 
     const lineGeometry = new THREE.BufferGeometry();
     lineGeometry.setAttribute(
@@ -725,20 +763,20 @@ export class TrackScene {
     this.gapLine = new THREE.Line(
       lineGeometry,
       new THREE.LineBasicMaterial({
-        color: 0xe7a85b,
+        color: 0xff6fae,
         transparent: true,
         opacity: 0.95,
         depthTest: false,
       }),
     );
-    this.gapLine.renderOrder = 5;
+    this.gapLine.renderOrder = 6;
     this.gapGroup.add(this.gapLine);
 
     this.gapDot = new THREE.Mesh(
       new THREE.SphereGeometry(0.032, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xe7a85b, depthTest: false }),
+      new THREE.MeshBasicMaterial({ color: 0xff6fae, depthTest: false }),
     );
-    this.gapDot.renderOrder = 6;
+    this.gapDot.renderOrder = 7;
     this.gapGroup.add(this.gapDot);
     this.gapGroup.visible = false;
     this.scene.add(this.gapGroup);
@@ -763,7 +801,7 @@ export class TrackScene {
       this.layers.gap;
     this.gapGroup.visible = visible;
     if (!visible) return;
-    const range = Math.max(0.35, Math.min(gap.range_m, 3.0));
+    const range = Math.max(0.4, Math.min(gap.range_m, 2.0));
     const y = 0.035;
     const startX = state.car.x;
     const startZ = state.car.y;
@@ -771,20 +809,48 @@ export class TrackScene {
     this.gapFanPositions[0] = startX;
     this.gapFanPositions[1] = y;
     this.gapFanPositions[2] = startZ;
+    let leftX = startX;
+    let leftZ = startZ;
+    let rightX = startX;
+    let rightZ = startZ;
     for (let index = 0; index <= arcCount; index += 1) {
       const fraction = index / arcCount;
       const angle =
         state.car.theta +
         gap.gap_left_rad +
         (gap.gap_right_rad - gap.gap_left_rad) * fraction;
+      const x = startX + Math.cos(angle) * range;
+      const z = startZ + Math.sin(angle) * range;
       const offset = (index + 1) * 3;
-      this.gapFanPositions[offset] = startX + Math.cos(angle) * range;
+      this.gapFanPositions[offset] = x;
       this.gapFanPositions[offset + 1] = y;
-      this.gapFanPositions[offset + 2] = startZ + Math.sin(angle) * range;
+      this.gapFanPositions[offset + 2] = z;
+      this.gapRimPositions[index * 3] = x;
+      this.gapRimPositions[index * 3 + 1] = y + 0.001;
+      this.gapRimPositions[index * 3 + 2] = z;
+      if (index === 0) {
+        leftX = x;
+        leftZ = z;
+      } else if (index === arcCount) {
+        rightX = x;
+        rightZ = z;
+      }
     }
+    this.gapBoundaryPositions.set([
+      startX, y + 0.001, startZ, leftX, y + 0.001, leftZ,
+      startX, y + 0.001, startZ, rightX, y + 0.001, rightZ,
+    ]);
     if (this.gapFan) {
       this.gapFan.geometry.attributes.position.needsUpdate = true;
       this.gapFan.geometry.computeBoundingSphere();
+    }
+    if (this.gapRim) {
+      this.gapRim.geometry.attributes.position.needsUpdate = true;
+      this.gapRim.geometry.computeBoundingSphere();
+    }
+    if (this.gapBoundary) {
+      this.gapBoundary.geometry.attributes.position.needsUpdate = true;
+      this.gapBoundary.geometry.computeBoundingSphere();
     }
     const chosen = state.car.theta + gap.angle_rad;
     const targetX = startX + Math.cos(chosen) * range;
