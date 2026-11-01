@@ -110,6 +110,9 @@ npm install
 npm run dev
 ```
 
+On Windows, double-click `run.bat` to start both servers in WSL and open the
+dashboard.
+
 Open the Vite URL (usually `http://localhost:5173`). The API runs on
 `http://localhost:8000`. A production build is served by the backend after
 `npm run build`. The dashboard defaults to the reference car in

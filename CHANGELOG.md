@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-01 — Developer startup script
+
+- Added `run.bat` to launch the backend and dashboard in two WSL windows and
+  open the web UI.
+
 ## 2026-11-01 — Portable onboard runtime and shared state estimator
 
 - Added `onboard/` as the Raspberry Pi-deployable package:
