@@ -1,7 +1,7 @@
 name: awake_2027_sensors
 description: >
-  AWAKE 2027 reference sensor package: LD19-class lidar below the 16 cm walls,
-  four ultrasonic sensors, BNO085-class IMU and rear-wheel encoders.
+  AWAKE 2027 reference sensor package: LD19-class lidar below the 16 cm walls, four
+  ultrasonic sensors, BNO085-class IMU and rear-wheel encoders.
 
 lidar:
   frame_id: lidar
@@ -13,8 +13,14 @@ lidar:
   scan_direction: clockwise
   mount:
     # 14 cm above the gym floor: below the 16 cm VMC pipe walls.
-    position_m: [0.105, 0.0, 0.05]
-    rpy_deg: [0.0, 0.0, 0.0]
+    position_m:
+      - 0.105
+      - 0.0
+      - 0.05
+    rpy_deg:
+      - 0.0
+      - 0.0
+      - 0.0
   noise:
     range_sigma_m: 0.012
     range_bias_m: 0.002
@@ -31,8 +37,8 @@ lidar:
     aggregation: mixed
   dropout:
     base_probability: 0.005
-    max_probability: 0.20
-    incidence_threshold_deg: 70.0
+    max_probability: 0.2
+    incidence_threshold_deg: 70
     min_reflectivity: 0.08
   dead_beams:
     fraction: 0.01
@@ -59,31 +65,60 @@ ultrasonic:
     - name: front_left
       frame_id: sonar_fl
       mount:
-        position_m: [0.205, 0.070, 0.0]
-        rpy_deg: [0.0, 0.0, 15.0]
+        position_m:
+          - 0.205
+          - 0.07
+          - 0.0
+        rpy_deg:
+          - 0.0
+          - 0.0
+          - 15.0
     - name: front_right
       frame_id: sonar_fr
       mount:
-        position_m: [0.205, -0.070, 0.0]
-        rpy_deg: [0.0, 0.0, -15.0]
+        position_m:
+          - 0.205
+          - -0.07
+          - 0.0
+        rpy_deg:
+          - 0.0
+          - 0.0
+          - -15.0
     - name: rear_left
       frame_id: sonar_rl
       mount:
-        position_m: [-0.205, 0.070, 0.0]
-        rpy_deg: [0.0, 0.0, 165.0]
+        position_m:
+          - -0.205
+          - 0.07
+          - 0.0
+        rpy_deg:
+          - 0.0
+          - 0.0
+          - 165.0
     - name: rear_right
       frame_id: sonar_rr
       mount:
-        position_m: [-0.205, -0.070, 0.0]
-        rpy_deg: [0.0, 0.0, -165.0]
-
+        position_m:
+          - -0.205
+          - -0.07
+          - 0.0
+        rpy_deg:
+          - 0.0
+          - 0.0
+          - -165.0
 imu:
   frame_id: imu
   rate_hz: 200.0
   latency_ms: 5.0
   mount:
-    position_m: [0.0, 0.0, 0.02]
-    rpy_deg: [0.0, 0.0, 0.0]
+    position_m:
+      - 0.0
+      - 0.0
+      - 0.02
+    rpy_deg:
+      - 0.0
+      - 0.0
+      - 0.0
   gyro:
     bias_deg_s: 0.8
     noise_deg_s: 0.06
@@ -117,43 +152,43 @@ steering:
 realism_presets:
   ideal:
     lidar:
-      noise_scale: 0.0
-      dropout_scale: 0.0
-      latency_scale: 0.0
+      noise_scale: 0
+      dropout_scale: 0
+      latency_scale: 0
     ultrasonic:
-      noise_scale: 0.0
-      dropout_scale: 0.0
-      latency_scale: 0.0
+      noise_scale: 0
+      dropout_scale: 0
+      latency_scale: 0
     imu:
-      noise_scale: 0.0
-      bias_scale: 0.0
+      noise_scale: 0
+      bias_scale: 0
     encoders:
-      slip_scale: 0.0
+      slip_scale: 0
   realistic:
     lidar:
-      noise_scale: 1.0
-      dropout_scale: 1.0
-      latency_scale: 1.0
+      noise_scale: 1
+      dropout_scale: 1
+      latency_scale: 1
     ultrasonic:
-      noise_scale: 1.0
-      dropout_scale: 1.0
-      latency_scale: 1.0
+      noise_scale: 1
+      dropout_scale: 1
+      latency_scale: 1
     imu:
-      noise_scale: 1.0
-      bias_scale: 1.0
+      noise_scale: 1
+      bias_scale: 1
     encoders:
-      slip_scale: 1.0
+      slip_scale: 1
   harsh:
     lidar:
       noise_scale: 1.8
       dropout_scale: 2.5
-      latency_scale: 2.0
+      latency_scale: 2
     ultrasonic:
-      noise_scale: 2.0
-      dropout_scale: 3.0
-      latency_scale: 2.0
+      noise_scale: 2
+      dropout_scale: 3
+      latency_scale: 2
     imu:
-      noise_scale: 2.0
-      bias_scale: 3.0
+      noise_scale: 2
+      bias_scale: 3
     encoders:
       slip_scale: 1.5
