@@ -1,9 +1,11 @@
 """Standalone AWAKE simulator core.
 
-The deployable folders are ``simulator/`` (physics, sensors, track, timing) and
-``algorithms/`` (the sensor-only controller contract and your controllers).
+``simulator/`` is host-only physics, sensors, track and timing. The portable
+contract, estimator and Pi runtime live in ``onboard/``; controllers in
+``algorithms/`` import only ``onboard.api`` and NumPy.
 """
 
+from simulator.bridge import SimRobotAPI
 from simulator.simulation import Simulation, SimulationStatus
 
-__all__ = ["Simulation", "SimulationStatus"]
+__all__ = ["SimRobotAPI", "Simulation", "SimulationStatus"]

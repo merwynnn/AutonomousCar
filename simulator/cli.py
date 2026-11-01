@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
-from algorithms.interface import Controller
+from onboard.api import Controller
 
 from simulator.config import Realism, SensorsConfig, VehicleConfig, load_sensors, load_vehicle
 from simulator.simulation import DEFAULT_SCENARIO, Simulation

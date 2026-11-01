@@ -1,16 +1,39 @@
 # Project status
 
-> Last updated: 2026-10-31
-> Branch: `sim-core` — standalone simulator + dashboard car lab
+> Last updated: 2026-11-01
+> Branch: `sim-core` — standalone simulator + portable onboard runtime
 
 ## What works
 
+- **Portable onboard boundary** in `onboard/`:
+  - `onboard/api.py` owns `Observation`, `Actuation`, `SensorFrame`,
+    `StateEstimate` and `RobotAPI`;
+  - controllers receive raw sensor frames and shared-estimator output;
+  - `algorithms/` imports only `onboard.api` and NumPy;
+  - `simulator/bridge.py` exposes `SimRobotAPI`;
+  - an import-boundary test fails if `onboard/` or `algorithms/` imports host,
+    physics or dashboard code.
+- **Shared wheel + IMU estimator** in `onboard/estimator/`:
+  - rear encoder ticks, gyro yaw rate and steering fusion;
+  - zero-velocity gyro-bias learning;
+  - slip detection when wheel and gyro disagree;
+  - conservative diagnostic covariance.
+- **Raw simulated sensor chain**:
+  - encoder model with wheel-radius/track-width calibration errors, 50 Hz
+    ticks, jitter and dropouts;
+  - BNO085-class IMU with bias, random walk, scale, noise, cross-axis coupling
+    and latency;
+  - steering-angle sensor with noise, quantization and latency;
+  - lidar and ultrasonic models unchanged and still timestamp-filtered.
+- **Shared configuration layout**:
+  - `configs/vehicle*.yaml` and `configs/sensors*.yaml` are portable;
+  - `configs/estimator.yaml` holds estimator tuning only;
+  - `configs/sim/` holds simulator-only scenarios.
 - **MuJoCo digital twin** as the default physics backend, generated from the same
   vehicle definition as the PyBullet comparison backend.
   - contact wheels, 4WD torque motors, steering hinges and position servos;
   - 240 Hz physics, 60 Hz control, lidar raycasts from MuJoCo geometry.
-- Reference AWAKE 2027 car profile and sensor package in
-  `simulator/configs/awake_2027.yaml`.
+- Reference AWAKE 2027 car profile and sensor package.
 - Data-driven car definition in YAML or Python:
   - mass, centre of mass, dimensions, wheelbase, track width, wheels;
   - body structure with box/cylinder/sphere parts and collision flags;
@@ -19,10 +42,6 @@
   - lidar/ultrasonic/IMU/encoder characteristics.
 - Runtime URDF/MJCF generation from `VehicleConfig`; both backends load the
   generated car.
-- 240 Hz MuJoCo/PyBullet physics, 60 Hz control, lap timing and deterministic
-  seeded sensors.
-- 720-beam 3D-ray-traced lidar with non-ideal effects, three ultrasonic sensors,
-  IMU/odometry drift.
 - Sensor-only algorithm boundary and two lidar-only demo controllers
   (furthest-gap and wall-follow).
 - Dashboard at `dashboard/`:
@@ -56,17 +75,24 @@ Calibration: [docs/11-calibration.md](docs/11-calibration.md).
 ## Known limitations
 
 - No SLAM, MCL, racing line or map in this branch.
+- The estimator is a complementary wheel/IMU filter, not a full EKF, and does
+  not use lidar scan matching.
 - MuJoCo tyre behaviour is contact-based; it is not yet a Pacejka/brush tyre
   model calibrated against the real car.
 - Suspension stiffness is represented at the joint/contact level rather than a
   full spring/damper linkage.
+- Hardware drivers are protocol/protocol-skeleton level; board-specific serial
+  and lidar setup still has to be implemented on the Pi.
 - The car studio is an inspection view; it does not edit YAML in place.
 - Headless browser screenshots need WebGL/EGL support.
 
 ## Next tasks
 
-1. Add a Pacejka/brush tyre model and calibrated motor torque-speed curve.
-2. Add live numeric editing for selected car/sensor properties.
-3. Add a full suspension linkage model if lap-time sensitivity requires it.
-4. Add a real-car serial adapter and recorded replay.
-5. Measure the selected BOM and fit the calibration protocol in `docs/11-calibration.md`.
+1. Implement the board-specific `SensorSource` / `ActuatorSink` drivers and
+   record real encoder/IMU/lidar logs.
+2. Validate the shared estimator against recorded real-car runs.
+3. Add a 2D EKF and optional lidar correction behind the same `StateEstimator`
+   protocol if the controller needs better pose.
+4. Add a Pacejka/brush tyre model and calibrated motor torque-speed curve.
+5. Measure the selected BOM and fit the calibration protocol in
+   `docs/11-calibration.md`.

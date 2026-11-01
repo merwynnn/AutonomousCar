@@ -16,10 +16,12 @@ def test_reference_scenario_is_default() -> None:
     assert bundle.sensors.lidar.beams == 450
     assert len(bundle.sensors.ultrasonic.sensors) == 4
     assert bundle.scenario.simulation.control_hz == 60.0
+    assert bundle.sensors.steering.rate_hz == 100.0
+    assert bundle.vehicle_path.name == "vehicle_awake2027.yaml"
 
 
 def test_generic_scenario_bundle_resolves_vehicle_and_sensors() -> None:
-    bundle = load_bundle(ROOT / "simulator" / "configs" / "scenario.yaml")
+    bundle = load_bundle(ROOT / "configs" / "sim" / "scenario.yaml")
     assert bundle.scenario.name == "test_track_baseline"
     assert bundle.vehicle.wheelbase_m > 0.0
     assert bundle.sensors.lidar.beams == 720

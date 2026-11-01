@@ -3,38 +3,86 @@
 ```text
 Browser (React + Three.js)
     │ REST + WebSocket JSON
-FastAPI dashboard (dashboard/server.py)
+FastAPI dashboard (dashboard/, host only)
     │
 DashboardSimulation (adapts simulator.Simulation)
     │
-simulator/  (MuJoCo/PyBullet, sensors, track, odometry, timing)
+simulator/  (MuJoCo/PyBullet, simulated sensors, track, timing; host only)
+    │  implements onboard.api.RobotAPI via simulator/bridge.py
+onboard/    (portable contract, shared estimator, Pi runtime and drivers)
     │
-algorithms/ (Observation -> Actuation, NumPy only)
+algorithms/ (Observation -> Actuation, onboard.api + NumPy only)
 ```
 
 ## Boundaries
 
-- `simulator/` owns physics and sensor simulation. It must not import dashboard
-  code or React state.
-- `algorithms/` owns driving policy. It imports only `algorithms.interface` and
-  NumPy. It never imports `simulator.*`.
+- `onboard/` is the deployable runtime. It owns `Observation`, `Actuation`,
+  `SensorFrame`, `StateEstimate`, `RobotAPI`, the shared estimator, the control
+  loop and the hardware-facing protocols.
+- `onboard/` and `algorithms/` must never import `simulator.*` or
+  `dashboard.*`, a physics backend or FastAPI. `tests/test_boundary.py` enforces
+  the rule.
+- `simulator/` owns physics, simulated sensor measurements, latency, the track
+  and lap timing. It must not import dashboard code or React state.
+- `simulator/bridge.py` exposes `SimRobotAPI`, so the simulator is only one
+  provider of the portable robot interface.
+- `algorithms/` owns driving policy. It imports only `onboard.api` and NumPy.
+  `algorithms/interface.py` remains a compatibility re-export.
 - `dashboard/` owns transport, operator commands and rendering. It may read
-  ground truth for display but passes only sensor observations to controllers.
+  ground truth for display but passes only observations to controllers.
 - The browser never runs physics.
+
+## Observation contract
+
+```text
+Observation
+├── t, dt
+├── sensors: SensorFrame
+│   ├── lidar: LidarObservation | None
+│   ├── ultrasonic: tuple[UltrasonicObservation, ...]
+│   ├── imu: ImuSample | None
+│   ├── encoders: EncoderSample | None
+│   ├── steering: SteeringSample | None
+│   └── extra: Mapping[str, object]
+└── state: StateEstimate
+    ├── pose, speed_mps, yaw_rate_rad_s
+    ├── covariance, valid, source
+    └── gyro_bias_rad_s, slip_detected
+```
+
+Raw data and fused state are both available. Compatibility properties
+(`observation.lidar`, `observation.odometry`, ...) keep older controllers
+working.
 
 ## Data flow
 
-1. `DashboardSimulation` advances the fixed-step simulator at the control rate.
-2. The current controller returns `Actuation`.
-3. The manager broadcasts `state`, `scan` and `hello` messages over WebSocket.
-4. The browser renders messages. It never predicts or integrates physics.
-5. Commands (`run.start`, `drive.command`, `config.reload`, etc.) travel back
+1. Physics advances at a fixed rate.
+2. Simulator sensor models produce timestamped raw frames: lidar, ultrasonic,
+   encoders, IMU and steering.
+3. The shared `onboard.estimator.WheelImuEstimator` consumes only the frames
+   whose `t_available` is in the past and produces `StateEstimate`.
+4. `DashboardSimulation` calls the controller with the resulting `Observation`.
+5. The manager broadcasts `state`, `scan` and `hello` messages over WebSocket.
+6. The browser renders messages. It never predicts or integrates physics.
+7. Commands (`run.start`, `drive.command`, `config.reload`, etc.) travel back
    over the same WebSocket.
+
+On the real car the same estimator and controller run in `onboard/runtime.py`.
+A `SensorSource` reads real drivers, an `ActuatorSink` sends commands, and the
+only difference is where `SensorFrame` comes from.
 
 ## Configuration
 
-`scenario.yaml` references a vehicle and sensor YAML next to it. `Simulation`
-can also receive `VehicleConfig` and `SensorsConfig` directly from Python.
+Shared configuration lives in the root `configs/` directory:
+
+- `vehicle_awake2027.yaml` / `vehicle.yaml`: car definition;
+- `sensors_awake2027.yaml` / `sensors.yaml`: sensor mounts and characteristics;
+- `estimator.yaml`: shared estimator tuning;
+- `sim/*.yaml`: simulator-only scenarios.
+
+A scenario references its vehicle and sensors relative to `configs/sim/`
+(`../vehicle*.yaml`). `Simulation` can also receive `VehicleConfig` and
+`SensorsConfig` directly from Python.
 
 The generated URDF/MJCF, dashboard car studio and physics collision geometry all use
 the same `VehicleConfig`; `dashboard/spec.py` serializes it for the browser.

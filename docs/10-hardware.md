@@ -32,6 +32,39 @@ easy to model in the simulator.
 The Pi is **not** in the hard real-time loop. The low-level board owns the
 steering servo, ultrasonic timing, encoder capture, watchdog and safe stop.
 
+## Onboard software split
+
+The Pi runs only the portable `onboard/` package, `algorithms/` and the shared
+`configs/` files. MuJoCo, PyBullet, the FastAPI dashboard and the track code stay
+on the host.
+
+```text
+onboard/api.py          Observation, SensorFrame, StateEstimate, RobotAPI
+onboard/estimator/      wheel + IMU estimator (same code as simulation)
+onboard/runtime.py      SensorRobot / ControllerRuntime
+onboard/drivers/        JSON-lines board protocol and hardware protocols
+algorithms/             controller (onboard.api + NumPy only)
+configs/                vehicle, sensors and estimator YAML
+```
+
+A typical loop:
+
+```text
+BNO085 gyro + encoder ticks + steering angle + lidar
+        │  timestamped SensorFrame
+        ▼
+onboard.estimator.WheelImuEstimator
+        │  StateEstimate
+        ▼
+Observation -> controller -> Actuation
+        │
+        ▼
+RP2040/Teensy -> steering servo / VESC
+```
+
+The low-level board should timestamp the sample and keep a short ring buffer so
+the Pi can compensate for transport latency. Do not timestamp on arrival.
+
 ## Recommended bill of materials
 
 Prices are indicative EUR ranges, not quotations.

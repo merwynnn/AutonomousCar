@@ -1,25 +1,32 @@
 # Algorithms
 
 This folder is the portable policy side of the car. It must not import
-`simulator.*`, PyBullet or any ground-truth state.
+`simulator.*`, `dashboard.*`, a physics backend or any ground-truth state.
 
 ## The contract
 
-`algorithms/interface.py` defines:
+`onboard/api.py` defines:
 
-- `Observation` — timestamp, control `dt`, drifting odometry, odometry speed/yaw
-  rate, one lidar scan (or `None` while a scan is in flight), ultrasonic reads.
+- `Observation` — timestamp, control `dt`, raw `SensorFrame` and fused
+  `StateEstimate`.
+- `SensorFrame` — lidar, ultrasonic, IMU, encoders, steering and an `extra`
+  mapping for experiments.
+- `StateEstimate` — estimated pose, speed, yaw rate, covariance, gyro bias and
+  slip flag.
 - `Actuation` — `throttle` in `-1..1`, `steering` in radians (positive left).
 - `Controller` — `reset()` and `update(observation) -> Actuation`.
 - `RobotAPI` — `reset()`, `step(command)`, `close()`; implemented by the
-  simulator and by a future hardware adapter.
+  simulator and by the Pi runtime.
+
+`algorithms/interface.py` is a compatibility re-export. New controllers should
+import `onboard.api` directly.
 
 ## Add a controller
 
 Create `algorithms/my_controller.py`:
 
 ```python
-from algorithms.interface import Actuation, Observation
+from onboard.api import Actuation, Observation
 
 
 class MyController:
@@ -27,7 +34,7 @@ class MyController:
         self.steering = 0.0
 
     def update(self, observation: Observation) -> Actuation:
-        scan = observation.lidar
+        scan = observation.sensors.lidar
         if scan is None:
             return Actuation(throttle=0.0, steering=self.steering)
         # ... your policy ...
@@ -60,16 +67,16 @@ simple local policies, not a racing stack.
 
 ## Rules
 
-- Handle `observation.lidar is None` at startup and after dropped scans.
+- Handle `observation.sensors.lidar is None` at startup and after dropped scans.
 - Never use a scan whose `t_available` is greater than `observation.t`.
-- `observation.odometry` is intentionally drifting. There is no true pose.
+- `observation.state.pose` is intentionally drifting. There is no true pose.
 - Keep controller state inside the controller; call `reset()` for every run.
 - Prefer pure functions and NumPy arrays; keep the hot loop allocation-light.
 - Do not import simulator internals. If you need a new sensor field, add it to
-  `Observation` on purpose and document it.
+  `onboard.api.SensorFrame` on purpose and document it.
 
-## Testing without PyBullet
+## Testing without the simulator
 
-Construct `Observation` and `LidarObservation` directly in a unit test and call
-`update()`. The interface has no PyBullet dependency, so the controller can be
-tested on a laptop or the Pi with NumPy only.
+Construct `Observation`, `SensorFrame` and `LidarObservation` directly in a unit
+test and call `update()`. The contract has no physics dependency, so a
+controller can be tested on a laptop or the Pi with NumPy only.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import math
 import os
 import time
 from collections.abc import AsyncIterator, MutableMapping
@@ -19,15 +20,20 @@ from pathlib import Path
 from typing import Any, Literal
 
 from algorithms.gap_follow import FurthestGapController, GapDebug
-from algorithms.interface import Actuation, Observation
 from algorithms.wall_follow import WallFollowController
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from onboard.api import Actuation, Observation
 from pydantic import ValidationError
 from ruamel.yaml import YAML
 from simulator.car_urdf import build_urdf
-from simulator.config import SensorsConfig, VehicleConfig, load_scenario
+from simulator.config import (
+    CONFIG_DIR,
+    SensorsConfig,
+    VehicleConfig,
+    load_scenario,
+)
 from simulator.mjcf import build_mjcf
 from simulator.random_track import build_random_track
 from simulator.simulation import DEFAULT_SCENARIO, Simulation
@@ -37,9 +43,7 @@ from simulator.vehicle import VehicleState
 from dashboard.spec import sensor_payload, track_payload, vehicle_payload
 
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
-REFERENCE_SCENARIO = (
-    Path(__file__).resolve().parents[1] / "simulator" / "configs" / "awake_2027.yaml"
-)
+REFERENCE_SCENARIO = CONFIG_DIR / "sim" / "awake_2027.yaml"
 
 
 class DashboardSimulation:
@@ -185,10 +189,13 @@ class DashboardSimulation:
             return
 
         if save:
-            root = self.scenario_path.parent
             try:
-                self._write_yaml(root / self.scenario.vehicle, vehicle.model_dump(mode="json"))
-                self._write_yaml(root / self.scenario.sensors, sensors.model_dump(mode="json"))
+                self._write_yaml(
+                    new_sim.bundle.vehicle_path, vehicle.model_dump(mode="json")
+                )
+                self._write_yaml(
+                    new_sim.bundle.sensors_path, sensors.model_dump(mode="json")
+                )
             except Exception as exc:  # noqa: BLE001
                 new_sim.close()
                 self._broadcast(
@@ -309,6 +316,14 @@ class DashboardSimulation:
                 "x": round(odom.x, 4),
                 "y": round(odom.y, 4),
                 "theta": round(odom.theta, 4),
+            },
+            "estimate": {
+                "source": self.sim.observation.state.source,
+                "slip": self.sim.observation.state.slip_detected,
+                "gyro_bias_deg_s": round(
+                    math.degrees(self.sim.observation.state.gyro_bias_rad_s),
+                    3,
+                ),
             },
             "race": {
                 "lap": min(self.sim.lap, self.scenario.race.laps),

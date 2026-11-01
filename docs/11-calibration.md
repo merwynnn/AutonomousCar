@@ -20,6 +20,10 @@ small number of measurable parameters.
 | Tire friction | Skid-pad or low-speed turn | `tires.friction_front/rear` |
 | Lidar mount height | Caliper | `lidar.mount.position_m[2]` |
 | Sensor latency | Timestamp comparison | `latency_ms` |
+| Encoder resolution | Datasheet / one-wheel revolution | `encoders.ticks_per_rev` |
+| Encoder distance scale | Push car 2–5 m, compare ticks | `encoders.wheel_radius_error` |
+| Gyro bias | Stationary log, average yaw rate | `imu.gyro.bias_deg_s` |
+| Gyro noise / walk | Allan deviation, stationary log | `imu.gyro.noise_deg_s`, `random_walk_deg_s_sqrt_hz` |
 
 ## Safe test manoeuvres
 
@@ -32,6 +36,18 @@ Run these at low battery current and with a spotter:
 5. **Constant-radius turn**; fit tire slip and understeer.
 6. **Lidar static test** facing a wall at known distances; fit noise and offset.
 7. **Ultrasonic static test** at known distances and angles.
+
+## Odometry calibration
+
+1. Keep the car still for 5–10 s at boot and average the gyro yaw rate. Use that
+   value as the initial bias and verify the estimator converges to it.
+2. Push the car straight for a measured distance. Compare encoder distance with
+   the tape; the fractional error is `encoders.wheel_radius_error`.
+3. Drive a constant-radius turn. Compare wheel-derived yaw rate with the gyro;
+   adjust `encoders.track_width_error` if the two disagree consistently.
+4. Compare left/right wheel speeds during a low-speed turn. A large persistent
+   split suggests a dragging brake, tyre pressure mismatch or encoder mounting
+   problem, not a tuning issue.
 
 ## Simulator validation protocol
 

@@ -1,7 +1,7 @@
 name: test_track_baseline
 description: Standalone PyBullet simulator on the PDF-like test track.
-vehicle: vehicle.yaml
-sensors: sensors.yaml
+vehicle: ../vehicle.yaml
+sensors: ../sensors.yaml
 
 seed: 42
 realism: realistic
@@ -14,12 +14,3 @@ simulation:
   physics_hz: 240
   control_hz: 60
   max_time_s: 240
-
-odometry:
-  speed_scale_error: 0.02
-  yaw_scale_error: 0.01
-  speed_bias_mps: 0.0
-  yaw_bias_deg_s: 0.20
-  yaw_bias_walk_deg_s_sqrt_s: 0.01
-  speed_noise_mps: 0.02
-  yaw_noise_rad_s: 0.005

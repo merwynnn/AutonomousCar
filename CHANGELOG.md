@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-11-01 — Portable onboard runtime and shared state estimator
+
+- Added `onboard/` as the Raspberry Pi-deployable package:
+  - `onboard.api` owns the observation/actuation contract, raw sensor frames,
+    fused state estimate and `RobotAPI`;
+  - `onboard.estimator.WheelImuEstimator` fuses rear encoders, gyro and steering;
+  - `onboard.runtime.SensorRobot` / `ControllerRuntime` provide a shared loop;
+  - `onboard.drivers` defines hardware protocols and a JSON-lines board link.
+- Added `simulator/bridge.py` with `SimRobotAPI`; the simulator is now one
+  provider of the portable robot interface.
+- Controllers receive both `observation.sensors` (raw) and `observation.state`
+  (fused), with compatibility properties for older code.
+- Added simulated encoder, IMU and steering-angle measurement models, including
+  wheel-radius/track-width calibration errors, gyro bias/random walk, sensor
+  latency and dropouts.
+- Replaced the simulator-only odometry error model with the shared estimator.
+- Moved shared configuration to root `configs/`:
+  - `vehicle*.yaml`, `sensors*.yaml` and `estimator.yaml` are portable;
+  - simulator-only scenarios live in `configs/sim/`.
+- Added import-boundary tests for `onboard/` and `algorithms/`.
+- Fixed the CLI gap-follow controller default speed limit.
+
 ## 2026-10-31 — Tuning console, gap debug and random tracks
 
 - Added a dashboard tuning console for the full vehicle and sensor configs.

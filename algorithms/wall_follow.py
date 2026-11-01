@@ -8,8 +8,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-
-from algorithms.interface import Actuation, Observation
+from onboard.api import Actuation, Observation
 
 
 def _sector_min(observation: Observation, low_deg: float, high_deg: float) -> float:

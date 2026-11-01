@@ -12,11 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _vehicle():
-    return load_vehicle(ROOT / "simulator" / "configs" / "vehicle.yaml")
+    return load_vehicle(ROOT / "configs" / "vehicle.yaml")
 
 
 def _sensors():
-    return load_sensors(ROOT / "simulator" / "configs" / "sensors.yaml")
+    return load_sensors(ROOT / "configs" / "sensors.yaml")
 
 
 def test_vehicle_structure_and_derived_geometry() -> None:

@@ -4,13 +4,16 @@ The car is defined once and everything else is derived from it.
 
 ## Sources
 
-- `simulator/configs/vehicle_awake2027.yaml` — reference AWAKE 2027 car (BOM in
+- `configs/vehicle_awake2027.yaml` — reference AWAKE 2027 car (BOM in
   [`10-hardware.md`](10-hardware.md)).
-- `simulator/configs/vehicle.yaml` — generic example car.
-- `simulator/configs/sensors.yaml` / `sensors_awake2027.yaml` — sensor
+- `configs/vehicle.yaml` — generic example car.
+- `configs/sensors.yaml` / `sensors_awake2027.yaml` — sensor
   characteristics and body-frame mounts.
 - Python — load the same models and modify them, then pass them to
   `Simulation(vehicle=..., sensors=...)`. See `examples/custom_car.py`.
+- `configs/estimator.yaml` — shared estimator tuning only. Wheel radius,
+  wheelbase, track width and encoder resolution are read from the vehicle and
+  sensor files by `onboard.config.load_onboard_config`.
 
 The vehicle config generates both the PyBullet URDF and the MuJoCo MJCF. The
 dashboard car studio reads the same object, so the three cannot silently drift.
@@ -56,7 +59,8 @@ car payload to the browser.
 
 The **Tune** console edits the raw vehicle and sensor configs in the browser.
 **Apply live** rebuilds without writing files; **Apply & save YAML** validates,
-writes both YAML files (preserving comments where possible) and rebuilds.
+writes the shared vehicle and sensor YAML files (preserving comments where
+possible) and rebuilds the estimator and simulation.
 `Ctrl+Z`/`Ctrl+Y` undo/redo draft values.
 
 Code-defined cars are rebuilt by constructing a new `Simulation`.

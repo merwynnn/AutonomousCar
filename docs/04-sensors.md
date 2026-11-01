@@ -33,9 +33,42 @@ body-frame mount with position and RPY. The model samples a ray fan inside the
 cone, takes the nearest hit, then adds range noise, blind-zone clamping, random
 specular dropouts and cross-talk spikes.
 
-## Odometry and encoders
+## Encoders
 
-`OdometryModel` integrates the measured speed and yaw rate with scale error,
-bias, random walk and noise. It intentionally drifts. Encoder characteristics
-(rate, ticks, wheel radius error, track width error, jitter and dropout) are part
-of `SensorsConfig` and are available to the dashboard and future hardware adapters.
+`EncoderConfig` contains rate, ticks per revolution, wheel-radius and
+track-width calibration errors, timestamp jitter, latency and dropout
+probability. The model converts the four physics wheel-joint speeds into
+cumulative ticks. A positive `wheel_radius_error` makes the encoder under-report
+distance; `track_width_error` scales the left/right differential.
+
+Dropped samples keep the previous tick count and are marked `dropped=True`; the
+shared estimator ignores them. Wheel spin from the contact model includes tyre
+slip, so encoder-derived speed can disagree with the true body speed.
+
+## IMU
+
+`ImuConfig` contains gyro bias and random walk, scale error, noise, cross-axis
+coupling, saturation, accelerometer noise/vibration and mounting misalignment.
+The model produces `ImuSample` with gyro and accelerometer vectors plus
+measurement/availability timestamps. The planar estimator uses the yaw-rate
+component and learns the gyro bias.
+
+## Steering sensor
+
+`SteeringSensorConfig` models the steering-linkage sensor: rate, noise,
+quantization and latency. It produces `SteeringSample` in the vehicle frame
+(positive left), independent of the commanded steering angle.
+
+## Shared estimator
+
+`onboard/estimator/wheel_imu.py` fuses the raw frames:
+
+- forward speed from the rear-wheel encoder ticks;
+- yaw rate primarily from the gyro, with wheel and steering checks;
+- zero-velocity gyro-bias learning when the car is still;
+- slip detection when wheel and gyro yaw rates disagree.
+
+It is a complementary estimator, not a full EKF. Its 3x3 covariance is a
+conservative diagnostic estimate; a later EKF can replace it without changing
+the controller contract. The same estimator is used by the simulator and by the
+Raspberry Pi runtime.

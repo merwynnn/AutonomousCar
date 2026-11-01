@@ -7,8 +7,8 @@
 - Sensor sampling is scheduled in control ticks from each sensor's configured rate.
 - A run is deterministic for a fixed scenario, config and seed.
 
-`Simulation.step(command)` applies the actuation, advances physics, updates
-odometry, schedules lidar/ultrasonic samples, updates lap progress and returns the
+`Simulation.step(command)` applies the actuation, advances physics, samples the
+raw sensors, runs the shared state estimator, updates lap progress and returns the
 next `Observation`.
 
 ## Vehicle model
@@ -55,7 +55,21 @@ therefore use the same convention in both backends.
   wheels, steering hinges, position-servo actuators and per-wheel torque motors.
 - **PyBullet** is kept as a comparison and debugging backend.
 - Both implement the `World` protocol in `simulator/world_api.py`, so the same
-  lidar, ultrasonic, odometry and dashboard code runs on either.
+  lidar, ultrasonic, encoder, IMU, steering and dashboard code runs on either.
+
+## State estimation
+
+`simulator/simulation.py` produces raw sensor frames and feeds them to
+`onboard.estimator.WheelImuEstimator`, the same estimator used on the Pi:
+
+- rear-wheel encoder ticks -> forward speed and wheel-derived yaw rate;
+- gyro yaw rate with online bias correction;
+- steering angle -> kinematic yaw-rate sanity check;
+- zero-velocity update when the car is still;
+- slip flag when wheel and gyro yaw rates disagree.
+
+Estimator tuning is in `configs/estimator.yaml`. Wheel radius, wheelbase,
+track width and encoder resolution come from the shared vehicle/sensor YAML.
 
 ## Lap timing
 

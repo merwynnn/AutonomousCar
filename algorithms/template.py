@@ -6,7 +6,7 @@ only sensor observations and returns a throttle/steering command.
 
 from __future__ import annotations
 
-from algorithms.interface import Actuation, Observation
+from onboard.api import Actuation, Observation
 
 
 class TemplateController:

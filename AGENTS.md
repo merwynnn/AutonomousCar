@@ -24,27 +24,60 @@ no MCL, no racing line and no occupancy grid live here.
 ```text
 Browser (React + Three.js)
     │  REST + WebSocket (JSON)
-FastAPI dashboard (dashboard/)
+FastAPI dashboard (dashboard/, host only)
     │
-Simulation core (simulator/, 240 Hz physics, 60 Hz control)
+Simulator (simulator/, host only)
     ├── generated URDF/MJCF (simulator/car_urdf.py, simulator/mjcf.py)
     ├── MuJoCo digital twin (default) and PyBullet backend
-    ├── track, car, sensors and timing
-    ├── non-ideal lidar, ultrasonic and odometry models
-    └── scenario/vehicle/sensor YAML configs
+    ├── track, car and raw sensor measurement models
+    ├── simulator/bridge.py: SimRobotAPI
+    └── fixed-step loop, latency filtering and lap timing
+Portable onboard runtime (onboard/, deployable to the Pi)
+    ├── api.py: Observation, SensorFrame, StateEstimate, RobotAPI
+    ├── estimator/: shared wheel + IMU estimator
+    ├── runtime.py: SensorRobot / ControllerRuntime
+    └── drivers/: serial protocol and hardware-facing protocols
 Algorithms (algorithms/)
-    └── Observation -> Actuation controllers (NumPy only)
+    └── Observation -> Actuation controllers (onboard.api + NumPy only)
 ```
 
 - The dashboard is a renderer and operator console. It never runs physics.
-- `simulator/` owns physics, sensor models, latency, the track and lap timing.
-- `algorithms/` owns the driving policy and imports only
-  `algorithms.interface` and NumPy.
-- `Observation` has no true pose and no future scan. The only pose is drifting
-  wheel/IMU odometry.
+- `simulator/` owns physics, simulated sensor measurements, latency, the track
+  and lap timing. It is host-only.
+- `onboard/` is the code that is copied to the Raspberry Pi. It owns the
+  portable contract, the shared estimator and the hardware drivers.
+- `algorithms/` owns the driving policy and imports only `onboard.api` and
+  NumPy.
+- `Observation` has no true pose and no future scan. Controllers receive both
+  raw sensor frames (`observation.sensors`) and the shared estimator output
+  (`observation.state`). The only pose is the drifting estimate.
 - The dashboard may display ground truth for debugging, but controllers must
   never receive it.
-- The real car can implement `RobotAPI` and run the same controllers unchanged.
+- The simulator implements `onboard.api.RobotAPI` through `SimRobotAPI`; the
+  real car implements the same protocol with `onboard.runtime.SensorRobot`.
+
+### Portable onboard boundary
+
+These rules are non-negotiable when adding code:
+
+- `onboard/` is the code intended to run on the Raspberry Pi.
+- `onboard/` and `algorithms/` must never import `simulator.*` or
+  `dashboard.*`, nor a physics backend or FastAPI.
+- `algorithms/` import only `onboard.api` and NumPy.
+- `onboard/api.py` owns `Observation`, `Actuation`, `SensorFrame`,
+  `StateEstimate` and `RobotAPI`.
+- `algorithms/interface.py` is a compatibility re-export only; new code imports
+  `onboard.api` directly.
+- `simulator/bridge.py` implements `RobotAPI` for the simulator.
+- `simulator/sensors/` produce raw frames using the types in `onboard/api.py`.
+- The shared estimator lives in `onboard/estimator/` and is used by both
+  simulation and hardware.
+- New sensors are added through a typed `SensorFrame` field, with a simulator
+  model in `simulator/sensors/` and a hardware driver in `onboard/drivers/`.
+  `SensorFrame.extra` is for short experiments, not the normal path.
+- Raw sensor data and the fused `StateEstimate` are both exposed to controllers.
+- Ground truth never appears in `Observation`.
+- Keep the import-boundary test in `tests/test_boundary.py` green.
 
 Detailed references:
 
@@ -99,10 +132,18 @@ The car is data, not a hand-written URDF.
   x forward, y left, z up, origin at the chassis centre.
 - Body parts are `structure` entries. Box, cylinder and sphere parts may be
   visual-only or collidable.
+- Shared car and sensor files live in the root `configs/` directory:
+  `vehicle*.yaml`, `sensors*.yaml`, `estimator.yaml`. Simulator-only scenarios
+  live in `configs/sim/`. Do not put shared definitions back under
+  `simulator/configs/`.
+- `configs/estimator.yaml` contains estimator tuning only. Wheel radius,
+  wheelbase, track width and encoder resolution are read from the shared
+  vehicle/sensor files by `onboard.config.load_onboard_config`.
 - A code-defined car is valid: construct `VehicleConfig` and `SensorsConfig` in
   Python and pass them to `Simulation(vehicle=..., sensors=...)`.
 - After changing YAML, use the dashboard **Reload config** action (or restart
-  the server). A reload must rebuild the URDF/MJCF, sensors and simulation.
+  the server). A reload must rebuild the URDF/MJCF, sensors, estimator and
+  simulation.
 - The dashboard's car studio must show only the car, never track walls, surface,
   lidar returns or trails.
 
@@ -121,7 +162,8 @@ The car is data, not a hand-written URDF.
   mount RPY, latency/jitter and calibration errors.
 - Ultrasonic includes cone integration, blind zone, max range, noise, low update
   rate, latency, cross-talk, specular dropouts and missed thin objects.
-- Odometry must drift; encoders must see slip from the physics state.
+- The fused state estimate must drift; encoders must see wheel spin and slip
+  from the physics state; gyro bias must be learned, not read from ground truth.
 - If a controller performs suspiciously well, check for ground-truth leakage
   before celebrating.
 
@@ -144,7 +186,13 @@ The car is data, not a hand-written URDF.
 ### 5.4 Real-car portability
 
 - Keep controller code hardware-agnostic behind `RobotAPI`.
-- Keep `algorithms/` free of `simulator.*` imports.
+- Keep `algorithms/` and `onboard/` free of `simulator.*` imports.
+- Use the same estimator (`onboard/estimator/`) and the same timestamped
+  `SensorFrame` types in simulation and on the Pi.
+- Hardware drivers implement `SensorSource` / `ActuatorSink` and must timestamp
+  when the sample was taken, not when the Pi received it.
+- Keep actuator saturation, steering rate and latency limits in the shared car
+  config so simulation and firmware cannot silently disagree.
 - Document ARM/Pi build steps when the port is attempted. Do not claim Pi
   performance before benchmarking it.
 
@@ -179,7 +227,9 @@ A change is done only when:
 
 Test layers:
 
-- `pytest` — configs, car generation, sensors, timing, API.
+- `pytest` — configs, car generation, sensors, estimator, timing, API.
+- `tests/test_boundary.py` — fails if `onboard/` or `algorithms/` imports host,
+  physics or dashboard code.
 - Golden runs — fixed seed/config produces the same metrics within tolerance.
 - `npm run build` — frontend type-check and production build.
 - Playwright screenshots when a visible UI change lands.
@@ -220,19 +270,30 @@ Test layers:
 ## 11. Directory map
 
 ```text
-simulator/          standalone physics and sensor core
+onboard/            portable code copied to the Raspberry Pi
+  api.py            Observation, SensorFrame, StateEstimate, RobotAPI
+  config.py         estimator tuning + shared geometry loading
+  estimator/        wheel + IMU estimator used by sim and hardware
+  runtime.py        SensorRobot / ControllerRuntime
+  drivers/          JSON-lines protocol and hardware protocols
+simulator/          host-only physics and sensor core
   config.py         pydantic config models + YAML loading
   car_urdf.py       generated URDF from VehicleConfig
   mjcf.py           generated MuJoCo MJCF from VehicleConfig
+  bridge.py         SimRobotAPI implementation
   world.py          PyBullet backend and raycasts
   mujoco_world.py   MuJoCo backend and raycasts
-  sensors/          lidar and ultrasonic models
+  sensors/          lidar, ultrasonic, encoder, IMU and steering models
   simulation.py     fixed-step loop, latency filtering, lap timing
   track.py          test track and procedural obstacles
-  configs/          scenario, vehicle and sensor YAML
   assets/           reference URDF only; runtime models are generated
-algorithms/         sensor-only controller contract + demo controllers
-dashboard/          FastAPI backend and React/Three.js car lab
+configs/            shared, portable configuration
+  vehicle*.yaml     car geometry, structure, motor, tires, steering
+  sensors*.yaml     sensor mounts and non-ideal characteristics
+  estimator.yaml    shared wheel + IMU estimator tuning
+  sim/              simulator-only scenarios
+algorithms/         portable controllers (onboard.api + NumPy only)
+dashboard/          host-only FastAPI backend and React/Three.js car lab
   server.py         REST + WebSocket adapter
   spec.py           car/sensor/track JSON payloads
   web/              Vite dashboard

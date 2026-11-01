@@ -1,0 +1,28 @@
+# Shared wheel + IMU state estimator.
+#
+# This file is copied to the Raspberry Pi together with onboard/ and
+# algorithms/. Geometry and encoder resolution stay in the shared vehicle and
+# sensor YAML so there is only one car definition.
+
+name: wheel_imu_default
+
+# Weight of the gyro against the wheel-derived yaw rate when both are healthy.
+gyro_weight: 0.85
+
+# How quickly the estimator learns the gyro bias. The first gain is the strong
+# zero-velocity update; the second is the slow wheel/gyro agreement update.
+gyro_bias_gain: 0.5
+gyro_bias_tracking_gain: 0.02
+max_gyro_bias_rad_s: 0.2
+
+# Wheel/gyro disagreement above these values is treated as tyre slip.
+slip_yaw_threshold_rad_s: 0.9
+slip_speed_threshold_mps: 0.12
+
+# Zero-velocity update thresholds.
+zero_velocity_speed_mps: 0.03
+zero_velocity_yaw_rate_rad_s: 0.08
+
+# Conservative process noise used for the diagnostic covariance.
+position_noise_mps: 0.01
+yaw_noise_rad_s: 0.005

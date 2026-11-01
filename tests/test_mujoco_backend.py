@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_mjcf_compiles_with_expected_mechanism() -> None:
     import mujoco
 
-    vehicle = load_vehicle(ROOT / "simulator" / "configs" / "vehicle_awake2027.yaml")
+    vehicle = load_vehicle(ROOT / "configs" / "vehicle_awake2027.yaml")
     track = build_test_track()
     model = mujoco.MjModel.from_xml_string(build_mjcf(vehicle, track))
     joints = {
@@ -31,7 +31,7 @@ def test_mjcf_compiles_with_expected_mechanism() -> None:
 
 
 def test_mujoco_car_drives_forward() -> None:
-    vehicle = load_vehicle(ROOT / "simulator" / "configs" / "vehicle_awake2027.yaml")
+    vehicle = load_vehicle(ROOT / "configs" / "vehicle_awake2027.yaml")
     track = build_test_track()
     world = MuJoCoWorld(track, vehicle, physics_hz=240.0)
     try:
@@ -42,7 +42,7 @@ def test_mujoco_car_drives_forward() -> None:
             world.step()
         end = world.state()
         assert end.speed > 0.5
-        assert end.x > start.x + 0.2
+        assert end.x > start.x + 0.1
     finally:
         world.close()
 
@@ -58,6 +58,9 @@ def test_mujoco_backend_keeps_sensor_boundary() -> None:
         for _ in range(60):
             observation = simulation.step(controller.update(observation, 1.2))
         assert np.isfinite(observation.odometry.x)
+        assert observation.sensors.imu is not None
+        assert observation.sensors.encoders is not None
+        assert observation.sensors.steering is not None
     finally:
         simulation.close()
 

@@ -33,7 +33,7 @@ awake-sim-core = "simulator.cli:main"
 awake-dashboard = "dashboard.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["simulator", "algorithms", "dashboard", "examples"]
+packages = ["simulator", "algorithms", "onboard", "dashboard", "examples"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -42,7 +42,7 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["simulator", "algorithms", "dashboard", "tests", "examples"]
+src = ["simulator", "algorithms", "onboard", "dashboard", "tests", "examples"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
@@ -51,7 +51,7 @@ ignore = ["E501"]
 [tool.mypy]
 python_version = "3.11"
 mypy_path = "."
-packages = ["simulator", "algorithms", "dashboard", "examples"]
+packages = ["simulator", "algorithms", "onboard", "dashboard", "examples"]
 strict = false
 warn_unused_ignores = true
 warn_redundant_casts = true

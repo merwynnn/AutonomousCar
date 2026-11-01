@@ -9,7 +9,7 @@ from simulator.cli import load_controller
 from simulator.simulation import Simulation
 
 GENERIC_SCENARIO = (
-    Path(__file__).resolve().parents[1] / "simulator" / "configs" / "scenario.yaml"
+    Path(__file__).resolve().parents[1] / "configs" / "sim" / "scenario.yaml"
 )
 
 
@@ -23,6 +23,14 @@ def test_observation_is_sensor_only_and_realtime_filtered() -> None:
         assert observation.lidar.ranges_m.shape == (720,)
         assert observation.lidar.t_available <= observation.t + 1e-9
         assert len(observation.ultrasonic) == 3
+        assert observation.encoders is not None
+        assert observation.imu is not None
+        assert observation.steering is not None
+        assert observation.state.source in {
+            "wheel_imu",
+            "zero_velocity",
+            "initialized",
+        }
 
         for _ in range(12):
             observation = simulation.step(Actuation(throttle=0.3, steering=0.0))
@@ -47,6 +55,23 @@ def test_template_controller_and_loader() -> None:
         assert command.throttle == 0.0
         assert command.steering == 0.0
         assert isinstance(TemplateController(), TemplateController)
+
+
+def test_shared_estimator_is_deterministic_for_a_fixed_seed() -> None:
+    def run() -> tuple[float, float, float]:
+        with Simulation(GENERIC_SCENARIO, realism="realistic", lidar_subrays=1, seed=11) as sim:
+            observation = sim.reset()
+            for _ in range(60):
+                observation = sim.step(Actuation(throttle=0.3, steering=0.0))
+            return (
+                observation.state.pose.x,
+                observation.state.pose.y,
+                observation.state.pose.theta,
+            )
+
+    first = run()
+    second = run()
+    assert first == second
 
 
 def test_reset_restores_start_state() -> None:

@@ -1,7 +1,7 @@
 """Vehicle state types.
 
-``Actuation`` is defined in ``algorithms.interface`` so the simulator and a
-controller exchange the exact same object. ``VehicleState`` is simulator-only
+``Actuation`` is defined in ``onboard.api`` so the simulator, a controller and
+the real car exchange the exact same object. ``VehicleState`` is simulator-only
 ground truth and is never given to an algorithm.
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from algorithms.interface import Actuation
+from onboard.api import Actuation
 
 __all__ = ["Actuation", "VehicleState"]
 

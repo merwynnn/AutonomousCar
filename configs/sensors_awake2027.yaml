@@ -1,16 +1,19 @@
-name: ld06_realistic
-description: LD06-class 2D spinning lidar, 720 beams, non-ideal by default.
+name: awake_2027_sensors
+description: >
+  AWAKE 2027 reference sensor package: LD19-class lidar below the 16 cm walls,
+  four ultrasonic sensors, BNO085-class IMU and rear-wheel encoders.
 
 lidar:
   frame_id: lidar
-  beams: 720
+  beams: 450
   rate_hz: 10.0
   min_range_m: 0.03
   max_range_m: 12.0
-  angular_resolution_deg: 0.5
+  angular_resolution_deg: 0.8
   scan_direction: clockwise
   mount:
-    position_m: [0.10, 0.0, 0.05]
+    # 14 cm above the gym floor: below the 16 cm VMC pipe walls.
+    position_m: [0.105, 0.0, 0.05]
     rpy_deg: [0.0, 0.0, 0.0]
   noise:
     range_sigma_m: 0.012
@@ -56,25 +59,30 @@ ultrasonic:
     - name: front_left
       frame_id: sonar_fl
       mount:
-        position_m: [0.192, 0.07, 0.0]
+        position_m: [0.205, 0.070, 0.0]
         rpy_deg: [0.0, 0.0, 15.0]
     - name: front_right
       frame_id: sonar_fr
       mount:
-        position_m: [0.192, -0.07, 0.0]
+        position_m: [0.205, -0.070, 0.0]
         rpy_deg: [0.0, 0.0, -15.0]
-    - name: rear_center
-      frame_id: sonar_rear
+    - name: rear_left
+      frame_id: sonar_rl
       mount:
-        position_m: [-0.192, 0.0, 0.0]
-        rpy_deg: [0.0, 0.0, 180.0]
+        position_m: [-0.205, 0.070, 0.0]
+        rpy_deg: [0.0, 0.0, 165.0]
+    - name: rear_right
+      frame_id: sonar_rr
+      mount:
+        position_m: [-0.205, -0.070, 0.0]
+        rpy_deg: [0.0, 0.0, -165.0]
 
 imu:
   frame_id: imu
   rate_hz: 200.0
   latency_ms: 5.0
   mount:
-    position_m: [0.0, 0.0, 0.01]
+    position_m: [0.0, 0.0, 0.02]
     rpy_deg: [0.0, 0.0, 0.0]
   gyro:
     bias_deg_s: 0.8
@@ -96,7 +104,15 @@ encoders:
   wheel_radius_error: 0.02
   track_width_error: 0.01
   timestamp_jitter_ms: 2.0
+  latency_ms: 0.0
   dropout_probability: 0.002
+
+steering:
+  frame_id: steering
+  rate_hz: 100.0
+  noise_deg: 0.2
+  quantization_deg: 0.1
+  latency_ms: 5.0
 
 realism_presets:
   ideal:

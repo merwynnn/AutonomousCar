@@ -21,46 +21,66 @@ the simulator.
 ```text
 Browser (React + Three.js)
     │  REST + WebSocket (JSON)
-FastAPI dashboard (dashboard/)
+FastAPI dashboard (dashboard/, host only)
     │
-Simulation core (simulator/, 240 Hz physics, 60 Hz control)
+Simulator (simulator/, host only)
     ├── generated URDF/MJCF from the vehicle config
     ├── MuJoCo digital twin (default) and PyBullet backend
-    ├── track, car, sensors and timing
-    └── non-ideal lidar, ultrasonic and drifting odometry
+    ├── track, physics and raw sensor measurement models
+    └── SimRobotAPI adapter
+Portable onboard runtime (onboard/, deployable to the Pi)
+    ├── Observation / SensorFrame / StateEstimate / RobotAPI contract
+    ├── shared wheel + IMU estimator
+    ├── SensorRobot / ControllerRuntime loop
+    └── hardware drivers and JSON-lines protocol
 Algorithms (algorithms/)
-    └── Observation -> Actuation controllers (NumPy only)
+    └── Observation -> Actuation controllers (onboard.api + NumPy only)
 ```
 
-- `simulator/` owns physics, sensor models, latency, the track and lap timing.
+- `onboard/` is the code that can run unchanged on the Raspberry Pi. It never
+  imports `simulator.*` or `dashboard.*`.
+- `simulator/` owns physics, simulated sensor measurements, latency, the track
+  and lap timing. It implements the portable `RobotAPI` through
+  `simulator/bridge.py`.
 - `dashboard/` owns the browser UI, telemetry transport and car inspection view.
-- `algorithms/` owns the driving policy and imports **only**
-  `algorithms.interface` and NumPy.
-- `Observation` has no true pose and no future scan. The only pose is drifting
-  wheel/IMU odometry.
+- `algorithms/` owns the driving policy and imports **only** `onboard.api` and
+  NumPy.
+- `Observation` has no true pose and no future scan. Controllers get raw
+  timestamped data in `observation.sensors` and the shared estimator output in
+  `observation.state`. The only pose is the drifting estimate.
 - The dashboard may show ground truth for debugging; controllers never receive it.
-- A real serial/CAN adapter can implement `RobotAPI` and run the same controllers.
+- A real serial/CAN adapter implements `RobotAPI` and runs the same controllers.
 
 ### Folder layout
 
 ```text
-simulator/
+onboard/                    portable runtime for the Pi
+  api.py                    Observation, SensorFrame, StateEstimate, RobotAPI
+  config.py                 estimator tuning + shared geometry loading
+  estimator/                wheel + IMU estimator used by sim and hardware
+  runtime.py                SensorRobot / ControllerRuntime
+  drivers/                  JSON-lines protocol and hardware protocols
+simulator/                  host-only physics and sensor core
   config.py                 pydantic config models + YAML loading
   car_urdf.py               generates the URDF from VehicleConfig
   mjcf.py                   generates the MuJoCo MJCF digital twin
+  bridge.py                 SimRobotAPI implementation
   track.py                  peanut track, walls and obstacles
   vehicle.py                VehicleState / Actuation
   world.py                  PyBullet world and raycasts
   mujoco_world.py           MuJoCo world and raycasts
   transforms.py             body/sensor rotation helpers
-  odometry.py               drifting wheel/IMU odometry
-  sensors/                  non-ideal lidar and ultrasonic models
+  sensors/                  lidar, ultrasonic, encoder, IMU and steering models
   simulation.py             fixed-step loop, latency filtering, lap timing
   cli.py                    headless runner
-  configs/                  scenario, vehicle and sensor YAML
   assets/                   reference URDF only
+configs/                    shared configuration
+  vehicle*.yaml             reference/generic car definitions
+  sensors*.yaml             sensor mounts and non-ideal characteristics
+  estimator.yaml            shared estimator tuning
+  sim/                      simulator-only scenarios
 algorithms/
-  interface.py              Observation, Actuation, Controller, RobotAPI
+  interface.py              compatibility re-export of onboard.api
   gap_follow.py             lidar-only demo controller
   wall_follow.py            lidar-only demo controller
   template.py               safe stop placeholder
@@ -93,7 +113,7 @@ npm run dev
 Open the Vite URL (usually `http://localhost:5173`). The API runs on
 `http://localhost:8000`. A production build is served by the backend after
 `npm run build`. The dashboard defaults to the reference car in
-`simulator/configs/awake_2027.yaml` and the MuJoCo backend.
+`configs/sim/awake_2027.yaml` and the MuJoCo backend.
 
 Headless simulator:
 
@@ -117,8 +137,8 @@ There is **one** vehicle definition. It generates the URDF/MJCF that the physics
 backends load and the geometry that the dashboard draws. There is no second
 hand-written car model.
 
-`simulator/configs/vehicle_awake2027.yaml` defines the reference competition car;
-`simulator/configs/vehicle.yaml` remains the generic example. Both define:
+`configs/vehicle_awake2027.yaml` defines the reference competition car;
+`configs/vehicle.yaml` remains the generic example. Both define:
 
 - mass, centre of mass and competition limits;
 - chassis `structure` parts (box / cylinder / sphere, visual and/or collidable);
@@ -141,7 +161,7 @@ Positions are in the vehicle body frame: **x forward, y left, z up**, origin at
 the chassis centre. For a cylinder, `size_m` is `[diameter, diameter, height]`;
 for a sphere it is `[diameter, diameter, diameter]`.
 
-Sensor positions and rotations live in `simulator/configs/sensors.yaml` and use
+Sensor positions and rotations live in `configs/sensors.yaml` and use
 the same body frame:
 
 ```yaml
@@ -164,8 +184,8 @@ characteristics are all parsed and used by the sensor models.
 from simulator.config import BodyPart, load_sensors, load_vehicle
 from simulator.simulation import Simulation
 
-vehicle = load_vehicle("simulator/configs/vehicle.yaml")
-sensors = load_sensors("simulator/configs/sensors.yaml")
+vehicle = load_vehicle("configs/vehicle.yaml")
+sensors = load_sensors("configs/sensors.yaml")
 
 vehicle.mass_kg = 2.35
 vehicle.wheelbase_m = 0.27
@@ -276,7 +296,8 @@ and simulation and pushes a fresh `hello` message to the browser.
 Minimal example:
 
 ```python
-from algorithms.interface import Actuation, Observation
+import numpy as np
+from onboard.api import Actuation, Observation
 
 
 class MyController:
@@ -284,11 +305,9 @@ class MyController:
         self.steering = 0.0
 
     def update(self, observation: Observation) -> Actuation:
-        scan = observation.lidar
+        scan = observation.sensors.lidar
         if scan is None:
             return Actuation(throttle=0.0, steering=self.steering)
-
-        import numpy as np
 
         front = np.abs(scan.angles_rad) < np.deg2rad(60.0)
         valid = front & scan.valid & np.isfinite(scan.ranges_m)
@@ -302,11 +321,23 @@ class MyController:
         return Actuation(throttle=0.35, steering=self.steering)
 ```
 
+The controller receives both layers:
+
+```text
+observation.sensors   raw lidar / ultrasonic / IMU / encoders / steering
+observation.state     shared estimator: pose, speed, yaw rate, covariance,
+                      gyro bias and slip flag
+```
+
+Compatibility properties (`observation.lidar`, `observation.odometry`,
+`observation.speed_mps`, ...) still work for older controllers.
+
 Contract rules:
 
-- Handle `observation.lidar is None`: the first scan may still be in flight.
+- Handle `observation.sensors.lidar is None`: the first scan may still be in
+  flight.
 - Only use data whose `t_available` is in the past.
-- `observation.odometry` is the only pose. It drifts on purpose.
+- `observation.state.pose` is the only pose. It drifts on purpose.
 - Units are SI: metres, seconds, radians, m/s, rad/s.
 - Keep controllers deterministic for a fixed observation sequence.
 - Do not import `simulator.*` from `algorithms/*`.
@@ -321,57 +352,82 @@ Contract rules:
   changes what is measured.
 - Ultrasonic: cone integration, blind zone, max range, range noise, low update
   rate, latency, cross-talk, specular dropouts and missed thin objects.
-- Odometry: scale errors, bias, random walk and noise. Encoder characteristics
-  are part of the sensor config.
+- Encoders: rear-wheel tick counts at 50 Hz, wheel-radius and track-width
+  calibration errors, timestamp jitter and dropouts. Wheel spin from the
+  physics contact model includes slip.
+- IMU: gyro bias and random walk, scale error, noise, cross-axis coupling,
+  mounting misalignment, saturation and latency.
+- Steering: measured linkage angle with noise, quantization and latency.
+- Estimator: the same `onboard.estimator.WheelImuEstimator` runs in simulation
+  and on the Pi. It fuses rear-wheel speed, gyro yaw rate and steering, performs
+  a zero-velocity bias update and raises a slip flag when wheel and gyro
+  disagree.
 - Realism presets: `ideal`, `realistic`, `harsh`; `realistic` is the default.
 
 ## 7. Tests and checks
 
 ```bash
 uv run pytest
-uv run ruff check simulator algorithms dashboard tests examples
-uv run mypy simulator algorithms dashboard
+uv run ruff check simulator algorithms onboard dashboard tests examples
+uv run mypy simulator algorithms onboard dashboard
 cd dashboard/web && npm run build
 ```
 
 The tests cover the sensor-only boundary, lidar/ultrasonic latency, deterministic
-reset, configuration limits, generated URDF geometry and dashboard payloads.
+reset, encoder/IMU estimator behaviour, configuration limits, generated URDF
+geometry and dashboard payloads.
 
 ## 8. Raspberry Pi transfer
 
-Copy the deployable folders:
+The Pi runtime is `onboard/` plus `algorithms/` and the shared config files.
+`simulator/`, `dashboard/`, MuJoCo and PyBullet stay on the host.
 
 ```bash
-scp -r simulator algorithms pi@raspberrypi.local:~/
+scp -r onboard algorithms configs pi@raspberrypi.local:~/
 ```
 
-On the Pi:
+On the Pi, install only the portable dependencies (`pip install numpy pyyaml`)
+and create a `SensorRobot`:
 
-```bash
-cd ~
-python3 -m venv .venv
-. .venv/bin/activate
-pip install numpy pydantic pyyaml pybullet
+```python
+from onboard.config import load_onboard_config
+from onboard.drivers.serial_link import SerialActuatorSink, SerialSensorSource
+from onboard.estimator import WheelImuEstimator
+from onboard.runtime import ControllerRuntime, SensorRobot
+from algorithms.gap_follow import FurthestGapController
 
-python -m simulator.cli --laps 1 --max-time 5 --lidar-subrays 1
-python -m simulator.cli \
-  --controller algorithms.gap_follow:FurthestGapController \
-  --laps 5 --lidar-subrays 1
+config = load_onboard_config(
+    "configs/vehicle_awake2027.yaml",
+    "configs/sensors_awake2027.yaml",
+    "configs/estimator.yaml",
+)
+estimator = WheelImuEstimator(
+    config.tuning,
+    wheel_radius_m=config.wheel_radius_m,
+    track_width_m=config.track_width_m,
+    wheelbase_m=config.wheelbase_m,
+    ticks_per_rev=config.ticks_per_rev,
+)
+# source/sink are your board-specific SensorSource / ActuatorSink instances,
+# for example SerialSensorSource(transport, lidar_driver) and SerialActuatorSink(transport).
+robot = SensorRobot(source, sink, estimator, control_dt=1.0 / 60.0)
+runtime = ControllerRuntime(robot, FurthestGapController())
+runtime.run(steps=10_000)
 ```
 
-The algorithm contract only needs NumPy. MuJoCo and PyBullet are simulation
-dependencies; the real car only needs a `RobotAPI` adapter. PyBullet on a Pi is
-optional and needs a working OpenGL/EGL setup. On the real car, implement
-`RobotAPI` with your serial/CAN adapter.
+`SerialSensorSource` / `SerialActuatorSink` use the JSON-lines protocol in
+`onboard/drivers/serial_link.py`; replace them with your board-specific drivers
+if you use a different link. The portable contract needs NumPy and PyYAML only.
 
 ## 9. Configuration
 
-`simulator/configs/scenario.yaml` references `vehicle.yaml` and `sensors.yaml`
-relative to itself:
+Shared car, sensor and estimator configuration lives in the root `configs/`.
+Simulator-only scenarios live in `configs/sim/` and reference the shared files:
 
 ```yaml
-vehicle: vehicle.yaml
-sensors: sensors.yaml
+# configs/sim/scenario.yaml
+vehicle: ../vehicle.yaml
+sensors: ../sensors.yaml
 seed: 42
 realism: realistic
 race:
@@ -381,6 +437,10 @@ simulation:
   control_hz: 60
   max_time_s: 240
 ```
+
+Estimator tuning lives in `configs/estimator.yaml`; geometry and encoder
+resolution come from the shared vehicle and sensor YAML, so there is still only
+one car definition.
 
 The simulator uses a fixed physics timestep, seeded sensor RNG streams and a
 fixed control period. Rendering never affects results.

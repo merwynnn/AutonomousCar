@@ -1,7 +1,9 @@
 """Configuration models and YAML loading.
 
-All tunable simulation constants live in ``configs/``; algorithms receive these
-objects instead of hard-coded values.
+Shared car, sensor and estimator configuration lives in the root ``configs/``
+directory so the same files can be copied to the Raspberry Pi. Simulator-only
+scenarios live in ``configs/sim/``. Algorithms receive validated objects instead
+of hard-coded values.
 """
 
 from __future__ import annotations
@@ -14,6 +16,12 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Realism = Literal["ideal", "realistic", "harsh"]
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CONFIG_DIR = PROJECT_ROOT / "configs"
+SIM_CONFIG_DIR = CONFIG_DIR / "sim"
+DEFAULT_SCENARIO_PATH = SIM_CONFIG_DIR / "awake_2027.yaml"
+DEFAULT_ESTIMATOR_PATH = CONFIG_DIR / "estimator.yaml"
 
 
 class StrictModel(BaseModel):
@@ -245,7 +253,16 @@ class EncoderConfig(StrictModel):
     wheel_radius_error: float = 0.0
     track_width_error: float = 0.0
     timestamp_jitter_ms: float = 0.0
+    latency_ms: float = Field(default=0.0, ge=0)
     dropout_probability: float = Field(ge=0, le=1)
+
+
+class SteeringSensorConfig(StrictModel):
+    frame_id: str = "steering"
+    rate_hz: float = Field(default=100.0, gt=0)
+    noise_deg: float = Field(default=0.2, ge=0)
+    quantization_deg: float = Field(default=0.1, gt=0)
+    latency_ms: float = Field(default=5.0, ge=0)
 
 
 class SensorsConfig(StrictModel):
@@ -255,17 +272,8 @@ class SensorsConfig(StrictModel):
     ultrasonic: UltrasonicConfig
     imu: ImuConfig
     encoders: EncoderConfig
+    steering: SteeringSensorConfig = Field(default_factory=SteeringSensorConfig)
     realism_presets: dict[str, Any] = Field(default_factory=dict)
-
-
-class OdometryConfig(StrictModel):
-    speed_scale_error: float = 0.02
-    yaw_scale_error: float = 0.01
-    speed_bias_mps: float = 0.0
-    yaw_bias_deg_s: float = 0.20
-    yaw_bias_walk_deg_s_sqrt_s: float = 0.01
-    speed_noise_mps: float = 0.02
-    yaw_noise_rad_s: float = 0.005
 
 
 class RaceConfig(StrictModel):
@@ -288,7 +296,6 @@ class ScenarioConfig(StrictModel):
     realism: Realism = "realistic"
     race: RaceConfig = Field(default_factory=RaceConfig)
     simulation: SimulationConfig = Field(default_factory=SimulationConfig)
-    odometry: OdometryConfig = Field(default_factory=OdometryConfig)
 
 
 def mount_position(mount: Mount | dict[str, Any]) -> tuple[float, float, float]:
@@ -337,19 +344,25 @@ class ScenarioBundle:
     vehicle: VehicleConfig
     sensors: SensorsConfig
     scenario_path: Path
+    vehicle_path: Path
+    sensors_path: Path
 
 
 def load_bundle(path: str | Path) -> ScenarioBundle:
-    """Load a scenario and resolve vehicle/sensor paths next to it."""
+    """Load a scenario and resolve vehicle/sensor paths relative to it."""
 
     scenario_path = Path(path)
     scenario = load_scenario(scenario_path)
     root = scenario_path.parent
-    vehicle = load_vehicle(root / scenario.vehicle)
-    sensors = load_sensors(root / scenario.sensors)
+    vehicle_path = (root / scenario.vehicle).resolve()
+    sensors_path = (root / scenario.sensors).resolve()
+    vehicle = load_vehicle(vehicle_path)
+    sensors = load_sensors(sensors_path)
     return ScenarioBundle(
         scenario=scenario,
         vehicle=vehicle,
         sensors=sensors,
         scenario_path=scenario_path,
+        vehicle_path=vehicle_path,
+        sensors_path=sensors_path,
     )

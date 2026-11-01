@@ -9,8 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-
-from algorithms.interface import Actuation, Observation
+from onboard.api import Actuation, Observation
 
 
 @dataclass
@@ -93,7 +92,7 @@ class FurthestGapController:
         self.steering = 0.0
         self.debug = GapDebug()
 
-    def update(self, observation: Observation, speed_limit: float) -> Actuation:
+    def update(self, observation: Observation, speed_limit: float = 1.5) -> Actuation:
         """Calcule les commandes (accélérateur et direction) à partir des observations des capteurs.
 
         Cette méthode est appelée à chaque pas de temps de la simulation (60 fois par seconde).
@@ -108,7 +107,7 @@ class FurthestGapController:
         Returns:
             Actuation: Un objet contenant deux commandes :
                        - throttle: valeur entre 0 et 1 (0 = arrêt, 1 = accélération maximale)
-                       - steering: angle de direction en radians (négatif = gauche, positif = droite)
+                       - steering: angle de direction en radians (positif = gauche, négatif = droite)
         """
         # Récupération des données du lidar
         scan = observation.lidar
@@ -123,6 +122,8 @@ class FurthestGapController:
         # Conversion des données du lidar en tableaux NumPy pour faciliter les calculs
         angles = np.asarray(scan.angles_rad, dtype=float)  # Angles des faisceaux (radians)
         ranges = np.asarray(scan.ranges_m, dtype=float)   # Distances mesurées (mètres)
+
+
 
         # Filtrage des mesures valides :
         # - scan.valid : le capteur a renvoyé une mesure

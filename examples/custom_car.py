@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 def build_car():
     """Return a modified vehicle and sensor set without touching YAML."""
 
-    vehicle = load_vehicle(ROOT / "simulator" / "configs" / "vehicle.yaml")
-    sensors = load_sensors(ROOT / "simulator" / "configs" / "sensors.yaml")
+    vehicle = load_vehicle(ROOT / "configs" / "vehicle.yaml")
+    sensors = load_sensors(ROOT / "configs" / "sensors.yaml")
 
     # Vehicle dynamics and geometry.
     vehicle.name = "wide_track_car"
