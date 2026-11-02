@@ -40,7 +40,7 @@ class GapCandidate:
     raw_range_m: float
     smoothed_range_m: float
     clearance_m: float
-    centering_penalty_m: float
+    angle_change_penalty_m: float
     score: float
     in_gap: bool
     selected: bool
@@ -93,6 +93,9 @@ class GapDebug:
     scores: np.ndarray = field(
         default_factory=lambda: np.zeros(0, dtype=float)
     )
+    penalty_m: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=float)
+    )
     free_mask: np.ndarray = field(
         default_factory=lambda: np.zeros(0, dtype=bool)
     )
@@ -112,7 +115,7 @@ class FurthestGapController:
     2. Lissage : on applique une moyenne mobile sur les distances pour réduire le bruit
     3. Dégagement : pour chaque faisceau, on calcule la distance minimale dans une fenêtre angulaire
     4. Scoring : on note chaque direction en fonction du dégagement, avec une légère préférence
-       pour le centre (pour éviter de zigzaguer)
+       pour la direction précédente (pour éviter de zigzaguer)
     5. Largeur du trou : on mesure la largeur angulaire de l'espace libre autour de la meilleure direction
     6. Commandes : on lisse la direction et on réduit la vitesse si les obstacles sont proches
     """
@@ -124,7 +127,7 @@ class FurthestGapController:
         clearance_window_deg: float = 60.0,
         min_gap_m: float = 0.60,
         max_speed_for_throttle: float = 5.5,
-        centering_weight: float = 0.15,
+        angle_change_weight: float = 0.15,
     ) -> None:
         """Initialise le contrôleur de suivi de trou.
 
@@ -140,16 +143,17 @@ class FurthestGapController:
                        métrique de trou.
             max_speed_for_throttle: Vitesse (en m/s) à laquelle l'accélérateur atteint 100%. Au-delà,
                                     la vitesse est limitée par ce paramètre.
-            centering_weight: Poids du biais vers le centre, en mètres par radian. Plus il
-                              est grand, plus l'algorithme préfère rester centré.
+            angle_change_weight: Poids de la pénalité de changement d'angle, en mètres par radian.
+                                 Plus il est grand, plus l'algorithme préfère garder la direction précédente.
         """
         self.max_steering = max_steering
         self.front_sector = np.radians(front_sector_deg)
         self.clearance_window_deg = clearance_window_deg
         self.min_gap_m = min_gap_m
         self.max_speed_for_throttle = max_speed_for_throttle
-        self.centering_weight = centering_weight
+        self.angle_change_weight = angle_change_weight
         self.steering = 0.0
+        self.last_angle = 0.0
         self.debug = GapDebug()
 
     def reset(self) -> None:
@@ -160,6 +164,7 @@ class FurthestGapController:
         que chaque run commence dans le même état.
         """
         self.steering = 0.0
+        self.last_angle = 0.0
         self.debug = GapDebug()
 
     def update(self, observation: Observation, speed_limit: float = 1.5) -> Actuation:
@@ -179,8 +184,10 @@ class FurthestGapController:
                        - throttle: valeur entre 0 et 1 (0 = arrêt, 1 = accélération maximale)
                        - steering: angle de direction en radians (positif = gauche, négatif = droite)
         """
-        # Récupération des données du lidar
-        scan = observation.lidar
+        # Récupération du scan dans le repère lidar courant. `lidar_current`
+        # utilise la compensation d'odométrie quand elle est disponible et
+        # retombe sur le scan brut sinon.
+        scan = observation.lidar_current
         if scan is None:
             # Si pas de lidar, on s'arrête
             self.debug = GapDebug(
@@ -282,11 +289,11 @@ class FurthestGapController:
         clearance = windows.min(axis=1)
 
         # Calcul des scores pour chaque direction
-        # On veut maximiser le dégagement (clearance) mais on préfère légèrement le centre
-        # pour éviter que le véhicule zigzague constamment entre gauche et droite
-        # centering_weight est un coefficient empirique : plus il est grand, plus on préfère le centre
-        centering_penalty = self.centering_weight * np.abs(angles)
-        scores = clearance - centering_penalty
+        # On veut maximiser le dégagement (clearance) mais on préfère légèrement garder
+        # la direction précédente pour éviter que le véhicule zigzague constamment
+        # angle_change_weight est un coefficient empirique : plus il est grand, plus on préfère la direction précédente
+        angle_change_penalty = self.angle_change_weight * 3* np.abs(angles - self.last_angle)
+        scores = clearance - angle_change_penalty
 
         # On met un score très bas (-inf) pour les directions hors secteur avant
         # Cela garantit qu'elles ne seront jamais choisies
@@ -298,6 +305,9 @@ class FurthestGapController:
         desired = best_bearing  # Angle souhaité (direction vers laquelle tourner)
         best_clearance = float(clearance[best])  # Dégagement dans cette direction
         best_range = float(work[best])  # Distance brute à cet angle
+
+        # Mise à jour de l'angle précédent pour la pénalité de changement d'angle
+        self.last_angle = best_bearing
 
         # Mesure de la largeur du trou en détectant l'espace libre contigu autour du meilleur faisceau
         # Un "trou" est une zone contiguë où toutes les distances sont supérieures à un seuil
@@ -381,6 +391,7 @@ class FurthestGapController:
         sampled_smoothed = work[sample_indices]
         sampled_clearance = clearance[sample_indices]
         sampled_scores = scores[sample_indices]
+        sampled_penalty = angle_change_penalty[sample_indices]
         sampled_free = free[sample_indices]
         profile = np.column_stack([sampled_angles, sampled_clearance])
 
@@ -395,7 +406,7 @@ class FurthestGapController:
                 raw_range_m=float(ranges[index]),
                 smoothed_range_m=float(work[index]),
                 clearance_m=float(clearance[index]),
-                centering_penalty_m=float(centering_penalty[index]),
+                angle_change_penalty_m=float(angle_change_penalty[index]),
                 score=float(scores[index]),
                 in_gap=bool(free[index]),
                 selected=bool(index == best),
@@ -438,6 +449,7 @@ class FurthestGapController:
             smoothed_ranges_m=sampled_smoothed,
             clearance_profile_m=sampled_clearance,
             scores=sampled_scores,
+            penalty_m=sampled_penalty,
             free_mask=sampled_free,
             chosen_index=best,
             candidates=candidates,
@@ -614,10 +626,10 @@ class FurthestGapController:
                         ),
                         Series(
                             "penalty",
-                            "center penalty",
+                            "penalty",
                             _profile_points(
                                 angles_deg,
-                                np.abs(debug.angles_rad) * self.centering_weight,
+                                debug.penalty_m,
                             ),
                             role="warning",
                         ),
