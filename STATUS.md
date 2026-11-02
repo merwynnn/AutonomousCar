@@ -61,7 +61,9 @@
   - gap-follow exposes raw/smoothed/clearance/score curves and scored candidates;
   - debug panels and 3D overlays are controller-neutral;
   - **Reload algo** re-imports controller modules and rebuilds controller
-    instances without resetting the simulation.
+    instances without resetting the simulation;
+  - algorithm import/runtime errors pause the run and show a persistent error
+    strip instead of stopping the server.
 - Dashboard at `dashboard/`:
   - live track scene with lidar returns, trail and odometry;
   - **Car studio** showing only the car, with body parts, wheels and sensor

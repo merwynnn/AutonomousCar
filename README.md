@@ -295,6 +295,11 @@ for iterating on a controller without restarting `dashboard.server`. It reloads
 the portable `algorithms/` package only; changes under `onboard/` or
 `simulator/` still require a server restart.
 
+If an algorithm fails to import or raises during an update, the run pauses and a
+persistent red controller-error strip shows the exception. The server keeps
+running: fix the file, click **Reload algo**, then resume. The previous
+controller instances stay alive after a failed reload.
+
 ### REST and WebSocket
 
 - `GET /api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`, `/api/config`

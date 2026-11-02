@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-11-02 — Non-fatal algorithm errors
+
+- Controller import/reload failures and runtime exceptions no longer stop the
+  simulation loop. The run pauses and the dashboard shows a persistent
+  controller-error strip.
+- Failed reloads keep the previous controller instances; a successful reload
+  clears the error.
+- `debug_frame()` failures are contained and shown as `DEBUG ERROR` in the debug
+  dock instead of breaking telemetry.
+- Added regression tests for import failures, runtime errors and debug errors.
+
 ## 2026-11-02 — Live algorithm reload
 
 - Added a **Reload algo** toolbar button and `controller.reload` WebSocket

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import importlib
+import logging
 import math
 import os
 import sys
@@ -44,6 +45,7 @@ from dashboard.spec import sensor_payload, track_payload, vehicle_payload
 
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
 REFERENCE_SCENARIO = CONFIG_DIR / "sim" / "awake_2027.yaml"
+LOGGER = logging.getLogger(__name__)
 
 
 class DashboardSimulation:
@@ -66,10 +68,12 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.control_mode: str = "auto"
-        self.auto_controller: str = controller_registry.DEFAULT_CONTROLLER
+        self.default_controller = controller_registry.DEFAULT_CONTROLLER
+        self.auto_controller: str = self.default_controller
         self.speed_limit = 1.5
         self.manual = Actuation()
         self.manual_time = -10.0
+        self.controller_error: str | None = None
         self._scan_key: tuple[float, float] | None = None
         self._queues: set[asyncio.Queue[dict[str, Any]]] = set()
         self._task: asyncio.Task[None] | None = None
@@ -104,6 +108,19 @@ class DashboardSimulation:
             if callable(reset):
                 reset()
 
+    def _set_controller_error(self, message: str) -> None:
+        """Pause safely and surface a controller/import error to the dashboard."""
+
+        self.controller_error = message
+        self.paused = True
+        self.manual = Actuation()
+        LOGGER.error("%s", message)
+        self._broadcast(
+            {"type": "controller.result", "ok": False, "message": message}
+        )
+        with contextlib.suppress(Exception):
+            self._broadcast(self.state_message())
+
     # ------------------------------------------------------------------ setup
     def _build_sim(self) -> Simulation:
         # One lidar sub-ray keeps live dashboard frame rates healthy; batch and
@@ -122,6 +139,7 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.manual = Actuation()
+        self.controller_error = None
         self._scan_key = None
         self._reset_controllers()
         self._broadcast(self.hello_message())
@@ -154,9 +172,7 @@ class DashboardSimulation:
                 importlib.reload(module)
             except Exception as exc:  # noqa: BLE001
                 message = f"Could not reload {name}: {exc}"
-                self._broadcast(
-                    {"type": "controller.result", "ok": False, "message": message}
-                )
+                self._set_controller_error(message)
                 return False, message
             reloaded.append(name)
 
@@ -164,9 +180,7 @@ class DashboardSimulation:
             importlib.reload(controller_registry)
         except Exception as exc:  # noqa: BLE001
             message = f"Could not reload algorithms.registry: {exc}"
-            self._broadcast(
-                {"type": "controller.result", "ok": False, "message": message}
-            )
+            self._set_controller_error(message)
             return False, message
 
         try:
@@ -174,15 +188,15 @@ class DashboardSimulation:
             new_controllers = self._build_controllers(new_specs)
         except Exception as exc:  # noqa: BLE001
             message = f"Could not rebuild controllers: {exc}"
-            self._broadcast(
-                {"type": "controller.result", "ok": False, "message": message}
-            )
+            self._set_controller_error(message)
             return False, message
 
         self._controller_specs = new_specs
         self.controllers = new_controllers
+        self.default_controller = controller_registry.DEFAULT_CONTROLLER
         if self.auto_controller not in self._controller_specs:
-            self.auto_controller = controller_registry.DEFAULT_CONTROLLER
+            self.auto_controller = self.default_controller
+        self.controller_error = None
         self._broadcast(self.hello_message())
         self._broadcast(self.state_message())
 
@@ -301,6 +315,7 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.manual = Actuation()
+        self.controller_error = None
         self._scan_key = None
         self._reset_controllers()
         self._broadcast(self.hello_message())
@@ -320,6 +335,7 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.manual = Actuation()
+        self.controller_error = None
         self._scan_key = None
         self._reset_controllers()
 
@@ -401,6 +417,7 @@ class DashboardSimulation:
             "t": round(self.sim.sim_time, 4),
             "paused": self.paused,
             "finished": self.finished,
+            "controller_error": self.controller_error,
             "car": self._car_message(state),
             "odometry": {
                 "x": round(odom.x, 4),
@@ -490,8 +507,23 @@ class DashboardSimulation:
         build = getattr(self.active_controller, "debug_frame", None)
         if not callable(build):
             return None
-        frame = build()
-        return frame.to_dict()
+        try:
+            frame = build()
+            return frame.to_dict()
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.exception("Controller debug_frame failed")
+            return {
+                "controller": self.auto_controller,
+                "title": "Controller debug",
+                "t": round(self.sim.sim_time, 4),
+                "status": "DEBUG ERROR",
+                "valid": False,
+                "readouts": [],
+                "plots": [],
+                "tables": [],
+                "overlays": [],
+                "meta": {"detail": f"{type(exc).__name__}: {exc}"},
+            }
 
     # ---------------------------------------------------------------- track
     def _swap_track(self, track: Any, mode: Literal["default", "random"], message: str) -> None:
@@ -520,6 +552,7 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.manual = Actuation()
+        self.controller_error = None
         self._scan_key = None
         self._reset_controllers()
         self._broadcast(self.hello_message())
@@ -570,7 +603,20 @@ class DashboardSimulation:
     def step_once(self) -> None:
         if self.finished:
             return
-        observation = self.sim.step(self._command())
+        try:
+            command = self._command()
+        except Exception as exc:  # noqa: BLE001
+            self._set_controller_error(
+                f"Controller error: {type(exc).__name__}: {exc}"
+            )
+            return
+        try:
+            observation = self.sim.step(command)
+        except Exception as exc:  # noqa: BLE001
+            self._set_controller_error(
+                f"Simulation step error: {type(exc).__name__}: {exc}"
+            )
+            return
         if observation.t >= self.sim.scenario.simulation.max_time_s:
             self.finished = True
         if self.sim.finished:
@@ -591,6 +637,8 @@ class DashboardSimulation:
         elif kind == "run.step":
             self.paused = True
             for _ in range(6):
+                if self.controller_error is not None:
+                    break
                 self.step_once()
         elif kind == "run.set_speed":
             self.speed_limit = max(0.5, min(6.0, float(message.get("speed", 2.4))))
@@ -598,18 +646,19 @@ class DashboardSimulation:
             mode = str(message.get("mode", "auto"))
             self.control_mode = mode if mode in {"auto", "manual"} else "auto"
             self.manual = Actuation()
+            self.controller_error = None
         elif kind == "control.controller":
-            controller = str(
-                message.get("controller", controller_registry.DEFAULT_CONTROLLER)
-            )
+            controller = str(message.get("controller", self.default_controller))
             self.auto_controller = (
                 controller
                 if controller in self._controller_specs
-                else controller_registry.DEFAULT_CONTROLLER
+                else self.default_controller
             )
+            self.controller_error = None
             self._reset_controllers()
         elif kind == "drive.command":
             self.control_mode = "manual"
+            self.controller_error = None
             self.manual = Actuation(
                 throttle=max(-1.0, min(1.0, float(message.get("throttle", 0.0)))),
                 steering=max(-0.55, min(0.55, float(message.get("steering", 0.0)))),
@@ -671,7 +720,12 @@ class DashboardSimulation:
                     self.reload_config()
             if self._controller_reload_pending:
                 self._controller_reload_pending = False
-                self.reload_controllers()
+                try:
+                    self.reload_controllers()
+                except Exception as exc:  # noqa: BLE001
+                    self._set_controller_error(
+                        f"Reload failure: {type(exc).__name__}: {exc}"
+                    )
             if not self.paused and not self.finished:
                 self.step_once()
             telemetry_count += 1
@@ -703,6 +757,7 @@ class DashboardSimulation:
                 else self.auto_controller
             ),
             "speed_limit": self.speed_limit,
+            "controller_error": self.controller_error,
             "lidar_beams": self.sim.sensors.lidar.beams,
             "slam": False,
         }

@@ -1063,6 +1063,17 @@ kbd {
   backdrop-filter: blur(4px);
 }
 
+.error-strip {
+  max-width: 70%;
+  overflow: hidden;
+  border-color: rgba(201, 107, 90, 0.55);
+  background: rgba(56, 24, 20, 0.94);
+  color: #e08b7c;
+  font-family: var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .viewport-axis {
   position: absolute;
   right: 13px;
@@ -1772,6 +1783,10 @@ input[type='range'] {
 
 .debug-idle {
   color: var(--dim);
+}
+
+.debug-error {
+  color: #e08b7c;
 }
 
 .debug-tabs {

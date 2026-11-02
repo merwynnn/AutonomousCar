@@ -322,7 +322,9 @@ export function DebugDock({
   const active = tabs[activeIndex];
   const detail = typeof frame.meta.detail === 'string' ? frame.meta.detail : '';
   const statusTone = !frame.valid
-    ? 'idle'
+    ? frame.status === 'DEBUG ERROR'
+      ? 'error'
+      : 'idle'
     : frame.status === 'TRACKING'
       ? 'live'
       : 'warn';

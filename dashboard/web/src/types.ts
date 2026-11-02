@@ -384,6 +384,7 @@ export interface StateMessage {
   t: number;
   paused: boolean;
   finished: boolean;
+  controller_error: string | null;
   car: {
     x: number;
     y: number;

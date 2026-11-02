@@ -1485,7 +1485,14 @@ export default function App() {
             />
             <ViewportHud hello={hello} state={state} viewMode={viewMode} scan={scan} />
             <DebugDock state={state} layers={layers} />
-            {hello?.warnings.length ? (
+            {state?.controller_error ? (
+              <div
+                className="warning-strip error-strip"
+                title={state.controller_error}
+              >
+                CONTROLLER ERROR · {state.controller_error}
+              </div>
+            ) : hello?.warnings.length ? (
               <div className="warning-strip">{hello.warnings.join(' · ')}</div>
             ) : null}
             <div className="viewport-axis" aria-hidden="true">

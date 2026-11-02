@@ -96,6 +96,13 @@ controller takes over on the next tick; use **Reset** for a fresh start. The
 reload covers `algorithms/*.py`; changes under `onboard/` or `simulator/` still
 require a server restart.
 
+Import failures and controller exceptions are non-fatal. The run pauses, a
+persistent red **controller error** strip shows the exception, and the server
+keeps running. The previous controller instances stay alive after a failed
+reload, so you can fix the file and click **Reload algo** again.
+
+![Controller error with the server still running](assets/dashboard-controller-error.png)
+
 ![Reload algo with live simulation state](assets/dashboard-reload-algo.png)
 
 The Track / Car only view switch sits in the viewport header, next to the camera
