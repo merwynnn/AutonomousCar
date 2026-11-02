@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-02 — Generic controller debug and gap solver candidates
+
+- Added a controller-neutral `DebugFrame` contract (`algorithms/debug.py`) for
+  readouts, plots, candidate tables and 3D overlays.
+- Added `algorithms/registry.py`; the dashboard controller list is now served
+  by the backend instead of being hardcoded in the UI.
+- Replaced the gap-only WebSocket payload and panel with `state.debug` and a
+  shared `DebugDock`.
+- Gap-follow debug now shows raw/smoothed/clearance/score curves, the scoring
+  terms, scored candidates with the selected one highlighted, validity reasons
+  and a compact readout grid.
+- The 3D debug layer draws the opening, selected/clamped bearings and three
+  well-separated candidate labels using generic overlay primitives.
+
 ## 2026-11-02 — AutoBench dashboard cleanup
 
 - Renamed the dashboard wordmark and browser title from AWAKE to **AutoBench**.

@@ -31,12 +31,39 @@ panel collapses, giving the viewport more room. The single Track / Car only
 switch lives in the viewport header; there are no duplicate copies in the
 toolbar or outliner.
 
+### Controller debug
+
+Controllers may expose an optional `debug_frame()` returning a serialisable
+`DebugFrame` from `algorithms/debug.py`. The dashboard renders its readouts,
+plots, candidate tables and spatial overlays without importing controller-specific
+classes. The **Debug** layer toggle hides or shows the viewport overlay; manual
+driving hides the panel.
+
+Adding a controller means adding it to `algorithms/registry.py` and, if useful,
+returning a `DebugFrame`. The generic renderer then works immediately. See
+`algorithms/template.py` for a minimal readout example. For a fully custom
+layout, register a React component in
+`dashboard/web/src/DebugRenderers.tsx`; the server and transport do not change.
+The frame's `meta` object carries controller-specific values for that case.
+
 ### Gap-solver debug
 
-When the gap-follow controller is active, the viewport shows the chosen opening
-as a 3D fan and a live clearance-vs-bearing chart. The chart shows the selected
-bearing, opening edges, clearance and throttle. The **Gap solver** layer toggle
-hides it.
+When the gap-follow controller is active, the debug dock shows three views:
+
+- **Range profile**: raw, smoothed and clearance distances against bearing, the
+  free-space threshold, the selected bearing and the detected opening.
+- **Score**: the total score and centering penalty. The score is
+  `clearance - centering_weight * |bearing|`.
+- **Candidates**: the top scored beams with bearing, range, clearance, score and
+  whether they belong to the opening. The selected row is highlighted.
+
+The viewport shows the chosen opening as a restrained fan, the selected bearing,
+and the three best-separated candidate beams. Readouts show the winning bearing,
+clamped target, applied steering, opening width, free-space threshold, target
+speed, throttle and clearance window. If the best beam is outside the steering
+limit, the winning and clamped target bearings are drawn separately.
+
+The **Debug** layer toggle hides it.
 
 ### Tuning console and track generator
 
@@ -59,7 +86,7 @@ width and object density. **Default** restores the reference test track.
 - Orbit, top and chase cameras; turntable in car studio.
 - Auto/manual drive, demo controller and speed limit.
 - Tune and reload config.
-- Layer toggles: lidar, trail, odometry, sensors, coverage, labels.
+- Layer toggles: lidar, trail, odometry, sensors, coverage, labels, debug.
 
 The Track / Car only view switch sits in the viewport header, next to the camera
 and sensor-realism readout.
@@ -87,6 +114,10 @@ WebSocket `/ws/telemetry`:
 - client: `run.start`, `run.pause`, `run.reset`, `run.step`,
   `run.set_speed`, `control.mode`, `control.controller`, `drive.command`,
   `config.reload`, `config.apply`, `track.generate`, `track.default`, `ping`.
+
+`hello.controllers` advertises the registry. `state.debug` carries the active
+controller's optional `DebugFrame`; it is `null` in manual mode or when the
+controller has no debug view.
 
 The simulator runs MuJoCo and the dashboard displays `MUJOCO` in the title bar.
 

@@ -11,7 +11,7 @@ simulator/  (MuJoCo, simulated sensors, track, timing; host only)
     │  implements onboard.api.RobotAPI via simulator/bridge.py
 onboard/    (portable contract, shared estimator, Pi runtime and drivers)
     │
-algorithms/ (Observation -> Actuation, onboard.api + NumPy only)
+algorithms/ (Observation -> Actuation, portable; optional debug frames)
 ```
 
 ## Boundaries
@@ -26,8 +26,10 @@ algorithms/ (Observation -> Actuation, onboard.api + NumPy only)
   and lap timing. It must not import dashboard code or React state.
 - `simulator/bridge.py` exposes `SimRobotAPI`, so the simulator is only one
   provider of the portable robot interface.
-- `algorithms/` owns driving policy. It imports only `onboard.api` and NumPy.
-  `algorithms/interface.py` remains a compatibility re-export.
+- `algorithms/` owns driving policy. It imports only `onboard.api`, its own
+  package modules and NumPy. `algorithms/interface.py` remains a compatibility
+  re-export. `algorithms/debug.py` is a host-neutral debug snapshot contract and
+  `algorithms/registry.py` lists controllers available to the dashboard.
 - `dashboard/` owns transport, operator commands and rendering. It may read
   ground truth for display but passes only observations to controllers.
 - The browser never runs physics.

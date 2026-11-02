@@ -235,12 +235,148 @@ export interface HelloMessage {
   };
   race: { laps: number };
   warnings: string[];
+  controllers: Array<{ id: string; label: string }>;
+  active_controller: string;
   paths: { scenario: string; vehicle: string; sensors: string };
   capabilities: {
     manual_driving: boolean;
     live_reload: boolean;
     car_studio: boolean;
   };
+}
+
+export type DebugScalar = number | string | boolean | null;
+export type DebugRole =
+  | 'primary'
+  | 'secondary'
+  | 'muted'
+  | 'accent'
+  | 'warning'
+  | 'candidate';
+export type DebugFrameKind = 'car' | 'world';
+
+export interface DebugReadout {
+  key: string;
+  label: string;
+  value: DebugScalar;
+  unit: string;
+  precision: number;
+}
+
+export interface DebugSeries {
+  id: string;
+  label: string;
+  kind: 'line' | 'scatter';
+  role: DebugRole;
+  points: Vec2[];
+}
+
+export interface DebugMarker {
+  axis: 'x' | 'y';
+  value: number;
+  label: string;
+  style: 'solid' | 'dashed';
+}
+
+export interface DebugBand {
+  low: number;
+  high: number;
+  label: string;
+  role: DebugRole;
+}
+
+export interface DebugPlot {
+  id: string;
+  title: string;
+  x_label: string;
+  y_label: string;
+  x_unit: string;
+  y_unit: string;
+  x_range: Vec2 | null;
+  y_range: Vec2 | null;
+  series: DebugSeries[];
+  markers: DebugMarker[];
+  bands: DebugBand[];
+}
+
+export interface DebugColumn {
+  key: string;
+  label: string;
+  unit: string;
+  precision: number;
+}
+
+export interface DebugTable {
+  id: string;
+  title: string;
+  columns: DebugColumn[];
+  rows: DebugScalar[][];
+  selected_row: number | null;
+}
+
+export interface DebugPointsOverlay {
+  kind: 'points';
+  frame: DebugFrameKind;
+  size: number;
+  points: Array<{ x: number; y: number; label: string; role: DebugRole }>;
+}
+
+export interface DebugPolylineOverlay {
+  kind: 'polyline';
+  frame: DebugFrameKind;
+  role: DebugRole;
+  width: number;
+  closed: boolean;
+  points: Vec2[];
+}
+
+export interface DebugRayOverlay {
+  kind: 'ray';
+  frame: DebugFrameKind;
+  role: DebugRole;
+  width: number;
+  origin: Vec2;
+  angle_rad: number;
+  range_m: number;
+}
+
+export interface DebugSectorOverlay {
+  kind: 'sector';
+  frame: DebugFrameKind;
+  role: DebugRole;
+  opacity: number;
+  center: Vec2;
+  start_angle_rad: number;
+  end_angle_rad: number;
+  range_m: number;
+}
+
+export interface DebugLabelOverlay {
+  kind: 'label';
+  frame: DebugFrameKind;
+  role: DebugRole;
+  position: Vec2;
+  text: string;
+}
+
+export type DebugOverlay =
+  | DebugPointsOverlay
+  | DebugPolylineOverlay
+  | DebugRayOverlay
+  | DebugSectorOverlay
+  | DebugLabelOverlay;
+
+export interface DebugFrame {
+  controller: string;
+  title: string;
+  t: number;
+  status: string;
+  valid: boolean;
+  readouts: DebugReadout[];
+  plots: DebugPlot[];
+  tables: DebugTable[];
+  overlays: DebugOverlay[];
+  meta: Record<string, unknown>;
 }
 
 export interface StateMessage {
@@ -276,22 +412,9 @@ export interface StateMessage {
     sonars: Array<{ name: string; range_m: number | null; valid: boolean }>;
   };
   control_mode: 'auto' | 'manual';
-  auto_controller: 'gap_follow' | 'wall_follow';
+  auto_controller: string;
   speed_limit: number;
-  gap: {
-    valid: boolean;
-    angle_rad: number;
-    steering_rad: number;
-    range_m: number;
-    clearance_m: number;
-    width_rad: number;
-    gap_left_rad: number;
-    gap_right_rad: number;
-    front_sector_rad: number;
-    throttle: number;
-    min_clearance_m: number;
-    profile: Array<[number, number]>;
-  };
+  debug: DebugFrame | null;
 }
 
 export interface ScanMessage {
@@ -325,7 +448,7 @@ export interface DebugLayers {
   sensors: boolean;
   coverage: boolean;
   labels: boolean;
-  gap: boolean;
+  debug: boolean;
 }
 
 export type ServerMessage =

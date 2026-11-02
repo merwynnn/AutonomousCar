@@ -54,13 +54,20 @@
 - Runtime MJCF generation from `VehicleConfig`; MuJoCo loads the generated car.
 - Sensor-only algorithm boundary and two lidar-only demo controllers
   (furthest-gap and wall-follow).
+- Generic controller debug pipeline:
+  - `algorithms/debug.py` defines optional readouts, plots, tables and spatial
+    overlays;
+  - the dashboard selects controllers from `algorithms/registry.py`;
+  - gap-follow exposes raw/smoothed/clearance/score curves and scored candidates;
+  - debug panels and 3D overlays are controller-neutral.
 - Dashboard at `dashboard/`:
   - live track scene with lidar returns, trail and odometry;
   - **Car studio** showing only the car, with body parts, wheels and sensor
     mounts from the same config;
   - **Tuning console** for all vehicle/sensor parameters, live apply,
     save-to-YAML and undo/redo;
-  - **gap-follow debug** with 3D opening overlay and live clearance profile;
+  - **gap-follow debug** with profile, score and candidate views plus a
+    restrained 3D opening overlay;
   - **random track generator** with object density and default-track restore;
   - desktop engineering UI branded **AutoBench**;
   - collapsible outliner/details inspector with a single Track / Car only

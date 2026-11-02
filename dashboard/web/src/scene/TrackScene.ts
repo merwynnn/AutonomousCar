@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { DebugOverlayLayer } from './DebugOverlayLayer';
 import type {
   BodyPart,
   CameraMode,
@@ -92,16 +93,7 @@ export class TrackScene {
   private obstaclesGroup = new THREE.Group();
   private studioGrid: THREE.GridHelper | null = null;
   private studioLidarRing: THREE.Mesh | null = null;
-
-  private gapGroup = new THREE.Group();
-  private gapLine: THREE.Line | null = null;
-  private gapRim: THREE.Line | null = null;
-  private gapBoundary: THREE.LineSegments | null = null;
-  private gapFan: THREE.Mesh | null = null;
-  private gapDot: THREE.Mesh | null = null;
-  private readonly gapFanPositions = new Float32Array((33 + 2) * 3);
-  private readonly gapRimPositions = new Float32Array((33 + 1) * 3);
-  private readonly gapBoundaryPositions = new Float32Array(4 * 3);
+  private readonly debugOverlay: DebugOverlayLayer;
 
   private latestState: StateMessage | null = null;
   private lidarHeight = 0.14;
@@ -114,7 +106,7 @@ export class TrackScene {
     sensors: false,
     coverage: false,
     labels: true,
-    gap: true,
+    debug: true,
   };
 
   private animationFrame = 0;
@@ -166,7 +158,7 @@ export class TrackScene {
     this.buildLidar();
     this.buildTrail();
     this.buildOdomTrail();
-    this.buildGapMarker();
+    this.debugOverlay = new DebugOverlayLayer(this.scene);
 
     this.studioGroup.visible = false;
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -697,91 +689,6 @@ export class TrackScene {
     this.scene.add(this.odomTrail);
   }
 
-  private buildGapMarker(): void {
-    const fanGeometry = new THREE.BufferGeometry();
-    fanGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(this.gapFanPositions, 3),
-    );
-    const indices: number[] = [];
-    for (let index = 0; index < 33; index += 1) {
-      indices.push(0, index + 1, index + 2);
-    }
-    fanGeometry.setIndex(indices);
-    this.gapFan = new THREE.Mesh(
-      fanGeometry,
-      new THREE.MeshBasicMaterial({
-        color: 0x5f9fc7,
-        transparent: true,
-        opacity: 0.05,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      }),
-    );
-    this.gapFan.renderOrder = 4;
-    this.gapGroup.add(this.gapFan);
-
-    const rimGeometry = new THREE.BufferGeometry();
-    rimGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(this.gapRimPositions, 3),
-    );
-    this.gapRim = new THREE.Line(
-      rimGeometry,
-      new THREE.LineBasicMaterial({
-        color: 0x8ec7ef,
-        transparent: true,
-        opacity: 0.9,
-        depthTest: false,
-      }),
-    );
-    this.gapRim.renderOrder = 5;
-    this.gapGroup.add(this.gapRim);
-
-    const boundaryGeometry = new THREE.BufferGeometry();
-    boundaryGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(this.gapBoundaryPositions, 3),
-    );
-    this.gapBoundary = new THREE.LineSegments(
-      boundaryGeometry,
-      new THREE.LineBasicMaterial({
-        color: 0x8ec7ef,
-        transparent: true,
-        opacity: 0.35,
-        depthTest: false,
-      }),
-    );
-    this.gapBoundary.renderOrder = 5;
-    this.gapGroup.add(this.gapBoundary);
-
-    const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array(6), 3),
-    );
-    this.gapLine = new THREE.Line(
-      lineGeometry,
-      new THREE.LineBasicMaterial({
-        color: 0xff6fae,
-        transparent: true,
-        opacity: 0.95,
-        depthTest: false,
-      }),
-    );
-    this.gapLine.renderOrder = 6;
-    this.gapGroup.add(this.gapLine);
-
-    this.gapDot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.032, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff6fae, depthTest: false }),
-    );
-    this.gapDot.renderOrder = 7;
-    this.gapGroup.add(this.gapDot);
-    this.gapGroup.visible = false;
-    this.scene.add(this.gapGroup);
-  }
-
   private clearTrails(): void {
     this.trailCount = 0;
     this.odomTrailCount = 0;
@@ -792,87 +699,17 @@ export class TrackScene {
     }
   }
 
-  private updateGapMarker(state: StateMessage): void {
-    const gap = state.gap;
-    const visible =
-      this.viewMode === 'track' &&
-      state.auto_controller === 'gap_follow' &&
-      gap.valid &&
-      this.layers.gap;
-    this.gapGroup.visible = visible;
-    if (!visible) return;
-    const range = Math.max(0.4, Math.min(gap.range_m, 2.0));
-    const y = 0.035;
-    const startX = state.car.x;
-    const startZ = state.car.y;
-    const arcCount = 33;
-    this.gapFanPositions[0] = startX;
-    this.gapFanPositions[1] = y;
-    this.gapFanPositions[2] = startZ;
-    let leftX = startX;
-    let leftZ = startZ;
-    let rightX = startX;
-    let rightZ = startZ;
-    for (let index = 0; index <= arcCount; index += 1) {
-      const fraction = index / arcCount;
-      const angle =
-        state.car.theta +
-        gap.gap_left_rad +
-        (gap.gap_right_rad - gap.gap_left_rad) * fraction;
-      const x = startX + Math.cos(angle) * range;
-      const z = startZ + Math.sin(angle) * range;
-      const offset = (index + 1) * 3;
-      this.gapFanPositions[offset] = x;
-      this.gapFanPositions[offset + 1] = y;
-      this.gapFanPositions[offset + 2] = z;
-      this.gapRimPositions[index * 3] = x;
-      this.gapRimPositions[index * 3 + 1] = y + 0.001;
-      this.gapRimPositions[index * 3 + 2] = z;
-      if (index === 0) {
-        leftX = x;
-        leftZ = z;
-      } else if (index === arcCount) {
-        rightX = x;
-        rightZ = z;
-      }
-    }
-    this.gapBoundaryPositions.set([
-      startX, y + 0.001, startZ, leftX, y + 0.001, leftZ,
-      startX, y + 0.001, startZ, rightX, y + 0.001, rightZ,
-    ]);
-    if (this.gapFan) {
-      this.gapFan.geometry.attributes.position.needsUpdate = true;
-      this.gapFan.geometry.computeBoundingSphere();
-    }
-    if (this.gapRim) {
-      this.gapRim.geometry.attributes.position.needsUpdate = true;
-      this.gapRim.geometry.computeBoundingSphere();
-    }
-    if (this.gapBoundary) {
-      this.gapBoundary.geometry.attributes.position.needsUpdate = true;
-      this.gapBoundary.geometry.computeBoundingSphere();
-    }
-    const chosen = state.car.theta + gap.angle_rad;
-    const targetX = startX + Math.cos(chosen) * range;
-    const targetZ = startZ + Math.sin(chosen) * range;
-    if (this.gapLine) {
-      const positions = this.gapLine.geometry.attributes.position as THREE.BufferAttribute;
-      positions.setXYZ(0, startX, y + 0.002, startZ);
-      positions.setXYZ(1, targetX, y + 0.002, targetZ);
-      positions.needsUpdate = true;
-      this.gapLine.geometry.computeBoundingSphere();
-    }
-    this.gapDot?.position.set(targetX, y + 0.002, targetZ);
-  }
-
   updateState(state: StateMessage): void {
     if (this.latestState && state.t < this.latestState.t - 1e-6) {
       this.clearTrails();
       this.lidarGeometry?.setDrawRange(0, 0);
-      this.gapGroup.visible = false;
     }
     this.latestState = state;
-    this.updateGapMarker(state);
+    this.debugOverlay.update(
+      state.debug,
+      state.car,
+      this.layers.debug && this.viewMode === 'track',
+    );
     const heading = state.car.theta;
     const wheelSpin = state.car.speed * 0.5;
 
@@ -1000,7 +837,6 @@ export class TrackScene {
     if (this.trail) this.trail.visible = !carMode && this.layers.trail;
     if (this.odomTrail) this.odomTrail.visible = !carMode && this.layers.odometry;
     if (this.centerline) this.centerline.visible = !carMode;
-    if (carMode) this.gapGroup.visible = false;
     this.scene.background = new THREE.Color(carMode ? STUDIO_BACKGROUND : TRACK_BACKGROUND);
     this.scene.fog = carMode ? null : new THREE.Fog(TRACK_BACKGROUND, 20, 38);
     this.controls.autoRotate = carMode && this.turntable;
@@ -1044,8 +880,11 @@ export class TrackScene {
     if (this.trail) this.trail.visible = this.layers.trail && !carMode;
     if (this.odomTrail) this.odomTrail.visible = this.layers.odometry && !carMode;
     if (this.studioLidarRing) this.studioLidarRing.visible = this.layers.coverage;
-    if (this.latestState) this.updateGapMarker(this.latestState);
-    else this.gapGroup.visible = false;
+    this.debugOverlay.update(
+      this.latestState?.debug ?? null,
+      this.latestState?.car ?? { x: 0, y: 0, theta: 0 },
+      this.layers.debug && !carMode,
+    );
   }
 
   private applyCameraForView(): void {
@@ -1129,6 +968,7 @@ export class TrackScene {
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
+    this.debugOverlay.dispose();
     this.disposeObject(this.scene);
   }
 }

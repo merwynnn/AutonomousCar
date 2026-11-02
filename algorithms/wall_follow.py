@@ -45,7 +45,9 @@ class WallFollowController:
     def reset(self) -> None:
         self.steering = 0.0
 
-    def update(self, observation: Observation) -> Actuation:
+    def update(self, observation: Observation, speed_limit: float | None = None) -> Actuation:
+        if speed_limit is not None:
+            self.base_speed = max(0.5, speed_limit)
         dt = max(observation.dt, 1e-4)
         left = _sector_min(observation, 60.0, 120.0)
         right = _sector_min(observation, -120.0, -60.0)

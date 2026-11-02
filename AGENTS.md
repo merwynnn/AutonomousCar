@@ -38,6 +38,8 @@ Portable onboard runtime (onboard/, deployable to the Pi)
     ├── runtime.py: SensorRobot / ControllerRuntime
     └── drivers/: serial protocol, mock board and hardware protocols
 Algorithms (algorithms/)
+    ├── registry.py: dashboard-selectable controller list
+    ├── debug.py: optional DebugFrame contract for custom debug views
     └── Observation -> Actuation controllers (onboard.api + NumPy only)
 ```
 
@@ -63,7 +65,9 @@ These rules are non-negotiable when adding code:
 - `onboard/` is the code intended to run on the Raspberry Pi.
 - `onboard/` and `algorithms/` must never import `simulator.*` or
   `dashboard.*`, nor a physics backend or FastAPI.
-- `algorithms/` import only `onboard.api` and NumPy.
+- `algorithms/` import only `onboard.api`, their own package modules and NumPy.
+  `algorithms/debug.py` defines the optional, host-neutral debug snapshot
+  contract; the dashboard must not import a controller's internal debug class.
 - `onboard/api.py` owns `Observation`, `Actuation`, `SensorFrame`,
   `StateEstimate` and `RobotAPI`.
 - `algorithms/interface.py` is a compatibility re-export only; new code imports

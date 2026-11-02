@@ -19,8 +19,13 @@ from collections.abc import AsyncIterator, MutableMapping
 from pathlib import Path
 from typing import Any, Literal
 
-from algorithms.gap_follow import FurthestGapController, GapDebug
-from algorithms.wall_follow import WallFollowController
+from algorithms.debug import DebugFrame
+from algorithms.registry import (
+    CONTROLLERS,
+    DEFAULT_CONTROLLER,
+    ControllerSpec,
+    controller_list,
+)
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -65,7 +70,7 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.control_mode: str = "auto"
-        self.auto_controller: str = "gap_follow"
+        self.auto_controller: str = DEFAULT_CONTROLLER
         self.speed_limit = 1.5
         self.manual = Actuation()
         self.manual_time = -10.0
@@ -75,8 +80,23 @@ class DashboardSimulation:
         self._reload_pending = False
         self._pending_config: dict[str, Any] | None = None
         self._pending_track: dict[str, Any] | None = None
-        self.gap_follow = FurthestGapController()
-        self.wall_follow = WallFollowController(base_speed=self.speed_limit)
+        self.controllers: dict[str, Any] = {
+            key: spec.build() for key, spec in CONTROLLERS.items()
+        }
+
+    @property
+    def controller_spec(self) -> ControllerSpec:
+        return CONTROLLERS[self.auto_controller]
+
+    @property
+    def active_controller(self) -> Any:
+        return self.controllers[self.auto_controller]
+
+    def _reset_controllers(self) -> None:
+        for controller in self.controllers.values():
+            reset = getattr(controller, "reset", None)
+            if callable(reset):
+                reset()
 
     # ------------------------------------------------------------------ setup
     def _build_sim(self) -> Simulation:
@@ -97,9 +117,7 @@ class DashboardSimulation:
         self.finished = False
         self.manual = Actuation()
         self._scan_key = None
-        self.gap_follow.reset()
-        self.wall_follow.reset()
-        self.wall_follow.base_speed = self.speed_limit
+        self._reset_controllers()
         self._broadcast(self.hello_message())
 
     @staticmethod
@@ -209,9 +227,7 @@ class DashboardSimulation:
         self.finished = False
         self.manual = Actuation()
         self._scan_key = None
-        self.gap_follow.reset()
-        self.wall_follow.reset()
-        self.wall_follow.base_speed = self.speed_limit
+        self._reset_controllers()
         self._broadcast(self.hello_message())
         self._broadcast(self.state_message())
         self._broadcast(self.scan_message())
@@ -230,8 +246,7 @@ class DashboardSimulation:
         self.finished = False
         self.manual = Actuation()
         self._scan_key = None
-        self.gap_follow.reset()
-        self.wall_follow.reset()
+        self._reset_controllers()
 
     # --------------------------------------------------------------- messages
     def hello_message(self) -> dict[str, Any]:
@@ -281,6 +296,8 @@ class DashboardSimulation:
             },
             "race": {"laps": self.scenario.race.laps},
             "warnings": warnings,
+            "controllers": controller_list(),
+            "active_controller": self.auto_controller,
             "paths": {
                 "scenario": str(self.scenario_path),
                 "vehicle": str(
@@ -351,7 +368,7 @@ class DashboardSimulation:
             "control_mode": self.control_mode,
             "auto_controller": self.auto_controller,
             "speed_limit": round(self.speed_limit, 3),
-            "gap": self._gap_message(),
+            "debug": self._debug_message(),
         }
 
     def scan_message(self) -> dict[str, Any]:
@@ -389,25 +406,14 @@ class DashboardSimulation:
             "wheel_speeds": [round(value, 2) for value in state.wheel_speeds],
         }
 
-    def _gap_message(self) -> dict[str, Any]:
-        debug: GapDebug = self.gap_follow.debug
-        return {
-            "valid": self.auto_controller == "gap_follow" and debug.valid,
-            "angle_rad": round(debug.angle_rad, 4),
-            "steering_rad": round(debug.steering_rad, 4),
-            "range_m": round(debug.range_m, 3),
-            "clearance_m": round(debug.clearance_m, 3),
-            "width_rad": round(debug.gap_width_rad, 4),
-            "gap_left_rad": round(debug.gap_left_rad, 4),
-            "gap_right_rad": round(debug.gap_right_rad, 4),
-            "front_sector_rad": round(debug.front_sector_rad, 4),
-            "throttle": round(debug.throttle, 3),
-            "min_clearance_m": round(debug.min_clearance_m, 3),
-            "profile": [
-                [round(float(angle), 4), round(float(clearance), 3)]
-                for angle, clearance in debug.profile
-            ],
-        }
+    def _debug_message(self) -> dict[str, Any] | None:
+        if self.control_mode != "auto":
+            return None
+        build = getattr(self.active_controller, "debug_frame", None)
+        if not callable(build):
+            return None
+        frame: DebugFrame = build()
+        return frame.to_dict()
 
     # ---------------------------------------------------------------- track
     def _swap_track(self, track: Any, mode: Literal["default", "random"], message: str) -> None:
@@ -437,9 +443,7 @@ class DashboardSimulation:
         self.finished = False
         self.manual = Actuation()
         self._scan_key = None
-        self.gap_follow.reset()
-        self.wall_follow.reset()
-        self.wall_follow.base_speed = self.speed_limit
+        self._reset_controllers()
         self._broadcast(self.hello_message())
         self._broadcast(self.state_message())
         self._broadcast(self.scan_message())
@@ -470,9 +474,11 @@ class DashboardSimulation:
 
     # ---------------------------------------------------------------- control
     def _auto_command(self, observation: Observation) -> Actuation:
-        if self.auto_controller == "wall_follow":
-            return self.wall_follow.update(observation)
-        return self.gap_follow.update(observation, self.speed_limit)
+        return self.controller_spec.update(
+            self.active_controller,
+            observation,
+            self.speed_limit,
+        )
 
     def _command(self) -> Actuation:
         if self.control_mode == "manual":
@@ -510,20 +516,16 @@ class DashboardSimulation:
                 self.step_once()
         elif kind == "run.set_speed":
             self.speed_limit = max(0.5, min(6.0, float(message.get("speed", 2.4))))
-            self.wall_follow.base_speed = self.speed_limit
         elif kind == "control.mode":
             mode = str(message.get("mode", "auto"))
             self.control_mode = mode if mode in {"auto", "manual"} else "auto"
             self.manual = Actuation()
         elif kind == "control.controller":
-            controller = str(message.get("controller", "gap_follow"))
+            controller = str(message.get("controller", DEFAULT_CONTROLLER))
             self.auto_controller = (
-                controller
-                if controller in {"gap_follow", "wall_follow"}
-                else "gap_follow"
+                controller if controller in CONTROLLERS else DEFAULT_CONTROLLER
             )
-            self.gap_follow.reset()
-            self.wall_follow.reset()
+            self._reset_controllers()
         elif kind == "drive.command":
             self.control_mode = "manual"
             self.manual = Actuation(

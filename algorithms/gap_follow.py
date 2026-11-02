@@ -11,6 +11,40 @@ from dataclasses import dataclass, field
 import numpy as np
 from onboard.api import Actuation, Observation
 
+from algorithms.debug import (
+    Band,
+    Column,
+    DebugFrame,
+    Marker,
+    Overlay,
+    Plot,
+    PointMarker,
+    PointsOverlay,
+    PolylineOverlay,
+    RayOverlay,
+    Readout,
+    Role,
+    SectorOverlay,
+    Series,
+    Table,
+)
+
+
+@dataclass(frozen=True)
+class GapCandidate:
+    """One scored beam candidate, exposed only for debugging."""
+
+    rank: int
+    index: int
+    angle_rad: float
+    raw_range_m: float
+    smoothed_range_m: float
+    clearance_m: float
+    centering_penalty_m: float
+    score: float
+    in_gap: bool
+    selected: bool
+
 
 @dataclass
 class GapDebug:
@@ -29,10 +63,41 @@ class GapDebug:
     front_sector_rad: float = 0.0
     throttle: float = 0.0
     min_clearance_m: float = 0.0
-    valid: bool = False  # Indique si un trou valide a été trouvé
+    valid: bool = False  # Indique que la commande a pu être calculée
     profile: np.ndarray = field(
         default_factory=lambda: np.zeros((0, 2), dtype=float)
     )
+    # --- richer decision data for the generic debug panel -----------------
+    status: str = "IDLE"
+    detail: str = ""
+    best_bearing_rad: float = 0.0
+    target_bearing_rad: float = 0.0
+    threshold_m: float = 0.0
+    window_beams: int = 0
+    beam_count: int = 0
+    scan_t: float = 0.0
+    target_speed_mps: float = 0.0
+    gap_detected: bool = False
+    angles_rad: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=float)
+    )
+    raw_ranges_m: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=float)
+    )
+    smoothed_ranges_m: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=float)
+    )
+    clearance_profile_m: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=float)
+    )
+    scores: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=float)
+    )
+    free_mask: np.ndarray = field(
+        default_factory=lambda: np.zeros(0, dtype=bool)
+    )
+    chosen_index: int = -1
+    candidates: tuple[GapCandidate, ...] = ()
 
 
 class FurthestGapController:
@@ -59,6 +124,7 @@ class FurthestGapController:
         clearance_window_deg: float = 60.0,
         min_gap_m: float = 0.60,
         max_speed_for_throttle: float = 5.5,
+        centering_weight: float = 0.15,
     ) -> None:
         """Initialise le contrôleur de suivi de trou.
 
@@ -66,19 +132,23 @@ class FurthestGapController:
             max_steering: Angle de direction maximum en radians (la commande sera limitée à cette valeur).
                           Par exemple 0.50 rad ≈ 28.6°.
             front_sector_deg: Secteur angulaire devant le véhicule (en degrés, ±) à considérer pour
-                              la détection de trous. Par exemple 100° signifie de -50° à +50°.
+                              la détection de trous. Par exemple 100° signifie de -100° à +100°.
             clearance_window_deg: Taille de la fenêtre (en degrés) utilisée pour calculer le dégagement
                                   minimal. Plus cette valeur est grande, plus l'algorithme est prudent.
-            min_gap_m: Largeur minimale acceptable d'un trou en mètres. Les trous plus étroits sont
-                       ignorés car le véhicule ne pourrait pas passer.
+            min_gap_m: Distance minimale (en mètres) qu'un faisceau doit dégager pour être
+                       considéré comme libre. C'est un seuil de portée, pas une largeur
+                       métrique de trou.
             max_speed_for_throttle: Vitesse (en m/s) à laquelle l'accélérateur atteint 100%. Au-delà,
                                     la vitesse est limitée par ce paramètre.
+            centering_weight: Poids du biais vers le centre, en mètres par radian. Plus il
+                              est grand, plus l'algorithme préfère rester centré.
         """
         self.max_steering = max_steering
         self.front_sector = np.radians(front_sector_deg)
         self.clearance_window_deg = clearance_window_deg
         self.min_gap_m = min_gap_m
         self.max_speed_for_throttle = max_speed_for_throttle
+        self.centering_weight = centering_weight
         self.steering = 0.0
         self.debug = GapDebug()
 
@@ -113,6 +183,12 @@ class FurthestGapController:
         scan = observation.lidar
         if scan is None:
             # Si pas de lidar, on s'arrête
+            self.debug = GapDebug(
+                valid=False,
+                status="NO SCAN",
+                detail="lidar unavailable",
+                front_sector_rad=float(self.front_sector),
+            )
             return Actuation(throttle=0.0, steering=self.steering)
 
         # dt est le temps écoulé depuis le dernier appel (en secondes)
@@ -138,7 +214,17 @@ class FurthestGapController:
 
         # Si aucune mesure valide dans le secteur avant, on s'arrête
         if not np.any(front):
-            self.debug = GapDebug(valid=False)
+            self.debug = GapDebug(
+                valid=False,
+                status="NO FRONT",
+                detail=(
+                    "no valid lidar returns within "
+                    f"±{np.degrees(self.front_sector):.0f}°"
+                ),
+                front_sector_rad=float(self.front_sector),
+                beam_count=scan.beam_count,
+                scan_t=float(scan.t_measure),
+            )
             return Actuation(throttle=0.0, steering=0.0)
 
         # Remplacement des distances hors secteur par la distance maximale
@@ -198,8 +284,9 @@ class FurthestGapController:
         # Calcul des scores pour chaque direction
         # On veut maximiser le dégagement (clearance) mais on préfère légèrement le centre
         # pour éviter que le véhicule zigzague constamment entre gauche et droite
-        # 0.15 est un coefficient empirique : plus il est grand, plus on préfère le centre
-        scores = clearance - 0.15 * np.abs(angles)
+        # centering_weight est un coefficient empirique : plus il est grand, plus on préfère le centre
+        centering_penalty = self.centering_weight * np.abs(angles)
+        scores = clearance - centering_penalty
 
         # On met un score très bas (-inf) pour les directions hors secteur avant
         # Cela garantit qu'elles ne seront jamais choisies
@@ -207,15 +294,18 @@ class FurthestGapController:
 
         # On choisit la direction avec le score maximum
         best = int(np.argmax(scores))
-        desired = float(angles[best])  # Angle souhaité (direction vers laquelle tourner)
+        best_bearing = float(angles[best])  # Direction du meilleur faisceau
+        desired = best_bearing  # Angle souhaité (direction vers laquelle tourner)
         best_clearance = float(clearance[best])  # Dégagement dans cette direction
         best_range = float(work[best])  # Distance brute à cet angle
 
         # Mesure de la largeur du trou en détectant l'espace libre contigu autour du meilleur faisceau
         # Un "trou" est une zone contiguë où toutes les distances sont supérieures à un seuil
-        # Le seuil est le maximum entre : min_gap_m (trou minimum) et 75% du meilleur dégagement
+        # Le seuil est le maximum entre : min_gap_m (portée minimum) et 75% du meilleur dégagement
         # Cela permet d'adapter le seuil à la situation : plus de dégagement = seuil plus élevé
-        free = front & (work >= max(self.min_gap_m, 0.75 * best_clearance))
+        threshold = max(self.min_gap_m, 0.75 * best_clearance)
+        free = front & (work >= threshold)
+        gap_detected = bool(free[best])
 
         if free[best]:
             # Si le meilleur faisceau est dans une zone libre, on étend vers la gauche et la droite
@@ -263,13 +353,16 @@ class FurthestGapController:
         # La vitesse de base est au minimum 0.45 m/s (pour que le véhicule bouge toujours un peu)
         # ou la limite de vitesse configurée, selon laquelle est plus grand
         speed = max(0.45, speed_limit)
+        speed_reason = "open"
 
         # Si les obstacles sont très proches (dégagement < 0.50 m), on ralentit fortement
         if best_clearance < 0.50:
             speed = min(speed, 0.55)  # Vitesse maximale 0.55 m/s (très lent)
+            speed_reason = "tight clearance"
         # Si les obstacles sont modérément proches (dégagement < 0.80 m), on ralentit un peu
         elif best_clearance < 0.80:
             speed = min(speed, 1.0)  # Vitesse maximale 1.0 m/s (lent)
+            speed_reason = "cautious clearance"
 
         # Calcul de l'accélérateur (throttle) à partir de la vitesse cible
         # throttle est une valeur entre 0 et 1 qui représente la puissance du moteur
@@ -277,14 +370,44 @@ class FurthestGapController:
         # Si speed = max_speed_for_throttle, throttle = 1 (pleine puissance)
         # Si speed est plus petit, throttle est proportionnellement plus petit
         throttle = max(0.0, min(1.0, speed / self.max_speed_for_throttle))
-        sample_step = max(1, angles.size // 90)
-        profile = np.column_stack(
-            [angles[::sample_step], clearance[::sample_step]]
+
+        # Données échantillonnées pour le graphe : on ne garde que le secteur avant
+        # et on réduit à ~90 points pour garder le panneau lisible et léger.
+        front_indices = np.flatnonzero(front)
+        sample_step = max(1, front_indices.size // 90)
+        sample_indices = front_indices[::sample_step]
+        sampled_angles = angles[sample_indices]
+        sampled_raw = ranges[sample_indices]
+        sampled_smoothed = work[sample_indices]
+        sampled_clearance = clearance[sample_indices]
+        sampled_scores = scores[sample_indices]
+        sampled_free = free[sample_indices]
+        profile = np.column_stack([sampled_angles, sampled_clearance])
+
+        # Classement des faisceaux candidats. Les candidats sont calculés sur
+        # toute la résolution du scan, pas sur le profil décimé du graphe.
+        ranked = front_indices[np.argsort(scores[front_indices])[::-1]]
+        candidates = tuple(
+            GapCandidate(
+                rank=rank + 1,
+                index=int(index),
+                angle_rad=float(angles[index]),
+                raw_range_m=float(ranges[index]),
+                smoothed_range_m=float(work[index]),
+                clearance_m=float(clearance[index]),
+                centering_penalty_m=float(centering_penalty[index]),
+                score=float(scores[index]),
+                in_gap=bool(free[index]),
+                selected=bool(index == best),
+            )
+            for rank, index in enumerate(ranked[:8])
         )
+
         # Mise à jour des informations de débogage pour la visualisation dans le dashboard
-        # Ces données permettent de voir ce que l'algorithme a calculé (direction, vitesse, trou choisi)
+        # Ces données permettent de voir ce que l'algorithme a calculé
+        # (direction, vitesse, trou choisi) et pourquoi.
         self.debug = GapDebug(
-            angle_rad=desired,  # Direction souhaitée
+            angle_rad=desired,  # Direction souhaitée après limitation
             steering_rad=self.steering,  # Direction réelle après lissage
             range_m=best_range,  # Distance au centre du trou
             clearance_m=best_clearance,  # Dégagement minimal
@@ -293,10 +416,284 @@ class FurthestGapController:
             gap_right_rad=float(max(angles[lo], angles[hi])),
             front_sector_rad=float(self.front_sector),
             throttle=throttle,
-            min_clearance_m=float(clearance.min()),
+            min_clearance_m=float(clearance[front].min()),
             valid=True,  # Indique que le calcul a réussi
             profile=profile,
+            status="TRACKING" if gap_detected else "FALLBACK",
+            detail=(
+                f"{np.degrees(gap_width):.0f}° opening, speed: {speed_reason}"
+                if gap_detected
+                else "no contiguous free opening; width estimated from window"
+            ),
+            best_bearing_rad=best_bearing,
+            target_bearing_rad=desired,
+            threshold_m=threshold,
+            window_beams=window,
+            beam_count=scan.beam_count,
+            scan_t=float(scan.t_measure),
+            target_speed_mps=speed,
+            gap_detected=gap_detected,
+            angles_rad=sampled_angles,
+            raw_ranges_m=sampled_raw,
+            smoothed_ranges_m=sampled_smoothed,
+            clearance_profile_m=sampled_clearance,
+            scores=sampled_scores,
+            free_mask=sampled_free,
+            chosen_index=best,
+            candidates=candidates,
         )
 
         # Retour des commandes pour le véhicule
         return Actuation(throttle=throttle, steering=self.steering)
+
+    def debug_frame(self) -> DebugFrame:
+        """Build the dashboard-neutral debug snapshot for this controller."""
+
+        debug = self.debug
+        if not debug.valid:
+            return DebugFrame(
+                controller="gap_follow",
+                title="Gap solver",
+                t=debug.scan_t,
+                status=debug.status,
+                valid=False,
+                readouts=(
+                    Readout(
+                        "front",
+                        "Front sector",
+                        float(np.degrees(debug.front_sector_rad)),
+                        "deg",
+                        0,
+                    ),
+                ),
+                meta={"detail": debug.detail},
+            )
+
+        angles_deg = np.degrees(debug.angles_rad)
+        center_deg = float(np.degrees(debug.best_bearing_rad))
+        target_deg = float(np.degrees(debug.target_bearing_rad))
+        left_deg = float(np.degrees(debug.gap_left_rad))
+        right_deg = float(np.degrees(debug.gap_right_rad))
+        profile_series = (
+            Series(
+                "raw",
+                "raw",
+                _profile_points(angles_deg, debug.raw_ranges_m),
+                role="muted",
+            ),
+            Series(
+                "smoothed",
+                "smoothed",
+                _profile_points(angles_deg, debug.smoothed_ranges_m),
+                role="secondary",
+            ),
+            Series(
+                "clearance",
+                "clearance",
+                _profile_points(angles_deg, debug.clearance_profile_m),
+                role="primary",
+            ),
+        )
+        bands = (Band(left_deg, right_deg, "opening", "secondary"),)
+        selected_row = next(
+            (
+                index
+                for index, candidate in enumerate(debug.candidates)
+                if candidate.selected
+            ),
+            None,
+        )
+        candidate_rows = tuple(
+            (
+                candidate.rank,
+                float(np.degrees(candidate.angle_rad)),
+                candidate.raw_range_m,
+                candidate.clearance_m,
+                candidate.score,
+                "yes" if candidate.in_gap else "no",
+            )
+            for candidate in debug.candidates[:6]
+        )
+        gap_range = min(max(debug.range_m, 0.45), 2.0)
+        sector_deg = float(np.degrees(debug.front_sector_rad))
+        arc = _arc_points(debug.gap_left_rad, debug.gap_right_rad, gap_range)
+        overlay_role: Role = "secondary" if debug.gap_detected else "muted"
+        overlays: list[Overlay] = [
+            SectorOverlay(
+                start_angle_rad=debug.gap_left_rad,
+                end_angle_rad=debug.gap_right_rad,
+                range_m=gap_range,
+                role=overlay_role,
+                opacity=0.08,
+            ),
+            PolylineOverlay(
+                points=((0.0, 0.0), *arc, (0.0, 0.0)),
+                role=overlay_role,
+                width=1.2,
+            ),
+        ]
+        if abs(debug.best_bearing_rad - debug.target_bearing_rad) > 0.01:
+            overlays.append(
+                RayOverlay(
+                    angle_rad=debug.best_bearing_rad,
+                    range_m=gap_range,
+                    role="warning",
+                    width=1.1,
+                )
+            )
+        overlays.append(
+            RayOverlay(
+                angle_rad=debug.target_bearing_rad,
+                range_m=gap_range,
+                role="accent",
+                width=1.8,
+            )
+        )
+        for candidate in _spread_candidates(debug.candidates):
+            overlays.append(
+                PointsOverlay(
+                    points=(
+                        PointMarker(
+                            x=float(np.cos(candidate.angle_rad) * gap_range),
+                            y=float(np.sin(candidate.angle_rad) * gap_range),
+                            label=f"#{candidate.rank}",
+                            role="accent" if candidate.selected else "candidate",
+                        ),
+                    ),
+                    size=0.05,
+                )
+            )
+
+        return DebugFrame(
+            controller="gap_follow",
+            title="Gap solver",
+            t=debug.scan_t,
+            status=debug.status,
+            valid=True,
+            readouts=(
+                Readout("best", "Best", center_deg, "deg", 1),
+                Readout("target", "Target", target_deg, "deg", 1),
+                Readout(
+                    "steering",
+                    "Steer",
+                    float(np.degrees(debug.steering_rad)),
+                    "deg",
+                    1,
+                ),
+                Readout("opening", "Opening", float(np.degrees(debug.gap_width_rad)), "deg", 1),
+                Readout("threshold", "Free min", debug.threshold_m, "m", 2),
+                Readout("speed", "Speed", debug.target_speed_mps, "m/s", 2),
+                Readout("throttle", "Throttle", debug.throttle * 100.0, "%", 0),
+                Readout("window", "Window", debug.window_beams, "beams", 0),
+            ),
+            plots=(
+                Plot(
+                    id="profile",
+                    title="Range profile",
+                    series=profile_series,
+                    x_label="bearing",
+                    y_label="distance",
+                    x_unit="deg",
+                    y_unit="m",
+                    x_range=(-sector_deg, sector_deg),
+                    markers=(
+                        Marker("x", center_deg, "best", "solid"),
+                        Marker("y", debug.threshold_m, "free", "dashed"),
+                    ),
+                    bands=bands,
+                ),
+                Plot(
+                    id="score",
+                    title="Score",
+                    series=(
+                        Series(
+                            "score",
+                            "score",
+                            _profile_points(angles_deg, debug.scores),
+                            role="primary",
+                        ),
+                        Series(
+                            "penalty",
+                            "center penalty",
+                            _profile_points(
+                                angles_deg,
+                                np.abs(debug.angles_rad) * self.centering_weight,
+                            ),
+                            role="warning",
+                        ),
+                    ),
+                    x_label="bearing",
+                    y_label="score",
+                    x_unit="deg",
+                    y_unit="m",
+                    x_range=(-sector_deg, sector_deg),
+                    markers=(Marker("x", center_deg, "best", "solid"),),
+                    bands=bands,
+                ),
+            ),
+            tables=(
+                Table(
+                    id="candidates",
+                    title="Candidates",
+                    columns=(
+                        Column("rank", "#", "", 0),
+                        Column("bearing", "Brg", "deg", 1),
+                        Column("range", "Range", "m", 2),
+                        Column("clearance", "Clr", "m", 2),
+                        Column("score", "Score", "m", 2),
+                        Column("gap", "Gap", "", 0),
+                    ),
+                    rows=candidate_rows,
+                    selected_row=selected_row,
+                ),
+            ),
+            overlays=tuple(overlays),
+            meta={
+                "detail": debug.detail,
+                "gap_detected": debug.gap_detected,
+                "beam_count": debug.beam_count,
+                "chosen_index": debug.chosen_index,
+            },
+        )
+
+
+def _profile_points(
+    angles_deg: np.ndarray,
+    values: np.ndarray,
+) -> tuple[tuple[float, float], ...]:
+    return tuple(
+        (float(angle), float(value))
+        for angle, value in zip(angles_deg, values, strict=True)
+    )
+
+
+def _arc_points(
+    start_rad: float,
+    end_rad: float,
+    radius: float,
+    steps: int = 20,
+) -> tuple[tuple[float, float], ...]:
+    angles = np.linspace(start_rad, end_rad, steps)
+    return tuple(
+        (float(np.cos(angle) * radius), float(np.sin(angle) * radius))
+        for angle in angles
+    )
+
+
+def _spread_candidates(
+    candidates: tuple[GapCandidate, ...],
+    limit: int = 3,
+    min_separation_rad: float = 0.16,
+) -> tuple[GapCandidate, ...]:
+    """Keep only a few well-separated candidates so the 3D view stays readable."""
+
+    selected: list[GapCandidate] = []
+    for candidate in candidates:
+        if all(
+            abs(candidate.angle_rad - other.angle_rad) >= min_separation_rad
+            for other in selected
+        ):
+            selected.append(candidate)
+        if len(selected) >= limit:
+            break
+    return tuple(selected)

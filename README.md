@@ -78,6 +78,8 @@ configs/                    shared configuration
   sim/                      simulator-only scenarios
 algorithms/
   interface.py              compatibility re-export of onboard.api
+  debug.py                  controller-neutral debug snapshots
+  registry.py               dashboard-selectable controllers
   gap_follow.py             lidar-only demo controller
   wall_follow.py            lidar-only demo controller
   template.py               safe stop placeholder
@@ -272,13 +274,13 @@ button always restores the reference test track.
 
 ### Gap-solver debug
 
-When the gap-follow controller is active, the viewport shows:
+When the gap-follow controller is active, the debug dock shows a range profile,
+a score breakdown and the scored candidate beams. The viewport adds a restrained
+3D opening fan, the selected/clamped bearings and up to three well-separated
+candidate labels. Use the **Debug** layer toggle to hide or show the overlay.
 
-- the chosen gap and opening fan in 3D;
-- a live clearance-vs-bearing profile;
-- bearing, steering, clearance, opening and throttle values.
-
-Use the **Gap solver** layer toggle to hide or show the debug overlay.
+Controllers can expose the same kind of view by returning a `DebugFrame` from
+`algorithms/debug.py`; see [docs/08-dashboard.md](docs/08-dashboard.md).
 
 After editing YAML, click **Reload config**. The dashboard rebuilds the MJCF,
 sensors, estimator and simulation and pushes a fresh `hello` message to the
@@ -295,9 +297,14 @@ browser.
 ## 5. Add an algorithm
 
 1. Create `algorithms/my_controller.py`.
-2. Implement `reset()` and `update(observation)`.
+2. Implement `reset()` and `update(observation, speed_limit)` (the second
+   argument may be optional).
 3. Return an `Actuation`.
-4. Run it with `--controller algorithms.my_controller:MyController`.
+4. Add it to `algorithms/registry.py` so the dashboard lists it.
+5. Optionally add `debug_frame()` returning an `algorithms.debug.DebugFrame`.
+
+A controller can still be run headlessly with
+`--controller algorithms.my_controller:MyController`.
 
 Minimal example:
 
@@ -310,7 +317,11 @@ class MyController:
     def reset(self) -> None:
         self.steering = 0.0
 
-    def update(self, observation: Observation) -> Actuation:
+    def update(
+        self,
+        observation: Observation,
+        speed_limit: float | None = None,
+    ) -> Actuation:
         scan = observation.sensors.lidar
         if scan is None:
             return Actuation(throttle=0.0, steering=self.steering)

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { TrackScene } from './scene/TrackScene';
 import { TuningPanel } from './TuningPanel';
-import { GapDebugPanel } from './GapDebugPanel';
+import { DebugDock } from './DebugDock';
 import type {
   BodyPart,
   CameraMode,
@@ -1138,7 +1138,7 @@ export default function App() {
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [turntable, setTurntable] = useState(true);
   const [controlMode, setControlMode] = useState<'auto' | 'manual'>('auto');
-  const [autoController, setAutoController] = useState<'gap_follow' | 'wall_follow'>('gap_follow');
+  const [autoController, setAutoController] = useState<string>('gap_follow');
   const [speed, setSpeed] = useState(1.5);
   const [layers, setLayers] = useState<DebugLayers>({
     scan: true,
@@ -1147,7 +1147,7 @@ export default function App() {
     sensors: true,
     coverage: false,
     labels: false,
-    gap: true,
+    debug: true,
   });
   const [selection, setSelection] = useState<Selection>('vehicle');
   const [outlinerOpen, setOutlinerOpen] = useState(true);
@@ -1391,11 +1391,17 @@ export default function App() {
             className="controller-select"
             value={autoController}
             disabled={controlMode === 'manual'}
-            onChange={(event) => setAutoController(event.target.value as 'gap_follow' | 'wall_follow')}
+            onChange={(event) => setAutoController(event.target.value)}
             title="Lidar-only demonstration controller"
           >
-            <option value="gap_follow">Furthest gap</option>
-            <option value="wall_follow">Wall follow</option>
+            {(hello?.controllers ?? [
+              { id: 'gap_follow', label: 'Furthest gap' },
+              { id: 'wall_follow', label: 'Wall follow' },
+            ]).map((controller) => (
+              <option key={controller.id} value={controller.id}>
+                {controller.label}
+              </option>
+            ))}
           </select>
           <label className="speed-control" title="Maximum target speed">
             <span>Speed</span>
@@ -1462,7 +1468,7 @@ export default function App() {
               turntable={turntable}
             />
             <ViewportHud hello={hello} state={state} viewMode={viewMode} scan={scan} />
-            <GapDebugPanel state={state} layers={layers} />
+            <DebugDock state={state} layers={layers} />
             {hello?.warnings.length ? (
               <div className="warning-strip">{hello.warnings.join(' · ')}</div>
             ) : null}
@@ -1482,14 +1488,14 @@ export default function App() {
                   ['sensors', 'Sensors'],
                   ['coverage', 'Coverage'],
                   ['labels', 'Labels'],
-                  ['gap', 'Gap solver'],
+                  ['debug', 'Debug'],
                 ] as Array<[keyof DebugLayers, string]>
               ).map(([key, label]) => (
-                <label key={key} className={`layer-toggle ${viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'gap') ? 'disabled' : ''}`}>
+                <label key={key} className={`layer-toggle ${viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'debug') ? 'disabled' : ''}`}>
                   <input
                     type="checkbox"
                     checked={layers[key]}
-                    disabled={viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'gap')}
+                    disabled={viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'debug')}
                     onChange={(event) =>
                       setLayers((current) => ({ ...current, [key]: event.target.checked }))
                     }
