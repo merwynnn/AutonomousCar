@@ -11,11 +11,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from onboard.actuation import HardwareConfig
 from onboard.api import (
     Actuation,
     EncoderSample,
     ImuSample,
     LidarObservation,
+    MotorSample,
     SensorFrame,
     SteeringSample,
     UltrasonicObservation,
@@ -23,15 +25,34 @@ from onboard.api import (
 from onboard.drivers.base import LidarDriver, SerialTransport
 
 
-def encode_actuation(command: Actuation, now: float) -> bytes:
-    """Encode one command as a JSON line for the low-level board."""
+def encode_actuation(
+    command: Actuation,
+    now: float,
+    *,
+    seq: int = 0,
+    steering_rad: float | None = None,
+    target_speed_mps: float | None = None,
+) -> bytes:
+    """Encode one command as a JSON line for the low-level board.
 
-    payload = {
+    ``throttle`` and ``steering`` remain in the packet for compatibility with
+    earlier firmware. New firmware should use the calibrated physical targets
+    ``steering_rad`` and ``target_speed_mps``.
+    """
+
+    payload: dict[str, object] = {
         "type": "actuation",
+        "protocol": 2,
         "t": round(float(now), 6),
+        "seq": int(seq),
         "throttle": float(command.throttle),
         "steering": float(command.steering),
+        "steering_rad": float(
+            command.steering if steering_rad is None else steering_rad
+        ),
     }
+    if target_speed_mps is not None:
+        payload["target_speed_mps"] = float(target_speed_mps)
     return (json.dumps(payload, separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -106,6 +127,21 @@ def decode_sensor_packet(line: bytes | str, t_available: float | None = None) ->
             t_available=available,
         )
 
+    motor: MotorSample | None = None
+    motor_data = payload.get("motor")
+    if isinstance(motor_data, dict):
+        motor = MotorSample(
+            erpm=float(motor_data.get("erpm", 0.0)),
+            current_a=float(motor_data.get("current_a", 0.0)),
+            duty=float(motor_data.get("duty", 0.0)),
+            voltage_v=float(motor_data.get("voltage_v", 0.0)),
+            temperature_c=float(motor_data.get("temperature_c", 0.0)),
+            t_measure=float(motor_data.get("t", t)),
+            t_available=float(motor_data.get("t_available", available)),
+            frame_id=str(motor_data.get("frame_id", "motor")),
+            valid=bool(motor_data.get("valid", True)),
+        )
+
     ultrasonic: list[UltrasonicObservation] = []
     sonar_data = payload.get("ultrasonic", [])
     if isinstance(sonar_data, list):
@@ -128,6 +164,7 @@ def decode_sensor_packet(line: bytes | str, t_available: float | None = None) ->
         imu=imu,
         encoders=encoders,
         steering=steering,
+        motor=motor,
         extra=dict(payload.get("extra", {})) if isinstance(payload.get("extra"), dict) else {},
     )
 
@@ -167,6 +204,7 @@ class SerialSensorSource:
             imu=self._latest.imu,
             encoders=self._latest.encoders,
             steering=self._latest.steering,
+            motor=self._latest.motor,
             extra=self._latest.extra,
         )
 
@@ -178,12 +216,36 @@ class SerialSensorSource:
 
 @dataclass
 class SerialActuatorSink:
-    """Send actuator commands to the low-level board."""
+    """Send calibrated actuator targets to the low-level board."""
 
     transport: SerialTransport
+    hardware: HardwareConfig = field(default_factory=HardwareConfig)
+    _seq: int = field(default=0, init=False)
 
     def apply(self, command: Actuation, now: float) -> None:
-        self.transport.write(encode_actuation(command, now))
+        steering = self.hardware.steering
+        low = steering.servo_us_to_angle(steering.min_us)
+        high = steering.servo_us_to_angle(steering.max_us)
+        steering_rad = max(min(low, high), min(max(low, high), command.steering))
+
+        throttle = command.throttle
+        if abs(throttle) < self.hardware.drive.throttle_deadband:
+            throttle = 0.0
+        target_speed = (
+            self.hardware.drive.sign
+            * max(-1.0, min(1.0, throttle))
+            * self.hardware.drive.max_speed_mps
+        )
+        self._seq += 1
+        self.transport.write(
+            encode_actuation(
+                command,
+                now,
+                seq=self._seq,
+                steering_rad=steering_rad,
+                target_speed_mps=target_speed,
+            )
+        )
 
     def close(self) -> None:
         self.transport.close()

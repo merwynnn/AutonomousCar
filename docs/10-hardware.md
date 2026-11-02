@@ -40,11 +40,12 @@ host.
 
 ```text
 onboard/api.py          Observation, SensorFrame, StateEstimate, RobotAPI
+onboard/actuation.py    shared servo/VESC calibration and command shaping
 onboard/estimator/      wheel + IMU estimator (same code as simulation)
 onboard/runtime.py      SensorRobot / ControllerRuntime
-onboard/drivers/        JSON-lines board protocol and hardware protocols
+onboard/drivers/        JSON-lines board protocol, mock board and hardware protocols
 algorithms/             controller (onboard.api + NumPy only)
-configs/                vehicle, sensors and estimator YAML
+configs/                vehicle, sensors, estimator and hardware YAML
 ```
 
 A typical loop:
@@ -59,8 +60,16 @@ onboard.estimator.WheelImuEstimator
 Observation -> controller -> Actuation
         │
         ▼
+onboard.actuation -> calibrated steering / speed targets
+        │
+        ▼
 RP2040/Teensy -> steering servo / VESC
 ```
+
+`configs/hardware.yaml` holds the servo centre/gain/sign/trim, rate, deadband,
+backlash and latency plus the VESC command mode, speed/current limits and
+watchdog. `onboard.drivers.mock_board.MockBoard` speaks the same serial protocol
+so the complete loop can be tested before the car is available.
 
 The low-level board should timestamp the sample and keep a short ring buffer so
 the Pi can compensate for transport latency. Do not timestamp on arrival.

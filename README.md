@@ -54,10 +54,11 @@ Algorithms (algorithms/)
 ```text
 onboard/                    portable runtime for the Pi
   api.py                    Observation, SensorFrame, StateEstimate, RobotAPI
-  config.py                 estimator tuning + shared geometry loading
+  actuation.py              shared actuator calibration and command shaping
+  config.py                 estimator tuning + shared geometry/hardware loading
   estimator/                wheel + IMU estimator used by sim and hardware
   runtime.py                SensorRobot / ControllerRuntime
-  drivers/                  JSON-lines protocol and hardware protocols
+  drivers/                  JSON-lines protocol, mock board and hardware protocols
 simulator/                  host-only physics and sensor core
   config.py                 pydantic config models + YAML loading
   mjcf.py                   generates the MuJoCo MJCF digital twin
@@ -73,6 +74,7 @@ configs/                    shared configuration
   vehicle*.yaml             reference/generic car definitions
   sensors*.yaml             sensor mounts and non-ideal characteristics
   estimator.yaml            shared estimator tuning
+  hardware.yaml             servo/VESC/board calibration shared with the Pi
   sim/                      simulator-only scenarios
 algorithms/
   interface.py              compatibility re-export of onboard.api
@@ -131,7 +133,9 @@ physics world loads and the geometry that the dashboard draws. There is no
 second hand-written car model.
 
 `configs/vehicle_awake2027.yaml` defines the reference competition car;
-`configs/vehicle.yaml` remains the generic example. Both define:
+`configs/vehicle.yaml` remains the generic example. `configs/hardware.yaml`
+defines the shared servo/VESC/board calibration used by the simulator and the Pi.
+The vehicle files define:
 
 - mass, centre of mass and competition limits;
 - chassis `structure` parts (box / cylinder / sphere, visual and/or collidable);

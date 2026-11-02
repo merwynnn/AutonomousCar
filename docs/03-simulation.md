@@ -11,6 +11,20 @@
 raw sensors, runs the shared state estimator, updates lap progress and returns the
 next `Observation`.
 
+## Actuation
+
+`Actuation.throttle` is a normalized target speed, not a raw torque or PWM value.
+`Actuation.steering` is a desired road-wheel angle in radians, positive left.
+`onboard.actuation` applies the same calibration on both sides:
+
+- steering clamp, trim, sign, rate limit, deadband, backlash and command latency;
+- throttle deadband, target speed, battery sag, speed PI and torque lag.
+
+`configs/hardware.yaml` stores the servo/VESC/board values. The MuJoCo world uses
+the same model as the Pi serial path, so a controller cannot depend on a
+simulator-only throttle convention. Motor telemetry is exposed as a raw
+`MotorSample`, not as ground truth.
+
 ## Vehicle model
 
 `VehicleConfig` drives everything:

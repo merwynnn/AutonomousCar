@@ -6,6 +6,7 @@ import math
 
 import mujoco
 import numpy as np
+from onboard.actuation import DriveActuator, HardwareConfig, SteeringActuator
 
 from simulator.config import VehicleConfig
 from simulator.mjcf import build_mjcf
@@ -32,10 +33,12 @@ class MuJoCoWorld:
         self,
         track: TrackGeometry,
         vehicle: VehicleConfig,
+        hardware: HardwareConfig | None = None,
         physics_hz: float = 240.0,
     ) -> None:
         self.track = track
         self.vehicle = vehicle
+        self.hardware = hardware or HardwareConfig()
         self.physics_hz = physics_hz
         self.dt = 1.0 / physics_hz
         self.model = mujoco.MjModel.from_xml_string(
@@ -44,7 +47,14 @@ class MuJoCoWorld:
         self.data = mujoco.MjData(self.model)
         self.client = 0
         self.actuation = Actuation()
-        self._steer_target = 0.0
+        self.steering_actuator = SteeringActuator(
+            self.hardware.steering,
+            max_angle_rad=math.radians(vehicle.steering.max_angle_deg),
+        )
+        self.drive_actuator = DriveActuator(
+            self.hardware.drive,
+            wheel_radius_m=vehicle.wheel_radius_m,
+        )
         self._geomgroup = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)
 
         self.chassis_id = self._body_id("chassis")
@@ -133,7 +143,8 @@ class MuJoCoWorld:
             self.data.qpos[self.model.jnt_qposadr[joint_id]] = 0.0
         self.data.ctrl[:] = 0.0
         self.actuation = Actuation()
-        self._steer_target = 0.0
+        self.steering_actuator.reset()
+        self.drive_actuator.reset()
         mujoco.mj_forward(self.model, self.data)
         # Let tyre contact and the free body settle without moving the car.
         for _ in range(20):
@@ -172,30 +183,30 @@ class MuJoCoWorld:
 
     def _apply_controls(self, actuation: Actuation) -> None:
         motor = self.vehicle.motor
-        max_wheel_speed = motor.max_rpm * 2.0 * math.pi / 60.0 / motor.gear_ratio
-        max_delta = math.radians(self.vehicle.steering.rate_deg_s) * self.dt
-        error = actuation.steering - self._steer_target
-        deadband = math.radians(self.vehicle.steering.deadband_deg)
-        if abs(error) > deadband:
-            self._steer_target += max(-max_delta, min(max_delta, error))
-        steer_ctrl = max(
-            -math.radians(self.vehicle.steering.max_angle_deg),
-            min(math.radians(self.vehicle.steering.max_angle_deg), self._steer_target),
-        )
+        steer_ctrl = self.steering_actuator.update(actuation.steering, self.dt)
         self.data.ctrl[self.actuator_ids["fl_steer_servo"]] = steer_ctrl
         self.data.ctrl[self.actuator_ids["fr_steer_servo"]] = steer_ctrl
 
-        # Approximate motor/ESC current limiting and LiPo voltage sag.
-        current_demand = abs(actuation.throttle) * motor.current_limit_a
-        battery_voltage = max(
-            0.5 * self.vehicle.battery.nominal_voltage_v,
-            self.vehicle.battery.nominal_voltage_v
-            - current_demand * self.vehicle.battery.internal_resistance_ohm,
+        driven_speeds = [
+            float(self.data.qvel[int(self.model.jnt_dofadr[self.wheel_joint_ids[index]])])
+            for index in self.driven_wheels
+        ]
+        measured_wheel_speed = (
+            sum(driven_speeds) / len(driven_speeds) if driven_speeds else 0.0
         )
-        voltage_factor = battery_voltage / self.vehicle.battery.nominal_voltage_v
-        total_torque = motor.max_torque_nm * motor.gear_ratio * 0.90 * voltage_factor
-        per_wheel = total_torque / max(1, len(self.driven_wheels))
-        for index, joint_id in enumerate(self.wheel_joint_ids):
+        max_torque_per_wheel = (
+            motor.max_torque_nm * motor.gear_ratio * 0.90
+            / max(1, len(self.driven_wheels))
+        )
+        torque = self.drive_actuator.update(
+            actuation.throttle,
+            measured_wheel_speed_rad_s=measured_wheel_speed,
+            max_torque_per_wheel_nm=max_torque_per_wheel,
+            battery_voltage_v=self.vehicle.battery.nominal_voltage_v,
+            battery_resistance_ohm=self.vehicle.battery.internal_resistance_ohm,
+            dt=self.dt,
+        )
+        for index in range(len(self.wheel_joint_ids)):
             actuator = self.actuator_ids[
                 (
                     "fl_wheel_spin_motor",
@@ -204,17 +215,7 @@ class MuJoCoWorld:
                     "rr_wheel_spin_motor",
                 )[index]
             ]
-            if index not in self.driven_wheels:
-                self.data.ctrl[actuator] = 0.0
-                continue
-            omega = float(
-                self.data.qvel[int(self.model.jnt_dofadr[joint_id])]
-            )
-            speed_factor = max(
-                0.0, 1.0 - min(1.0, abs(omega) / max(1e-6, max_wheel_speed))
-            )
-            torque = actuation.throttle * per_wheel * speed_factor
-            self.data.ctrl[actuator] = torque
+            self.data.ctrl[actuator] = torque if index in self.driven_wheels else 0.0
 
     # ----------------------------------------------------------------- state
     def state(self) -> VehicleState:

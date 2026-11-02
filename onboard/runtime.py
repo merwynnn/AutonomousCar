@@ -17,6 +17,7 @@ from onboard.api import (
     Observation,
     Pose2,
     RobotAPI,
+    RobotLimits,
     SensorFrame,
     StateEstimate,
 )
@@ -57,6 +58,7 @@ class SensorRobot:
         initial_pose: Pose2 | None = None,
         control_dt: float = 1.0 / 60.0,
         clock: Callable[[], float] | None = None,
+        limits: RobotLimits | None = None,
     ) -> None:
         if control_dt <= 0.0:
             raise ValueError("control_dt must be positive")
@@ -66,6 +68,7 @@ class SensorRobot:
         self.initial_pose = initial_pose or Pose2(0.0, 0.0, 0.0)
         self.control_dt = control_dt
         self.clock = clock
+        self.limits = limits or RobotLimits()
         self._now = 0.0
         self._observation: Observation | None = None
 
@@ -80,6 +83,7 @@ class SensorRobot:
             dt=self.control_dt,
             sensors=sensors,
             state=state,
+            limits=self.limits,
         )
         return self._observation
 
@@ -95,6 +99,7 @@ class SensorRobot:
             dt=self.control_dt,
             sensors=sensors,
             state=state,
+            limits=self.limits,
         )
         return self._observation
 
@@ -152,10 +157,17 @@ def make_observation(
     *,
     t: float,
     dt: float,
+    limits: RobotLimits | None = None,
 ) -> Observation:
     """Small helper for hardware loops that build observations manually."""
 
-    return Observation(t=t, dt=dt, sensors=sensors, state=state)
+    return Observation(
+        t=t,
+        dt=dt,
+        sensors=sensors,
+        state=state,
+        limits=limits or RobotLimits(),
+    )
 
 
 __all__ = [

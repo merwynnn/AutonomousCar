@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from onboard.actuation import HardwareConfig
 from onboard.api import (
     Actuation,
     EncoderSample,
     ImuSample,
     LidarObservation,
+    MotorSample,
     Observation,
     Pose2,
+    RobotLimits,
     SensorFrame,
     SteeringSample,
     UltrasonicObservation,
@@ -33,6 +37,7 @@ from simulator.mujoco_world import MuJoCoWorld
 from simulator.sensors.encoders import EncoderModel
 from simulator.sensors.imu import ImuModel
 from simulator.sensors.lidar import LidarModel, LidarScan
+from simulator.sensors.motor import MotorModel
 from simulator.sensors.steering import SteeringSensorModel
 from simulator.sensors.ultrasonic import UltrasonicModel, UltrasonicReading
 from simulator.track import TrackGeometry, build_test_track, project_to_polyline
@@ -82,6 +87,7 @@ class Simulation:
         realism: Realism | None = None,
         vehicle: VehicleConfig | None = None,
         sensors: SensorsConfig | None = None,
+        hardware: HardwareConfig | None = None,
         track: TrackGeometry | None = None,
         estimator_config: EstimatorTuning | None = None,
     ) -> None:
@@ -95,6 +101,12 @@ class Simulation:
         # letting code build a car without editing YAML.
         self.vehicle = vehicle if vehicle is not None else self.bundle.vehicle
         self.sensors = sensors if sensors is not None else self.bundle.sensors
+        self.hardware = hardware if hardware is not None else self.bundle.hardware
+        self.limits = RobotLimits(
+            max_steering_rad=math.radians(self.vehicle.steering.max_angle_deg),
+            max_steering_rate_rad_s=math.radians(self.vehicle.steering.rate_deg_s),
+            max_speed_mps=self.hardware.drive.max_speed_mps,
+        )
         self.track: TrackGeometry = track if track is not None else build_test_track(width_m=0.9)
         self.realism_scale = {"ideal": 0.0, "realistic": 1.0, "harsh": 2.0}[
             self.scenario.realism
@@ -120,6 +132,7 @@ class Simulation:
         self.world: World = MuJoCoWorld(
             self.track,
             self.vehicle,
+            hardware=self.hardware,
             physics_hz=cfg.physics_hz,
         )
 
@@ -150,6 +163,7 @@ class Simulation:
         self.steering_sensor = SteeringSensorModel(
             self.sensors.steering, seed=self.scenario.seed
         )
+        self.motor_sensor = MotorModel(self.vehicle, seed=self.scenario.seed)
 
         self.sim_time = 0.0
         self.step_count = 0
@@ -172,6 +186,8 @@ class Simulation:
         self._available_imu: ImuSample | None = None
         self._latest_steering: SteeringSample | None = None
         self._available_steering: SteeringSample | None = None
+        self._latest_motor: MotorSample | None = None
+        self._available_motor: MotorSample | None = None
         self._recent_encoders: list[EncoderSample] = []
         self._recent_imu: list[ImuSample] = []
         self._recent_steering: list[SteeringSample] = []
@@ -198,6 +214,7 @@ class Simulation:
         self.steering_sensor = SteeringSensorModel(
             self.sensors.steering, seed=self.scenario.seed
         )
+        self.motor_sensor = MotorModel(self.vehicle, seed=self.scenario.seed)
 
         self.sim_time = 0.0
         self.step_count = 0
@@ -220,6 +237,8 @@ class Simulation:
         self._available_imu = None
         self._latest_steering = None
         self._available_steering = None
+        self._latest_motor = None
+        self._available_motor = None
         self._recent_encoders = []
         self._recent_imu = []
         self._recent_steering = []
@@ -232,6 +251,12 @@ class Simulation:
         self._sample_sonars()
         state = self.world.state()
         self._sample_aux_sensors(state, 0.0)
+        self._latest_motor = self.motor_sensor.sample(
+            state,
+            0.0,
+            0.0,
+            realism_scale=self.realism_scale,
+        )
         self._next_imu_time = self._imu_period
         self._next_encoder_time = self._encoder_period
         self._next_steering_time = self._steering_period
@@ -304,6 +329,11 @@ class Simulation:
             if steering_sample.t_available <= now + 1e-9:
                 self._available_steering = steering_sample
                 break
+        if (
+            self._latest_motor is not None
+            and self._latest_motor.t_available <= now + 1e-9
+        ):
+            self._available_motor = self._latest_motor
 
     def _sensor_frame(self) -> SensorFrame:
         scan = self._available_scan
@@ -335,6 +365,7 @@ class Simulation:
             imu=self._available_imu,
             encoders=self._available_encoders,
             steering=self._available_steering,
+            motor=self._available_motor,
         )
 
     def _make_observation(self, *, update_estimator: bool) -> Observation:
@@ -349,6 +380,7 @@ class Simulation:
             dt=self.control_dt,
             sensors=sensors,
             state=state,
+            limits=self.limits,
         )
 
     # ------------------------------------------------------------------- step
@@ -374,8 +406,14 @@ class Simulation:
             self._sample_scan()
         if self.step_count % self.sonar_every == 0:
             self._sample_sonars()
-        self._refresh_available(self.sim_time)
         state = self.world.state()
+        self._latest_motor = self.motor_sensor.sample(
+            state,
+            command.throttle,
+            self.sim_time,
+            realism_scale=self.realism_scale,
+        )
+        self._refresh_available(self.sim_time)
         self._update_progress(state)
         self._observation = self._make_observation(update_estimator=True)
         return self._observation

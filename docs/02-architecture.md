@@ -43,11 +43,16 @@ Observation
 │   ├── imu: ImuSample | None
 │   ├── encoders: EncoderSample | None
 │   ├── steering: SteeringSample | None
+│   ├── motor: MotorSample | None
 │   └── extra: Mapping[str, object]
-└── state: StateEstimate
-    ├── pose, speed_mps, yaw_rate_rad_s
-    ├── covariance, valid, source
-    └── gyro_bias_rad_s, slip_detected
+├── state: StateEstimate
+│   ├── pose, speed_mps, yaw_rate_rad_s
+│   ├── covariance, valid, source
+│   └── gyro_bias_rad_s, slip_detected
+└── limits: RobotLimits
+    ├── max_steering_rad
+    ├── max_steering_rate_rad_s
+    └── max_speed_mps
 ```
 
 Raw data and fused state are both available. Compatibility properties
@@ -58,7 +63,7 @@ working.
 
 1. Physics advances at a fixed rate.
 2. Simulator sensor models produce timestamped raw frames: lidar, ultrasonic,
-   encoders, IMU and steering.
+   encoders, IMU, steering and motor telemetry.
 3. The shared `onboard.estimator.WheelImuEstimator` consumes only the frames
    whose `t_available` is in the past and produces `StateEstimate`.
 4. `DashboardSimulation` calls the controller with the resulting `Observation`.
@@ -69,7 +74,9 @@ working.
 
 On the real car the same estimator and controller run in `onboard/runtime.py`.
 A `SensorSource` reads real drivers, an `ActuatorSink` sends commands, and the
-only difference is where `SensorFrame` comes from.
+only difference is where `SensorFrame` comes from. Both sides use
+`onboard.actuation` for the servo/VESC conversion; `MockBoard` exercises the same
+serial path without hardware.
 
 ## Configuration
 
@@ -78,6 +85,7 @@ Shared configuration lives in the root `configs/` directory:
 - `vehicle_awake2027.yaml` / `vehicle.yaml`: car definition;
 - `sensors_awake2027.yaml` / `sensors.yaml`: sensor mounts and characteristics;
 - `estimator.yaml`: shared estimator tuning;
+- `hardware.yaml`: servo/VESC/board calibration shared with the Pi;
 - `sim/*.yaml`: simulator-only scenarios.
 
 A scenario references its vehicle and sensors relative to `configs/sim/`

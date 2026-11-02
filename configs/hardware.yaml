@@ -1,0 +1,32 @@
+# Shared actuator calibration for simulation and the real car.
+#
+# These values are intentionally marked uncalibrated until the reference car is
+# measured. The simulator uses the same mapping as the Pi so a controller cannot
+# accidentally depend on a simulator-only throttle or steering convention.
+protocol_version: 2
+calibration_status: uncalibrated   # uncalibrated | bench | measured
+
+steering:
+  center_us: 1500.0
+  us_per_deg: 10.0
+  sign: 1.0
+  trim_deg: 0.0
+  min_us: 1000.0
+  max_us: 2000.0
+  max_rate_deg_s: 90.0
+  deadband_deg: 0.5
+  backlash_deg: 0.5
+  latency_ms: 18.0
+
+drive:
+  command_mode: current           # current | duty | erpm
+  max_speed_mps: 4.0
+  current_limit_a: 40.0
+  throttle_deadband: 0.02
+  sign: 1.0
+  torque_lag_ms: 12.0
+  speed_kp: 0.35
+  speed_ki: 0.15
+
+board:
+  watchdog_ms: 200.0

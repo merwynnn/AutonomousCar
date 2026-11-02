@@ -8,11 +8,13 @@ PyYAML and dataclasses; it does not import pydantic or any simulator code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from onboard.actuation import HardwareConfig
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ class OnboardConfig:
     ticks_per_rev: int
     encoder_rate_hz: float
     tuning: EstimatorTuning
+    hardware: HardwareConfig = field(default_factory=HardwareConfig)
 
 
 def load_yaml_mapping(path: str | Path) -> dict[str, Any]:
@@ -92,6 +95,10 @@ def load_yaml_mapping(path: str | Path) -> dict[str, Any]:
 
 def load_estimator_tuning(path: str | Path) -> EstimatorTuning:
     return EstimatorTuning.from_mapping(load_yaml_mapping(path))
+
+
+def load_hardware_config(path: str | Path) -> HardwareConfig:
+    return HardwareConfig.from_mapping(load_yaml_mapping(path))
 
 
 def _require_mapping(data: dict[str, Any], key: str, source: Path) -> dict[str, Any]:
@@ -112,17 +119,28 @@ def load_onboard_config(
     vehicle_path: str | Path,
     sensors_path: str | Path,
     estimator_path: str | Path,
+    hardware_path: str | Path | None = None,
 ) -> OnboardConfig:
-    """Resolve shared car/sensor geometry and estimator tuning for the Pi."""
+    """Resolve shared car/sensor geometry, estimator tuning and actuators."""
 
     vehicle_source = Path(vehicle_path)
     sensors_source = Path(sensors_path)
+    hardware_source = (
+        Path(hardware_path)
+        if hardware_path is not None
+        else vehicle_source.parent / "hardware.yaml"
+    )
     vehicle = load_yaml_mapping(vehicle_source)
     sensors = load_yaml_mapping(sensors_source)
     encoders = _require_mapping(sensors, "encoders", sensors_source)
     ticks = encoders.get("ticks_per_rev")
     if not isinstance(ticks, int) or ticks <= 0:
         raise ValueError(f"{sensors_source}: encoders.ticks_per_rev must be a positive int")
+    hardware = (
+        load_hardware_config(hardware_source)
+        if hardware_source.exists()
+        else HardwareConfig()
+    )
     return OnboardConfig(
         vehicle_name=str(vehicle.get("name", "unnamed_vehicle")),
         wheel_radius_m=_require_number(vehicle, "wheel_radius_m", vehicle_source),
@@ -131,6 +149,7 @@ def load_onboard_config(
         ticks_per_rev=ticks,
         encoder_rate_hz=float(encoders.get("rate_hz", 50.0)),
         tuning=load_estimator_tuning(estimator_path),
+        hardware=hardware,
     )
 
 
@@ -138,6 +157,7 @@ __all__ = [
     "EstimatorTuning",
     "OnboardConfig",
     "load_estimator_tuning",
+    "load_hardware_config",
     "load_onboard_config",
     "load_yaml_mapping",
 ]

@@ -245,6 +245,12 @@ class DashboardSimulation:
                 f"lidar at {lidar_height:.2f} m is at/above the "
                 f"{sensors.lidar.wall_height_warning_m:.2f} m wall height"
             )
+        if self.sim.hardware.calibration_status != "measured":
+            warnings.append(
+                "actuator calibration is "
+                f"{self.sim.hardware.calibration_status}; lap times are not "
+                "physically validated"
+            )
         return {
             "type": "hello",
             "protocol": 1,

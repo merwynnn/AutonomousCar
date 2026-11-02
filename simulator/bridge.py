@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from onboard.actuation import HardwareConfig
 from onboard.api import Actuation, Observation
 from onboard.config import EstimatorTuning
 
@@ -33,6 +34,7 @@ class SimRobotAPI:
         realism: Realism | None = None,
         vehicle: VehicleConfig | None = None,
         sensors: SensorsConfig | None = None,
+        hardware: HardwareConfig | None = None,
         track: TrackGeometry | None = None,
         estimator_config: EstimatorTuning | None = None,
     ) -> SimRobotAPI:
@@ -44,6 +46,7 @@ class SimRobotAPI:
                 realism=realism,
                 vehicle=vehicle,
                 sensors=sensors,
+                hardware=hardware,
                 track=track,
                 estimator_config=estimator_config,
             )

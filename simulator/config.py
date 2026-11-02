@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from onboard.actuation import HardwareConfig
+from onboard.config import load_hardware_config
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Realism = Literal["ideal", "realistic", "harsh"]
@@ -292,6 +294,7 @@ class ScenarioConfig(StrictModel):
     description: str = ""
     vehicle: str
     sensors: str
+    hardware: str | None = None
     seed: int = 0
     realism: Realism = "realistic"
     race: RaceConfig = Field(default_factory=RaceConfig)
@@ -343,9 +346,11 @@ class ScenarioBundle:
     scenario: ScenarioConfig
     vehicle: VehicleConfig
     sensors: SensorsConfig
+    hardware: HardwareConfig
     scenario_path: Path
     vehicle_path: Path
     sensors_path: Path
+    hardware_path: Path | None
 
 
 def load_bundle(path: str | Path) -> ScenarioBundle:
@@ -356,13 +361,25 @@ def load_bundle(path: str | Path) -> ScenarioBundle:
     root = scenario_path.parent
     vehicle_path = (root / scenario.vehicle).resolve()
     sensors_path = (root / scenario.sensors).resolve()
+    hardware_path = (
+        (root / scenario.hardware).resolve()
+        if scenario.hardware is not None
+        else None
+    )
     vehicle = load_vehicle(vehicle_path)
     sensors = load_sensors(sensors_path)
+    hardware = (
+        load_hardware_config(hardware_path)
+        if hardware_path is not None
+        else HardwareConfig()
+    )
     return ScenarioBundle(
         scenario=scenario,
         vehicle=vehicle,
         sensors=sensors,
+        hardware=hardware,
         scenario_path=scenario_path,
         vehicle_path=vehicle_path,
         sensors_path=sensors_path,
+        hardware_path=hardware_path,
     )

@@ -2,6 +2,7 @@ name: awake_2027_reference
 description: Reference digital-twin scenario for the AWAKE 2027 competition car.
 vehicle: ../vehicle_awake2027.yaml
 sensors: ../sensors_awake2027.yaml
+hardware: ../hardware.yaml
 
 seed: 42
 realism: realistic

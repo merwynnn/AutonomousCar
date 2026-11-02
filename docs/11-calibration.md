@@ -24,6 +24,14 @@ small number of measurable parameters.
 | Encoder distance scale | Push car 2–5 m, compare ticks | `encoders.wheel_radius_error` |
 | Gyro bias | Stationary log, average yaw rate | `imu.gyro.bias_deg_s` |
 | Gyro noise / walk | Allan deviation, stationary log | `imu.gyro.noise_deg_s`, `random_walk_deg_s_sqrt_hz` |
+| Servo centre/trim | Command centre, measure linkage | `hardware.yaml: steering.center_us`, `trim_deg` |
+| Servo gain/sign | Sweep known angles, measure | `hardware.yaml: steering.us_per_deg`, `sign` |
+| VESC response | Current/duty ramp, log ERPM/current | `hardware.yaml: drive.*` |
+
+Write fitted actuator values to `configs/hardware.yaml` and set
+`calibration_status` to `bench` or `measured`. The simulator reads the same file
+through `onboard.actuation`, so replay and the Pi cannot disagree about the
+command mapping.
 
 ## Safe test manoeuvres
 

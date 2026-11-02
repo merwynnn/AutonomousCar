@@ -33,9 +33,10 @@ Simulator (simulator/, host only)
     └── fixed-step loop, latency filtering and lap timing
 Portable onboard runtime (onboard/, deployable to the Pi)
     ├── api.py: Observation, SensorFrame, StateEstimate, RobotAPI
+    ├── actuation.py: shared actuator calibration and command shaping
     ├── estimator/: shared wheel + IMU estimator
     ├── runtime.py: SensorRobot / ControllerRuntime
-    └── drivers/: serial protocol and hardware-facing protocols
+    └── drivers/: serial protocol, mock board and hardware protocols
 Algorithms (algorithms/)
     └── Observation -> Actuation controllers (onboard.api + NumPy only)
 ```
@@ -131,9 +132,12 @@ The car is data, not a hand-written physics model.
 - Body parts are `structure` entries. Box, cylinder and sphere parts may be
   visual-only or collidable.
 - Shared car and sensor files live in the root `configs/` directory:
-  `vehicle*.yaml`, `sensors*.yaml`, `estimator.yaml`. Simulator-only scenarios
-  live in `configs/sim/`. Do not put shared definitions back under
-  `simulator/configs/`.
+  `vehicle*.yaml`, `sensors*.yaml`, `estimator.yaml`, `hardware.yaml`.
+  Simulator-only scenarios live in `configs/sim/`. Do not put shared
+  definitions back under `simulator/configs/`.
+- `configs/hardware.yaml` owns servo/VESC/board calibration. Simulation and the
+  Pi must load the same values through `onboard.actuation`; never duplicate
+  throttle or steering mappings in a backend.
 - `configs/estimator.yaml` contains estimator tuning only. Wheel radius,
   wheelbase, track width and encoder resolution are read from the shared
   vehicle/sensor files by `onboard.config.load_onboard_config`.
@@ -269,10 +273,11 @@ Test layers:
 ```text
 onboard/            portable code copied to the Raspberry Pi
   api.py            Observation, SensorFrame, StateEstimate, RobotAPI
-  config.py         estimator tuning + shared geometry loading
+  actuation.py      shared actuator calibration and command shaping
+  config.py         estimator tuning + shared geometry/hardware loading
   estimator/        wheel + IMU estimator used by sim and hardware
   runtime.py        SensorRobot / ControllerRuntime
-  drivers/          JSON-lines protocol and hardware protocols
+  drivers/          JSON-lines protocol, mock board and hardware protocols
 simulator/          host-only physics and sensor core
   config.py         pydantic config models + YAML loading
   mjcf.py           generated MuJoCo MJCF from VehicleConfig
@@ -285,6 +290,7 @@ configs/            shared, portable configuration
   vehicle*.yaml     car geometry, structure, motor, tires, steering
   sensors*.yaml     sensor mounts and non-ideal characteristics
   estimator.yaml    shared wheel + IMU estimator tuning
+  hardware.yaml     servo/VESC/board calibration shared with the Pi
   sim/              simulator-only scenarios
 algorithms/         portable controllers (onboard.api + NumPy only)
 dashboard/          host-only FastAPI backend and React/Three.js car lab

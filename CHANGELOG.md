@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-11-02 — Shared actuator layer and hardware-ready serial path
+
+- Added `configs/hardware.yaml` for servo/VESC/board calibration shared by
+  simulation and the Pi.
+- Added `onboard.actuation` with steering rate/deadband/backlash/latency and a
+  throttle-to-speed PI with battery sag and torque lag.
+- `Actuation.throttle` is now a normalized target speed; controllers can read
+  static limits from `Observation.limits`.
+- Added `MotorSample` telemetry and a simulator motor measurement model.
+- Updated the JSON-lines protocol with protocol version, sequence numbers,
+  calibrated steering/speed targets and motor telemetry.
+- Added `MockBoard` for hardware-free end-to-end tests of `SensorRobot` and the
+  serial drivers.
+
 ## 2026-11-02 — MuJoCo-only core
 
 - Removed the PyBullet backend, its URDF generator and the generated-URDF

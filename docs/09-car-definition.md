@@ -14,6 +14,8 @@ The car is defined once and everything else is derived from it.
 - `configs/estimator.yaml` — shared estimator tuning only. Wheel radius,
   wheelbase, track width and encoder resolution are read from the vehicle and
   sensor files by `onboard.config.load_onboard_config`.
+- `configs/hardware.yaml` — shared servo/VESC/board calibration. It is loaded by
+  both the simulator and the Pi; it is not a second vehicle definition.
 
 The vehicle config generates the MuJoCo MJCF. The dashboard car studio reads the
 same object, so physics and the rendered car cannot silently drift.

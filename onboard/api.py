@@ -40,10 +40,24 @@ class Pose2:
 
 @dataclass(frozen=True)
 class Actuation:
-    """Normalised command sent to the car."""
+    """Normalised command sent to the car.
+
+    ``throttle`` is a fraction of the configured maximum speed, not a raw motor
+    torque or PWM value. ``steering`` is a desired road-wheel angle in radians,
+    positive left. The actuator layer owns the conversion to servo/VESC units.
+    """
 
     throttle: float = 0.0  # -1 (reverse) .. +1 (forward)
     steering: float = 0.0  # radians, positive left
+
+
+@dataclass(frozen=True)
+class RobotLimits:
+    """Static actuation limits a controller may rely on."""
+
+    max_steering_rad: float = 0.49
+    max_steering_rate_rad_s: float = 1.57
+    max_speed_mps: float = 4.0
 
 
 @dataclass(frozen=True)
@@ -120,6 +134,26 @@ class SteeringSample:
     valid: bool = True
 
 
+@dataclass(frozen=True)
+class MotorSample:
+    """VESC-class motor telemetry in SI units.
+
+    ``erpm`` is electrical RPM, ``duty`` is the commanded duty cycle in
+    ``[-1, 1]`` and ``current_a`` is the motor current. The controller can use
+    this to detect saturation, battery sag or a stalled drivetrain.
+    """
+
+    erpm: float
+    current_a: float
+    duty: float
+    voltage_v: float
+    temperature_c: float
+    t_measure: float
+    t_available: float
+    frame_id: str = "motor"
+    valid: bool = True
+
+
 WHEEL_ORDER: tuple[str, str, str, str] = (
     "front_left",
     "front_right",
@@ -138,6 +172,7 @@ class SensorFrame:
     imu: ImuSample | None = None
     encoders: EncoderSample | None = None
     steering: SteeringSample | None = None
+    motor: MotorSample | None = None
     extra: Mapping[str, object] = field(default_factory=dict)
 
 
@@ -175,6 +210,7 @@ class Observation:
     dt: float
     sensors: SensorFrame
     state: StateEstimate
+    limits: RobotLimits = field(default_factory=RobotLimits)
 
     # ----------------------------------------------------- compatibility
     @property
@@ -208,6 +244,10 @@ class Observation:
     @property
     def steering(self) -> SteeringSample | None:
         return self.sensors.steering
+
+    @property
+    def motor(self) -> MotorSample | None:
+        return self.sensors.motor
 
 
 class Controller(Protocol):
@@ -245,10 +285,12 @@ __all__ = [
     "ImuSample",
     "LidarFrame",
     "LidarObservation",
+    "MotorSample",
     "Observation",
     "Pose2",
     "REAR_WHEEL_INDICES",
     "RobotAPI",
+    "RobotLimits",
     "SensorFrame",
     "StateEstimate",
     "SteeringSample",

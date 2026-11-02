@@ -2,6 +2,7 @@ name: test_track_baseline
 description: Standalone MuJoCo simulator on the PDF-like test track.
 vehicle: ../vehicle.yaml
 sensors: ../sensors.yaml
+hardware: ../hardware.yaml
 
 seed: 42
 realism: realistic

@@ -18,15 +18,26 @@
   - zero-velocity gyro-bias learning;
   - slip detection when wheel and gyro disagree;
   - conservative diagnostic covariance.
+- **Shared actuator layer** in `onboard/actuation.py`:
+  - steering clamp, trim, sign, rate, deadband, backlash and latency;
+  - throttle-to-speed PI, battery sag and torque lag;
+  - `configs/hardware.yaml` is loaded by both simulation and the Pi;
+  - `Observation.limits` exposes steering/speed limits to controllers.
 - **Raw simulated sensor chain**:
   - encoder model with wheel-radius/track-width calibration errors, 50 Hz
     ticks, jitter and dropouts;
   - BNO085-class IMU with bias, random walk, scale, noise, cross-axis coupling
     and latency;
   - steering-angle sensor with noise, quantization and latency;
+  - VESC-class motor telemetry (`MotorSample`) with timestamp filtering;
   - lidar and ultrasonic models unchanged and still timestamp-filtered.
+- **Hardware-ready serial path**:
+  - calibrated steering/speed targets and sequence numbers in the packet;
+  - `MockBoard` exercises `SensorRobot` + serial drivers without hardware;
+  - protocol/motor telemetry round-trip tests.
 - **Shared configuration layout**:
-  - `configs/vehicle*.yaml` and `configs/sensors*.yaml` are portable;
+  - `configs/vehicle*.yaml`, `configs/sensors*.yaml` and
+    `configs/hardware.yaml` are portable;
   - `configs/estimator.yaml` holds estimator tuning only;
   - `configs/sim/` holds simulator-only scenarios.
 - **MuJoCo digital twin** generated from the vehicle definition.
@@ -81,6 +92,8 @@ Calibration: [docs/11-calibration.md](docs/11-calibration.md).
   full spring/damper linkage.
 - Hardware drivers are protocol/protocol-skeleton level; board-specific serial
   and lidar setup still has to be implemented on the Pi.
+- `configs/hardware.yaml` is uncalibrated. Servo/VESC values must be measured on
+  the real car before lap times are treated as physically validated.
 - The car studio is an inspection view; it does not edit YAML in place.
 - Headless browser screenshots need WebGL/EGL support.
 
@@ -88,9 +101,11 @@ Calibration: [docs/11-calibration.md](docs/11-calibration.md).
 
 1. Implement the board-specific `SensorSource` / `ActuatorSink` drivers and
    record real encoder/IMU/lidar logs.
-2. Validate the shared estimator against recorded real-car runs.
-3. Add a 2D EKF and optional lidar correction behind the same `StateEstimator`
+2. Add the self-test/calibration/replay tooling and fit `hardware.yaml` on the
+   real car.
+3. Validate the shared estimator against recorded real-car runs.
+4. Add a 2D EKF and optional lidar correction behind the same `StateEstimator`
    protocol if the controller needs better pose.
-4. Add a Pacejka/brush tyre model and calibrated motor torque-speed curve.
-5. Measure the selected BOM and fit the calibration protocol in
-   `docs/11-calibration.md`.
+5. Add a Pacejka/brush tyre model and calibrated motor torque-speed curve.
+6. Improve `gap_follow`; until then, do not use 5-lap completion as a Phase 6
+   acceptance gate.

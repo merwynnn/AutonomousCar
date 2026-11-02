@@ -14,8 +14,8 @@ packet loss, latency/jitter, temperature drift and self-filter warnings.
 The model:
 
 - assigns each beam a capture time during the rotating scan;
-- traces 3D rays from the rotated mount through the active physics backend, so
-  mount RPY affects what is measured;
+- traces 3D rays from the rotated mount through the MuJoCo world, so mount RPY
+  affects what is measured;
 - combines sub-rays for mixed pixels;
 - transforms hits into the scan-start lidar frame, leaving motion distortion for
   downstream algorithms;
@@ -57,7 +57,16 @@ component and learns the gyro bias.
 
 `SteeringSensorConfig` models the steering-linkage sensor: rate, noise,
 quantization and latency. It produces `SteeringSample` in the vehicle frame
-(positive left), independent of the commanded steering angle.
+(positive left), independent of the commanded steering angle. The actuator
+layer separately models command latency, rate, deadband and backlash.
+
+## Motor telemetry
+
+`MotorModel` produces `MotorSample` with ERPM, motor current, duty, battery
+voltage and temperature. It is a measurement model derived from the MuJoCo
+wheel state and the commanded throttle, not a second motor model. Controllers
+can use it to detect saturation, battery sag or a stalled drivetrain. The
+serial driver also decodes the same fields from board packets.
 
 ## Shared estimator
 

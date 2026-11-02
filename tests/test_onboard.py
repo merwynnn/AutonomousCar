@@ -178,12 +178,17 @@ def test_serial_packet_round_trip() -> None:
     command = Actuation(throttle=0.4, steering=-0.1)
     payload = json.loads(encode_actuation(command, 1.25))
     assert payload["type"] == "actuation"
+    assert payload["protocol"] == 2
+    assert payload["seq"] == 0
     assert payload["throttle"] == 0.4
+    assert payload["steering_rad"] == -0.1
 
     frame = decode_sensor_packet(
         b'{"t":1.25,"encoders":{"ticks":[1,2,3,4],"dt":0.02},'
         b'"imu":{"gyro_rad_s":[0,0,0.1],"accel_m_s2":[0,0,9.81]},'
-        b'"steering":{"angle_rad":0.05}}'
+        b'"steering":{"angle_rad":0.05},'
+        b'"motor":{"erpm":1200,"current_a":4.5,"duty":0.3,'
+        b'"voltage_v":7.2,"temperature_c":31}}'
     )
     assert frame.encoders is not None
     assert frame.encoders.ticks == (1, 2, 3, 4)
@@ -191,6 +196,9 @@ def test_serial_packet_round_trip() -> None:
     assert frame.imu.gyro_rad_s[2] == 0.1
     assert frame.steering is not None
     assert frame.steering.angle_rad == 0.05
+    assert frame.motor is not None
+    assert frame.motor.erpm == 1200.0
+    assert frame.motor.current_a == 4.5
 
 
 @dataclass
@@ -231,4 +239,6 @@ def test_onboard_config_reads_shared_car_files() -> None:
     assert config.wheel_radius_m == 0.035
     assert config.ticks_per_rev == 1024
     assert config.tuning.name == "wheel_imu_default"
+    assert config.hardware.protocol_version == 2
+    assert config.hardware.drive.max_speed_mps == 4.0
 
