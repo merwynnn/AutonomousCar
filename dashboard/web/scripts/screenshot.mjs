@@ -19,7 +19,7 @@ await page.getByRole('button', { name: 'Run', exact: true }).click();
 await page.waitForTimeout(5000);
 await page.screenshot({ path: `${out}/dashboard-track-live.png` });
 
-await page.getByRole('button', { name: 'Car studio' }).click();
+await page.getByRole('button', { name: 'Car only' }).click();
 await page.waitForTimeout(1200);
 await page.screenshot({ path: `${out}/dashboard-car-studio.png` });
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-11-02 — AutoBench dashboard cleanup
+
+- Renamed the dashboard wordmark and browser title from AWAKE to **AutoBench**.
+- Made the world outliner and details panels collapsible to narrow rails; the
+  viewport expands when a panel is retracted.
+- Removed duplicate Track / Car only controls from the toolbar and outliner.
+  The viewport header now owns the single view switch.
+
 ## 2026-11-02 — Shared actuator layer and hardware-ready serial path
 
 - Added `configs/hardware.yaml` for servo/VESC/board calibration shared by

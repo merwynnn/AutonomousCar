@@ -66,6 +66,8 @@ function Icon({ name }: { name: string }) {
     sensor: <path d="M12 4a8 8 0 1 0 0 16M12 8a4 4 0 1 0 0 8M12 12h8" fill="none" stroke="currentColor" strokeWidth="1.3" />,
     wheel: <circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" strokeWidth="1.4" />,
     grid: <path d="M4 4h16v16H4zM4 9h16M4 15h16M9 4v16M15 4v16" fill="none" stroke="currentColor" strokeWidth="1.2" />,
+    left: <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
+    right: <path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
   };
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -246,23 +248,53 @@ function TreeRow({
   );
 }
 
+function PanelRail({
+  side,
+  label,
+  onExpand,
+}: {
+  side: 'left' | 'right';
+  label: string;
+  onExpand: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`panel-rail panel-rail-${side}`}
+      title={`Show ${label.toLowerCase()}`}
+      onClick={onExpand}
+    >
+      <Icon name={side === 'left' ? 'right' : 'left'} />
+      <span>{label}</span>
+    </button>
+  );
+}
+
 function Outliner({
   hello,
   selection,
   onSelect,
-  viewMode,
-  onViewMode,
+  onCollapse,
 }: {
   hello: HelloMessage | null;
   selection: Selection;
   onSelect: (selection: Selection) => void;
-  viewMode: ViewMode;
-  onViewMode: (mode: ViewMode) => void;
+  onCollapse: () => void;
 }) {
   if (!hello) {
     return (
       <aside className="outliner">
-        <div className="panel-heading">World outliner</div>
+        <div className="panel-heading">
+          <span>World outliner</span>
+          <button
+            type="button"
+            className="panel-collapse"
+            title="Collapse outliner"
+            onClick={onCollapse}
+          >
+            <Icon name="left" />
+          </button>
+        </div>
         <div className="empty-panel">Waiting for simulator…</div>
       </aside>
     );
@@ -272,7 +304,17 @@ function Outliner({
     <aside className="outliner">
       <div className="panel-heading">
         <span>World outliner</span>
-        <span className="panel-heading-count">{vehicle.structure.length + sensors.mounts.length + 3}</span>
+        <div className="panel-heading-actions">
+          <span className="panel-heading-count">{vehicle.structure.length + sensors.mounts.length + 3}</span>
+          <button
+            type="button"
+            className="panel-collapse"
+            title="Collapse outliner"
+            onClick={onCollapse}
+          >
+            <Icon name="left" />
+          </button>
+        </div>
       </div>
       <div className="tree">
         <div className="tree-section">Project</div>
@@ -379,30 +421,6 @@ function Outliner({
           selected={selection === 'race'}
           onClick={() => onSelect('race')}
         />
-      </div>
-
-      <div className="outliner-section">
-        <div className="panel-heading compact">Studio view</div>
-        <div className="view-switch">
-          <button
-            type="button"
-            className={viewMode === 'track' ? 'active' : ''}
-            onClick={() => onViewMode('track')}
-          >
-            <Icon name="track" /> Track
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'car' ? 'active' : ''}
-            onClick={() => onViewMode('car')}
-          >
-            <Icon name="car" /> Car only
-          </button>
-        </div>
-        <p className="panel-note">
-          Car-only view hides the track, walls, lidar returns and trails. Drag to orbit,
-          scroll to zoom.
-        </p>
       </div>
 
       <div className="outliner-section config-paths">
@@ -517,27 +535,37 @@ function DetailsPanel({
   hello,
   state,
   selection,
-  viewMode,
   speed,
   onSpeed,
   onOpenTune,
   onGenerateTrack,
   onDefaultTrack,
+  onCollapse,
 }: {
   hello: HelloMessage | null;
   state: StateMessage | null;
   selection: Selection;
-  viewMode: ViewMode;
   speed: number;
   onSpeed: (speed: number) => void;
   onOpenTune: () => void;
   onGenerateTrack: (seed: number, density: number, width: number) => void;
   onDefaultTrack: () => void;
+  onCollapse: () => void;
 }) {
   if (!hello) {
     return (
       <aside className="details-panel">
-        <div className="panel-heading">Details</div>
+        <div className="panel-heading">
+          <span>Details</span>
+          <button
+            type="button"
+            className="panel-collapse"
+            title="Collapse details"
+            onClick={onCollapse}
+          >
+            <Icon name="right" />
+          </button>
+        </div>
         <div className="empty-panel">No selection</div>
       </aside>
     );
@@ -581,7 +609,6 @@ function DetailsPanel({
       <RaceDetails
         hello={hello}
         state={state}
-        viewMode={viewMode}
         speed={speed}
         onSpeed={onSpeed}
       />
@@ -601,6 +628,14 @@ function DetailsPanel({
             Tune
           </button>
           <span className="panel-heading-count">{selectionLabel(selection)}</span>
+          <button
+            type="button"
+            className="panel-collapse"
+            title="Collapse details"
+            onClick={onCollapse}
+          >
+            <Icon name="right" />
+          </button>
         </div>
       </div>
       <div className="details-scroll">{content}</div>
@@ -943,13 +978,11 @@ function ScenarioDetails({ hello }: { hello: HelloMessage }) {
 function RaceDetails({
   hello,
   state,
-  viewMode,
   speed,
   onSpeed,
 }: {
   hello: HelloMessage;
   state: StateMessage | null;
-  viewMode: ViewMode;
   speed: number;
   onSpeed: (speed: number) => void;
 }) {
@@ -990,7 +1023,6 @@ function RaceDetails({
       <PropertyGroup title="Scenario">
         <PropertyRow label="Name" value={hello.scenario.name} />
         <PropertyRow label="Realism" value={hello.scenario.realism} />
-        <PropertyRow label="View" value={viewMode === 'car' ? 'car studio' : 'track'} />
       </PropertyGroup>
     </>
   );
@@ -1010,14 +1042,14 @@ function ViewportTabs({
         className={viewMode === 'track' ? 'active' : ''}
         onClick={() => onChange('track')}
       >
-        Scene
+        Track
       </button>
       <button
         type="button"
         className={viewMode === 'car' ? 'active' : ''}
         onClick={() => onChange('car')}
       >
-        Car studio
+        Car only
       </button>
       <span className="viewport-tab-note">
         {viewMode === 'car' ? 'isolated vehicle · no track' : 'track overview'}
@@ -1118,6 +1150,8 @@ export default function App() {
     gap: true,
   });
   const [selection, setSelection] = useState<Selection>('vehicle');
+  const [outlinerOpen, setOutlinerOpen] = useState(true);
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const [tuningOpen, setTuningOpen] = useState(false);
   const [tuningTab, setTuningTab] = useState<'vehicle' | 'sensors'>('vehicle');
   const [toast, setToast] = useState<string | null>(null);
@@ -1248,7 +1282,7 @@ export default function App() {
       <header className="menubar">
         <div className="wordmark">
           <span className="wordmark-mark">A</span>
-          <span>AWAKE</span>
+          <span>AutoBench</span>
           <em>CAR LAB</em>
         </div>
         <nav className="menus" aria-label="Application menu">
@@ -1298,23 +1332,6 @@ export default function App() {
             onClick={() => send({ type: 'run.step' })}
           />
           <ToolButton icon="reset" label="Reset" title="Reset run (R)" onClick={onReset} />
-        </div>
-        <div className="tool-separator" />
-        <div className="tool-group">
-          <ToolButton
-            icon="track"
-            label="Track"
-            active={viewMode === 'track'}
-            title="Track view"
-            onClick={() => setViewMode('track')}
-          />
-          <ToolButton
-            icon="car"
-            label="Car only"
-            active={viewMode === 'car'}
-            title="Show only the car, no track"
-            onClick={() => setViewMode('car')}
-          />
         </div>
         <div className="tool-separator" />
         <div className="tool-group camera-tools">
@@ -1411,14 +1428,19 @@ export default function App() {
         </div>
       </div>
 
-      <div className="workspace">
-        <Outliner
-          hello={hello}
-          selection={selection}
-          onSelect={setSelection}
-          viewMode={viewMode}
-          onViewMode={setViewMode}
-        />
+      <div
+        className={`workspace${outlinerOpen ? '' : ' outliner-collapsed'}${detailsOpen ? '' : ' details-collapsed'}`}
+      >
+        {outlinerOpen ? (
+          <Outliner
+            hello={hello}
+            selection={selection}
+            onSelect={setSelection}
+            onCollapse={() => setOutlinerOpen(false)}
+          />
+        ) : (
+          <PanelRail side="left" label="Outliner" onExpand={() => setOutlinerOpen(true)} />
+        )}
 
         <main className="viewport-pane">
           <div className="viewport-header">
@@ -1484,17 +1506,21 @@ export default function App() {
           </div>
         </main>
 
-        <DetailsPanel
-          hello={hello}
-          state={state}
-          selection={selection}
-          viewMode={viewMode}
-          speed={speed}
-          onSpeed={onSpeed}
-          onOpenTune={() => openTune(selectionTab)}
-          onGenerateTrack={onGenerateTrack}
-          onDefaultTrack={onDefaultTrack}
-        />
+        {detailsOpen ? (
+          <DetailsPanel
+            hello={hello}
+            state={state}
+            selection={selection}
+            speed={speed}
+            onSpeed={onSpeed}
+            onOpenTune={() => openTune(selectionTab)}
+            onGenerateTrack={onGenerateTrack}
+            onDefaultTrack={onDefaultTrack}
+            onCollapse={() => setDetailsOpen(false)}
+          />
+        ) : (
+          <PanelRail side="right" label="Details" onExpand={() => setDetailsOpen(true)} />
+        )}
       </div>
 
       <footer className="statusbar">

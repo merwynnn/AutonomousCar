@@ -25,6 +25,12 @@ track and race session. Clicking a node fills the right details panel with the
 live configuration values. Sensor details include body-frame position, RPY,
 height, range and model characteristics.
 
+Both side panels are retractable. Use the chevron in a panel heading to collapse
+it to a narrow rail, and click the rail to restore it. The workspace expands as a
+panel collapses, giving the viewport more room. The single Track / Car only
+switch lives in the viewport header; there are no duplicate copies in the
+toolbar or outliner.
+
 ### Gap-solver debug
 
 When the gap-follow controller is active, the viewport shows the chosen opening
@@ -50,11 +56,13 @@ width and object density. **Default** restores the reference test track.
 ## Toolbar
 
 - Run, pause, step and reset.
-- Track / Car only.
 - Orbit, top and chase cameras; turntable in car studio.
 - Auto/manual drive, demo controller and speed limit.
-- Reload config.
+- Tune and reload config.
 - Layer toggles: lidar, trail, odometry, sensors, coverage, labels.
+
+The Track / Car only view switch sits in the viewport header, next to the camera
+and sensor-realism readout.
 
 Keyboard shortcuts: `Space` run/pause, `R` reset, `C` view, `1`/`2`/`3` camera,
 `T` turntable, `Z/Q/S/D` manual drive (WASD also works).

@@ -62,9 +62,10 @@
     save-to-YAML and undo/redo;
   - **gap-follow debug** with 3D opening overlay and live clearance profile;
   - **random track generator** with object density and default-track restore;
-  - desktop engineering UI inspired by the provided reference;
-  - outliner/details inspector, run controls, manual driving, speed limit,
-    config reload.
+  - desktop engineering UI branded **AutoBench**;
+  - collapsible outliner/details inspector with a single Track / Car only
+    switch in the viewport header;
+  - run controls, manual driving, speed limit, config reload.
 - REST/WebSocket backend and generated-MJCF download.
 
 ## How to run
