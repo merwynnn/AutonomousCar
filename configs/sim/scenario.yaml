@@ -1,5 +1,5 @@
 name: test_track_baseline
-description: Standalone PyBullet simulator on the PDF-like test track.
+description: Standalone MuJoCo simulator on the PDF-like test track.
 vehicle: ../vehicle.yaml
 sensors: ../sensors.yaml
 

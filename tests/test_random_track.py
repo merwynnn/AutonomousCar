@@ -37,7 +37,7 @@ def test_random_track_obstacles_are_on_track() -> None:
 
 def test_simulation_accepts_random_track() -> None:
     track = build_random_track(seed=4, width_m=0.9, object_density=0.25)
-    simulation = Simulation(backend="mujoco", lidar_subrays=1, realism="ideal", track=track)
+    simulation = Simulation(lidar_subrays=1, realism="ideal", track=track)
     try:
         observation = simulation.reset()
         assert observation.lidar is not None
@@ -47,7 +47,7 @@ def test_simulation_accepts_random_track() -> None:
 
 
 def test_gap_debug_exposes_clearance_profile() -> None:
-    simulation = Simulation(backend="mujoco", lidar_subrays=1, realism="ideal")
+    simulation = Simulation(lidar_subrays=1, realism="ideal")
     try:
         observation = simulation.reset()
         controller = FurthestGapController()

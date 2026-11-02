@@ -12,7 +12,7 @@ import argparse
 import importlib
 import time
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from onboard.api import Controller
 
@@ -45,29 +45,24 @@ def run(
     seed: int | None,
     realism: Realism | None,
     lidar_subrays: int,
-    gui: bool,
     realtime: bool,
     max_time: float | None,
     vehicle: VehicleConfig | None = None,
     sensors: SensorsConfig | None = None,
-    backend: Literal["pybullet", "mujoco"] = "mujoco",
 ) -> int:
     controller = load_controller(controller_spec)
     with Simulation(
         scenario,
-        gui=gui,
         lidar_subrays=lidar_subrays,
         seed=seed,
         realism=realism,
         vehicle=vehicle,
         sensors=sensors,
-        backend=backend,
     ) as simulation:
         simulation.scenario.race.laps = laps
         observation = simulation.reset()
         controller.reset()
         limit = max_time if max_time is not None else simulation.scenario.simulation.max_time_s
-        realtime = realtime or gui
         next_tick = time.perf_counter()
 
         while not simulation.finished and simulation.sim_time < limit:
@@ -123,12 +118,6 @@ def main() -> None:
         help="override the scenario sensor YAML",
     )
     parser.add_argument(
-        "--backend",
-        choices=("mujoco", "pybullet"),
-        default=None,
-        help="physics backend (default: mujoco, or pybullet with --gui)",
-    )
-    parser.add_argument(
         "--controller",
         default="algorithms.template:TemplateController",
         help="module:ClassOrFactory implementing reset() and update()",
@@ -146,7 +135,6 @@ def main() -> None:
         default=3,
         help="1 is faster, 3 is the configured mixed-pixel fidelity",
     )
-    parser.add_argument("--gui", action="store_true", help="open the PyBullet GUI")
     parser.add_argument(
         "--realtime",
         action="store_true",
@@ -159,9 +147,6 @@ def main() -> None:
         help="simulation-time limit in seconds",
     )
     args = parser.parse_args()
-    backend: Literal["pybullet", "mujoco"] = (
-        args.backend or ("pybullet" if args.gui else "mujoco")
-    )
     raise SystemExit(
         run(
             scenario=args.scenario,
@@ -170,12 +155,10 @@ def main() -> None:
             seed=args.seed,
             realism=args.realism,
             lidar_subrays=args.lidar_subrays,
-            gui=args.gui,
             realtime=args.realtime,
             max_time=args.max_time,
             vehicle=load_vehicle(args.vehicle) if args.vehicle else None,
             sensors=load_sensors(args.sensors) if args.sensors else None,
-            backend=backend,
         )
     )
 

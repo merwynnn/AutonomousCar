@@ -15,13 +15,13 @@ The car is defined once and everything else is derived from it.
   wheelbase, track width and encoder resolution are read from the vehicle and
   sensor files by `onboard.config.load_onboard_config`.
 
-The vehicle config generates both the PyBullet URDF and the MuJoCo MJCF. The
-dashboard car studio reads the same object, so the three cannot silently drift.
+The vehicle config generates the MuJoCo MJCF. The dashboard car studio reads the
+same object, so physics and the rendered car cannot silently drift.
 
 ## Body frame
 
 Positions use the vehicle body frame: **x forward, y left, z up**, origin at the
-chassis centre. Sensor mount RPY is applied as roll, pitch, yaw (URDF convention).
+chassis centre. Sensor mount RPY is applied as roll, pitch, yaw in that order.
 
 ## Structure parts
 
@@ -42,20 +42,20 @@ structure:
 - `cylinder`: `[diameter, diameter, height]`.
 - `sphere`: `[diameter, diameter, diameter]`.
 - `collision: false` parts are visual-only; they still appear in the car studio.
-- The generated URDF uses the same parts for collision and visual geometry.
+- The generated MJCF uses the same parts for collision and visual geometry.
 
 ## Wheels
 
 Wheel joints are derived from `wheelbase_m`, `track_width_m`,
 `wheel_offset_z_m`, `wheel_radius_m` and `wheel_width_m`. The ride height is
 `wheel_radius_m - wheel_offset_z_m`. Changing a wheel parameter updates the
-generated URDF, physics and dashboard model in one step.
+generated MJCF, physics and dashboard model in one step.
 
 ## Reloading
 
-After editing YAML, click **Reload config** in the dashboard. The backend
-reloads the scenario, rebuilds the URDF/MJCF and sensor models and sends a fresh
-car payload to the browser.
+After editing YAML, click **Reload config** in the dashboard. The dashboard
+reloads the scenario, rebuilds the MJCF and sensor models and sends a fresh car
+payload to the browser.
 
 The **Tune** console edits the raw vehicle and sensor configs in the browser.
 **Apply live** rebuilds without writing files; **Apply & save YAML** validates,

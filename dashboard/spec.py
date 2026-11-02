@@ -1,7 +1,7 @@
 """JSON payloads for the dashboard.
 
 Everything the browser needs to draw the car is derived from the same
-``VehicleConfig`` and ``SensorsConfig`` that drive PyBullet. There is no second
+``VehicleConfig`` and ``SensorsConfig`` that drive MuJoCo. There is no second
 hand-written car model in the frontend.
 """
 

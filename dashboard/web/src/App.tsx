@@ -690,7 +690,7 @@ function PartDetails({ part }: { part: BodyPart }) {
         <PropertyRow label="Collision" value={part.collision ? 'enabled' : 'visual only'} tone={part.collision ? 'accent' : 'muted'} />
       </PropertyGroup>
       <div className="details-hint">
-        Add, remove or move parts in the <code>structure</code> list. The URDF
+        Add, remove or move parts in the <code>structure</code> list. The MJCF
         collision/visual geometry and this view are generated from the same data.
       </div>
     </>
@@ -1265,7 +1265,7 @@ export default function App() {
             {statusLabel(status)}
           </span>
           <span className="menubar-meta">
-            {(hello?.backend ?? 'mujoco').toUpperCase()} · 240 Hz
+            MUJOCO · 240 Hz
           </span>
           {hello?.warnings.length ? (
             <span className="menubar-warning" title={hello.warnings.join('\n')}>

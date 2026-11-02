@@ -27,7 +27,6 @@ from fastapi.staticfiles import StaticFiles
 from onboard.api import Actuation, Observation
 from pydantic import ValidationError
 from ruamel.yaml import YAML
-from simulator.car_urdf import build_urdf
 from simulator.config import (
     CONFIG_DIR,
     SensorsConfig,
@@ -49,16 +48,12 @@ REFERENCE_SCENARIO = CONFIG_DIR / "sim" / "awake_2027.yaml"
 class DashboardSimulation:
     """Owns one simulator instance and turns it into dashboard telemetry."""
 
-    def __init__(self, scenario_path: str | Path | None = None, backend: str | None = None) -> None:
+    def __init__(self, scenario_path: str | Path | None = None) -> None:
         default_scenario = (
             REFERENCE_SCENARIO if REFERENCE_SCENARIO.exists() else DEFAULT_SCENARIO
         )
         self.scenario_path = Path(
             scenario_path or os.environ.get("AWAKE_SCENARIO") or default_scenario
-        )
-        backend_name = backend or os.environ.get("AWAKE_BACKEND", "mujoco")
-        self.backend: Literal["pybullet", "mujoco"] = (
-            "mujoco" if backend_name == "mujoco" else "pybullet"
         )
         self.scenario = load_scenario(self.scenario_path)
         self.track = build_test_track(width_m=0.9)
@@ -90,7 +85,6 @@ class DashboardSimulation:
         return Simulation(
             self.scenario_path,
             lidar_subrays=1,
-            backend=self.backend,
             track=self.track,
         )
 
@@ -172,7 +166,6 @@ class DashboardSimulation:
             new_sim = Simulation(
                 self.scenario_path,
                 lidar_subrays=1,
-                backend=self.backend,
                 vehicle=vehicle,
                 sensors=sensors,
                 track=self.track,
@@ -255,8 +248,6 @@ class DashboardSimulation:
         return {
             "type": "hello",
             "protocol": 1,
-            "mode": self.backend,
-            "backend": self.backend,
             "scenario": {
                 "name": self.scenario.name,
                 "description": self.scenario.description,
@@ -306,8 +297,6 @@ class DashboardSimulation:
         lap_times = list(self.sim.lap_times)
         return {
             "type": "state",
-            "mode": self.backend,
-            "backend": self.backend,
             "t": round(self.sim.sim_time, 4),
             "paused": self.paused,
             "finished": self.finished,
@@ -420,7 +409,6 @@ class DashboardSimulation:
             new_sim = Simulation(
                 self.scenario_path,
                 lidar_subrays=1,
-                backend=self.backend,
                 vehicle=self.sim.vehicle,
                 sensors=self.sim.sensors,
                 track=track,
@@ -609,8 +597,6 @@ class DashboardSimulation:
 
     def status(self) -> dict[str, Any]:
         return {
-            "mode": self.backend,
-            "backend": self.backend,
             "scenario": self.scenario.name,
             "paused": self.paused,
             "finished": self.finished,
@@ -665,8 +651,6 @@ app.add_middleware(
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "mode": manager.backend,
-        "backend": manager.backend,
         "vehicle": manager.sim.vehicle.name,
     }
 
@@ -697,15 +681,6 @@ def config() -> dict[str, Any]:
         "sensors": manager.sim.sensors.model_dump(mode="json"),
         "paths": manager.hello_message()["paths"],
     }
-
-
-@app.get("/api/car/urdf")
-def car_urdf() -> Response:
-    return Response(
-        content=build_urdf(manager.sim.vehicle),
-        media_type="application/xml",
-        headers={"Content-Disposition": 'attachment; filename="car.urdf"'},
-    )
 
 
 @app.get("/api/car/mjcf")

@@ -48,7 +48,7 @@ def test_mujoco_car_drives_forward() -> None:
 
 
 def test_mujoco_backend_keeps_sensor_boundary() -> None:
-    simulation = Simulation(backend="mujoco", lidar_subrays=1, realism="ideal")
+    simulation = Simulation(lidar_subrays=1, realism="ideal")
     try:
         observation = simulation.reset()
         assert observation.lidar is not None
@@ -66,7 +66,7 @@ def test_mujoco_backend_keeps_sensor_boundary() -> None:
 
 
 def test_mujoco_lidar_sees_track_walls() -> None:
-    simulation = Simulation(backend="mujoco", lidar_subrays=1, realism="ideal")
+    simulation = Simulation(lidar_subrays=1, realism="ideal")
     try:
         observation = simulation.reset()
         scan = observation.lidar

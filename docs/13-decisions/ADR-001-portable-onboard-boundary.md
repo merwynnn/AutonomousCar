@@ -42,8 +42,8 @@ Simulator-only scenarios move to `configs/sim/`.
 
 ## Consequences
 
-- The Pi deployment is `onboard/ + algorithms/ + configs/`; MuJoCo, PyBullet and
-  the dashboard remain host-only.
+- The Pi deployment is `onboard/ + algorithms/ + configs/`; MuJoCo and the
+  dashboard remain host-only.
 - Controllers can use raw data and fused state without importing simulator code.
 - The estimator can be tested deterministically against simulated encoder/IMU
   streams before hardware exists.

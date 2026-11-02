@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import numpy as np
 from onboard.api import (
@@ -38,7 +37,6 @@ from simulator.sensors.steering import SteeringSensorModel
 from simulator.sensors.ultrasonic import UltrasonicModel, UltrasonicReading
 from simulator.track import TrackGeometry, build_test_track, project_to_polyline
 from simulator.vehicle import VehicleState
-from simulator.world import PyBulletWorld
 from simulator.world_api import World
 
 DEFAULT_SCENARIO = DEFAULT_SCENARIO_PATH
@@ -66,11 +64,10 @@ class SimulationStatus:
 
 
 class Simulation:
-    """Fixed-step simulator implementing the portable ``RobotAPI`` boundary.
+    """Fixed-step MuJoCo simulator implementing the portable ``RobotAPI`` boundary.
 
-    ``backend="pybullet"`` is the legacy world. ``backend="mujoco"`` uses the
-    contact-based MuJoCo digital twin. Both return the same ``Observation`` and
-    expose ground truth only through ``true_state()``.
+    The contact-based MuJoCo digital twin returns the same ``Observation`` and
+    exposes ground truth only through ``true_state()``.
 
     Raw encoder/IMU/steering measurements are produced by simulator sensor
     models and consumed by the same ``WheelImuEstimator`` that can run on the
@@ -80,13 +77,11 @@ class Simulation:
     def __init__(
         self,
         scenario_path: str | Path | None = None,
-        gui: bool = False,
         lidar_subrays: int | None = None,
         seed: int | None = None,
         realism: Realism | None = None,
         vehicle: VehicleConfig | None = None,
         sensors: SensorsConfig | None = None,
-        backend: Literal["pybullet", "mujoco"] = "mujoco",
         track: TrackGeometry | None = None,
         estimator_config: EstimatorTuning | None = None,
     ) -> None:
@@ -100,9 +95,7 @@ class Simulation:
         # letting code build a car without editing YAML.
         self.vehicle = vehicle if vehicle is not None else self.bundle.vehicle
         self.sensors = sensors if sensors is not None else self.bundle.sensors
-        self.backend = backend
         self.track: TrackGeometry = track if track is not None else build_test_track(width_m=0.9)
-        self.gui = gui
         self.realism_scale = {"ideal": 0.0, "realistic": 1.0, "harsh": 2.0}[
             self.scenario.realism
         ]
@@ -124,21 +117,11 @@ class Simulation:
             lidar_config.divergence["subrays"] = max(1, lidar_subrays)
         self._lidar_config = lidar_config
 
-        self.world: World
-        if backend == "mujoco":
-            self.world = MuJoCoWorld(
-                self.track,
-                self.vehicle,
-                physics_hz=cfg.physics_hz,
-                gui=gui,
-            )
-        else:
-            self.world = PyBulletWorld(
-                self.track,
-                self.vehicle,
-                gui=gui,
-                physics_hz=cfg.physics_hz,
-            )
+        self.world: World = MuJoCoWorld(
+            self.track,
+            self.vehicle,
+            physics_hz=cfg.physics_hz,
+        )
 
         tuning = estimator_config
         if tuning is None:

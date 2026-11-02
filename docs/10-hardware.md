@@ -35,8 +35,8 @@ steering servo, ultrasonic timing, encoder capture, watchdog and safe stop.
 ## Onboard software split
 
 The Pi runs only the portable `onboard/` package, `algorithms/` and the shared
-`configs/` files. MuJoCo, PyBullet, the FastAPI dashboard and the track code stay
-on the host.
+`configs/` files. MuJoCo, the FastAPI dashboard and the track code stay on the
+host.
 
 ```text
 onboard/api.py          Observation, SensorFrame, StateEstimate, RobotAPI

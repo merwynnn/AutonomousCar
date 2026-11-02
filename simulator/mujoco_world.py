@@ -1,4 +1,4 @@
-"""MuJoCo physics backend for the shared vehicle and track definition."""
+"""MuJoCo physics world for the shared vehicle and track definition."""
 
 from __future__ import annotations
 
@@ -33,10 +33,7 @@ class MuJoCoWorld:
         track: TrackGeometry,
         vehicle: VehicleConfig,
         physics_hz: float = 240.0,
-        gui: bool = False,
     ) -> None:
-        if gui:
-            raise ValueError("MuJoCo backend does not support --gui; use the dashboard or pybullet")
         self.track = track
         self.vehicle = vehicle
         self.physics_hz = physics_hz

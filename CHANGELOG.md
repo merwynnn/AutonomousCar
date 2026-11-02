@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-02 — MuJoCo-only core
+
+- Removed the PyBullet backend, its URDF generator and the generated-URDF
+  download endpoint. MuJoCo is now the only physics world.
+- Removed `--backend`, `--gui`, `AWAKE_BACKEND` and the backend fields from the
+  dashboard/WebSocket payloads.
+- Regenerated `uv.lock`; `pybullet` is no longer a dependency.
+- Updated the example, tests, architecture docs and dashboard copy to the
+  MuJoCo-only model.
+
 ## 2026-11-01 — Developer startup script
 
 - Added `run.bat` to launch the backend and dashboard in two WSL windows and

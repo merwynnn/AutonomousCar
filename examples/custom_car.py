@@ -1,8 +1,8 @@
 """Build and run a car entirely from Python.
 
 This is the recommended starting point when you do not want to edit YAML.
-Every value below is part of the same VehicleConfig that generates the URDF,
-drives PyBullet and feeds the dashboard car studio.
+Every value below is part of the same VehicleConfig that generates the MJCF,
+drives MuJoCo and feeds the dashboard car studio.
 
 Run from the repository root:
 
@@ -14,7 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from algorithms.gap_follow import FurthestGapController
-from simulator.car_urdf import build_urdf
 from simulator.config import BodyPart, load_sensors, load_vehicle
 from simulator.simulation import Simulation
 
@@ -41,7 +40,7 @@ def build_car():
     vehicle.motor.max_torque_nm = 0.72
     vehicle.steering.max_angle_deg = 28.0
 
-    # Body structure. Same data generates the URDF collision/visual geometry and
+    # Body structure. Same data generates the MJCF collision/visual geometry and
     # the car studio in the dashboard.
     vehicle.structure = [
         BodyPart(
@@ -89,13 +88,11 @@ def build_car():
 
 def main() -> None:
     vehicle, sensors = build_car()
-    urdf = build_urdf(vehicle)
     print(vehicle.name)
     print(f"  mass:       {vehicle.mass_kg:.2f} kg")
     print(f"  wheelbase:  {vehicle.wheelbase_m:.3f} m")
     print(f"  structure:  {len(vehicle.structure)} parts")
     print(f"  sensors:    {len(sensors.ultrasonic.sensors) + 2} mounts")
-    print(f"  urdf:       {len(urdf)} bytes")
 
     with Simulation(vehicle=vehicle, sensors=sensors, lidar_subrays=1) as simulation:
         controller = FurthestGapController()

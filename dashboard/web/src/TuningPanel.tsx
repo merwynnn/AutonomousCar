@@ -457,7 +457,7 @@ export function TuningPanel({
           <div>
             <h2>Car tuning console</h2>
             <p>
-              Edit the same config that generates URDF/MJCF, physics, sensors and the car studio.
+              Edit the same config that generates the MJCF, physics, sensors and the car studio.
             </p>
           </div>
           <div className="tuning-header-actions">

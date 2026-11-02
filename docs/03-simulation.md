@@ -22,10 +22,9 @@ next `Observation`.
 - wheel radius, width, mass and vertical offset;
 - drive layout, motor, battery, tires, suspension, aero and steering limits.
 
-`simulator/car_urdf.py` and `simulator/mjcf.py` turn that description into the
-physics models loaded by the PyBullet and MuJoCo backends. The dashboard uses the
-same object, so wheel joints, collision geometry and the car studio cannot
-silently disagree.
+`simulator/mjcf.py` turns that description into the physics model loaded by
+MuJoCo. The dashboard uses the same object, so wheel joints, collision geometry
+and the car studio cannot silently disagree.
 Physics applications:
 
 - chassis mass and inertia from the configured mass and collision bounds;
@@ -44,18 +43,16 @@ open-loop speed specification.
 ## Frames
 
 World: x forward, y left, z up. Body: x forward, y left, z up, origin at the
-chassis centre. Sensor mounts use the body frame. PyBullet reports the base
-centre-of-mass pose, so the PyBullet world converts it back to the body-frame
-origin; MuJoCo reports the body frame directly. Raycast origins and sensor heights
-therefore use the same convention in both backends.
+chassis centre. Sensor mounts use the body frame. MuJoCo reports the body-frame
+pose directly, so raycast origins and sensor heights use the same convention as
+the vehicle definition.
 
-## Backends
+## Physics world
 
-- **MuJoCo** is the default digital twin. It uses a generated MJCF with contact
-  wheels, steering hinges, position-servo actuators and per-wheel torque motors.
-- **PyBullet** is kept as a comparison and debugging backend.
-- Both implement the `World` protocol in `simulator/world_api.py`, so the same
-  lidar, ultrasonic, encoder, IMU, steering and dashboard code runs on either.
+- **MuJoCo** is the digital twin. It uses a generated MJCF with contact wheels,
+  steering hinges, position-servo actuators and per-wheel torque motors.
+- It implements the `World` protocol in `simulator/world_api.py`, so the same
+  lidar, ultrasonic, encoder, IMU, steering and dashboard code runs against it.
 
 ## State estimation
 

@@ -300,7 +300,7 @@ def ramp_scan(
     """Approximate scan for the demo server.
 
     Samples the wall polylines and bins them into beams. The real simulator uses
-    PyBullet raycasts; useful for offline visualization and tests.
+    MuJoCo raycasts; useful for offline visualization and tests.
     """
 
     wall_pts = np.vstack([track.inner, track.outer])

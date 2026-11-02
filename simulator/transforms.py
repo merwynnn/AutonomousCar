@@ -8,7 +8,7 @@ import numpy as np
 
 
 def rpy_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
-    """URDF-style rotation: Rz(yaw) @ Ry(pitch) @ Rx(roll)."""
+    """Roll/pitch/yaw rotation: Rz(yaw) @ Ry(pitch) @ Rx(roll)."""
 
     cr, sr = math.cos(roll), math.sin(roll)
     cp, sp = math.cos(pitch), math.sin(pitch)

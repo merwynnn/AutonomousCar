@@ -1,4 +1,4 @@
-"""Protocol implemented by every physics backend's world."""
+"""Protocol implemented by the MuJoCo physics world."""
 
 from __future__ import annotations
 

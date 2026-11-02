@@ -1,10 +1,9 @@
 # AWAKE 2027 — simulator core & car lab
 
 A physically credible standalone simulator and browser car lab for the AWAKE
-Challenge 2027 mini autonomous vehicle. The default physics backend is a
-MuJoCo digital twin; the original PyBullet backend remains available for
-comparison. Both share one vehicle definition, one sensor-only controller
-boundary and the same dashboard.
+Challenge 2027 mini autonomous vehicle. The physics core is a MuJoCo digital
+twin driven by one vehicle definition, one sensor-only controller boundary and
+one dashboard.
 
 ![Car studio](docs/assets/dashboard-car-studio.png)
 
@@ -24,9 +23,8 @@ Browser (React + Three.js)
 FastAPI dashboard (dashboard/, host only)
     │
 Simulator (simulator/, host only)
-    ├── generated URDF/MJCF from the vehicle config
-    ├── MuJoCo digital twin (default) and PyBullet backend
-    ├── track, physics and raw sensor measurement models
+    ├── generated MuJoCo MJCF from the vehicle config
+    ├── MuJoCo digital twin, track and raw sensor measurement models
     └── SimRobotAPI adapter
 Portable onboard runtime (onboard/, deployable to the Pi)
     ├── Observation / SensorFrame / StateEstimate / RobotAPI contract
@@ -62,18 +60,15 @@ onboard/                    portable runtime for the Pi
   drivers/                  JSON-lines protocol and hardware protocols
 simulator/                  host-only physics and sensor core
   config.py                 pydantic config models + YAML loading
-  car_urdf.py               generates the URDF from VehicleConfig
   mjcf.py                   generates the MuJoCo MJCF digital twin
   bridge.py                 SimRobotAPI implementation
   track.py                  peanut track, walls and obstacles
   vehicle.py                VehicleState / Actuation
-  world.py                  PyBullet world and raycasts
   mujoco_world.py           MuJoCo world and raycasts
   transforms.py             body/sensor rotation helpers
   sensors/                  lidar, ultrasonic, encoder, IMU and steering models
   simulation.py             fixed-step loop, latency filtering, lap timing
   cli.py                    headless runner
-  assets/                   reference URDF only
 configs/                    shared configuration
   vehicle*.yaml             reference/generic car definitions
   sensors*.yaml             sensor mounts and non-ideal characteristics
@@ -116,29 +111,24 @@ dashboard.
 Open the Vite URL (usually `http://localhost:5173`). The API runs on
 `http://localhost:8000`. A production build is served by the backend after
 `npm run build`. The dashboard defaults to the reference car in
-`configs/sim/awake_2027.yaml` and the MuJoCo backend.
+`configs/sim/awake_2027.yaml` and the MuJoCo physics world.
 
 Headless simulator:
 
 ```bash
-# MuJoCo digital twin (default)
 uv run python -m simulator.cli --laps 1 --max-time 5
 uv run python -m simulator.cli \
   --controller algorithms.gap_follow:FurthestGapController \
   --laps 1 --realism ideal --lidar-subrays 1
-
-# compare against the PyBullet backend
-uv run python -m simulator.cli --backend pybullet --laps 1 --max-time 5
 ```
 
-Switch the dashboard backend with `AWAKE_BACKEND=pybullet`, and the scenario with
-`AWAKE_SCENARIO=/path/to/scenario.yaml`.
+Switch the scenario with `AWAKE_SCENARIO=/path/to/scenario.yaml`.
 
 ## 3. The car is data
 
-There is **one** vehicle definition. It generates the URDF/MJCF that the physics
-backends load and the geometry that the dashboard draws. There is no second
-hand-written car model.
+There is **one** vehicle definition. It generates the MuJoCo MJCF that the
+physics world loads and the geometry that the dashboard draws. There is no
+second hand-written car model.
 
 `configs/vehicle_awake2027.yaml` defines the reference competition car;
 `configs/vehicle.yaml` remains the generic example. Both define:
@@ -215,18 +205,17 @@ See [`examples/custom_car.py`](examples/custom_car.py) for a runnable example:
 uv run python -m examples.custom_car
 ```
 
-Download the generated physics models from the running dashboard:
+Download the generated physics model from the running dashboard:
 
 ```bash
-curl -o car.urdf http://localhost:8000/api/car/urdf
-curl -o car.xml  http://localhost:8000/api/car/mjcf
+curl -o car.xml http://localhost:8000/api/car/mjcf
 ```
 
 ## 4. Dashboard
 
 ### Track view
 
-Live MuJoCo/PyBullet scene with the car, walls, obstacles, lidar returns, path trail and
+Live MuJoCo scene with the car, walls, obstacles, lidar returns, path trail and
 odometry trail. Drive manually with `Z/Q/S/D` or use the two lidar-only demo
 controllers.
 
@@ -278,12 +267,13 @@ When the gap-follow controller is active, the viewport shows:
 
 Use the **Gap solver** layer toggle to hide or show the debug overlay.
 
-After editing YAML, click **Reload config**. The backend rebuilds the URDF/MJCF
-and simulation and pushes a fresh `hello` message to the browser.
+After editing YAML, click **Reload config**. The dashboard rebuilds the MJCF,
+sensors, estimator and simulation and pushes a fresh `hello` message to the
+browser.
 
 ### REST and WebSocket
 
-- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/urdf`, `/api/car/mjcf`, `/api/track`, `/api/config`
+- `GET /api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`, `/api/config`
 - `WS /ws/telemetry` — hello, state and scan messages; commands include
   `run.start`, `run.pause`, `run.reset`, `run.step`, `run.set_speed`,
   `control.mode`, `control.controller`, `drive.command`, `config.reload`,
@@ -377,13 +367,13 @@ cd dashboard/web && npm run build
 ```
 
 The tests cover the sensor-only boundary, lidar/ultrasonic latency, deterministic
-reset, encoder/IMU estimator behaviour, configuration limits, generated URDF
+reset, encoder/IMU estimator behaviour, configuration limits, generated MJCF
 geometry and dashboard payloads.
 
 ## 8. Raspberry Pi transfer
 
 The Pi runtime is `onboard/` plus `algorithms/` and the shared config files.
-`simulator/`, `dashboard/`, MuJoCo and PyBullet stay on the host.
+`simulator/`, `dashboard/` and MuJoCo stay on the host.
 
 ```bash
 scp -r onboard algorithms configs pi@raspberrypi.local:~/

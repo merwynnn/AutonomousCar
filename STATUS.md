@@ -1,7 +1,7 @@
 # Project status
 
-> Last updated: 2026-11-01
-> Branch: `sim-core` — standalone simulator + portable onboard runtime
+> Last updated: 2026-11-02
+> Branch: `sim-core` — MuJoCo-only simulator + portable onboard runtime
 
 ## What works
 
@@ -29,8 +29,7 @@
   - `configs/vehicle*.yaml` and `configs/sensors*.yaml` are portable;
   - `configs/estimator.yaml` holds estimator tuning only;
   - `configs/sim/` holds simulator-only scenarios.
-- **MuJoCo digital twin** as the default physics backend, generated from the same
-  vehicle definition as the PyBullet comparison backend.
+- **MuJoCo digital twin** generated from the vehicle definition.
   - contact wheels, 4WD torque motors, steering hinges and position servos;
   - 240 Hz physics, 60 Hz control, lidar raycasts from MuJoCo geometry.
 - Reference AWAKE 2027 car profile and sensor package.
@@ -40,8 +39,7 @@
   - motor, battery, tires, suspension, aero and steering limits;
   - sensor mounts with position and roll/pitch/yaw;
   - lidar/ultrasonic/IMU/encoder characteristics.
-- Runtime URDF/MJCF generation from `VehicleConfig`; both backends load the
-  generated car.
+- Runtime MJCF generation from `VehicleConfig`; MuJoCo loads the generated car.
 - Sensor-only algorithm boundary and two lidar-only demo controllers
   (furthest-gap and wall-follow).
 - Dashboard at `dashboard/`:
@@ -55,7 +53,7 @@
   - desktop engineering UI inspired by the provided reference;
   - outliner/details inspector, run controls, manual driving, speed limit,
     config reload.
-- REST/WebSocket backend and generated-URDF download.
+- REST/WebSocket backend and generated-MJCF download.
 
 ## How to run
 

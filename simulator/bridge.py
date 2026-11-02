@@ -7,7 +7,6 @@ next to the Raspberry Pi sensor/actuator stack in ``onboard.runtime``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from onboard.api import Actuation, Observation
 from onboard.config import EstimatorTuning
@@ -29,26 +28,22 @@ class SimRobotAPI:
         cls,
         scenario_path: str | Path | None = None,
         *,
-        gui: bool = False,
         lidar_subrays: int | None = None,
         seed: int | None = None,
         realism: Realism | None = None,
         vehicle: VehicleConfig | None = None,
         sensors: SensorsConfig | None = None,
-        backend: Literal["pybullet", "mujoco"] = "mujoco",
         track: TrackGeometry | None = None,
         estimator_config: EstimatorTuning | None = None,
     ) -> SimRobotAPI:
         return cls(
             Simulation(
                 scenario_path,
-                gui=gui,
                 lidar_subrays=lidar_subrays,
                 seed=seed,
                 realism=realism,
                 vehicle=vehicle,
                 sensors=sensors,
-                backend=backend,
                 track=track,
                 estimator_config=estimator_config,
             )

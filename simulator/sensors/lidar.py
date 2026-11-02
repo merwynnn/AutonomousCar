@@ -1,4 +1,4 @@
-"""Non-ideal 2D spinning lidar model backed by PyBullet raycasts."""
+"""Non-ideal 2D spinning lidar model backed by MuJoCo raycasts."""
 
 from __future__ import annotations
 

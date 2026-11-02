@@ -27,9 +27,8 @@ Browser (React + Three.js)
 FastAPI dashboard (dashboard/, host only)
     │
 Simulator (simulator/, host only)
-    ├── generated URDF/MJCF (simulator/car_urdf.py, simulator/mjcf.py)
-    ├── MuJoCo digital twin (default) and PyBullet backend
-    ├── track, car and raw sensor measurement models
+    ├── generated MJCF (simulator/mjcf.py)
+    ├── MuJoCo digital twin, track and raw sensor measurement models
     ├── simulator/bridge.py: SimRobotAPI
     └── fixed-step loop, latency filtering and lap timing
 Portable onboard runtime (onboard/, deployable to the Pi)
@@ -120,14 +119,13 @@ uv run python -m simulator.cli --laps 1 --max-time 5
 
 ## 4. Car definition rules
 
-The car is data, not a hand-written URDF.
+The car is data, not a hand-written physics model.
 
 - One `VehicleConfig` is the only source of truth for chassis geometry, mass,
   centre of mass, wheelbase, track width, wheel size/position, motor, tires and
   steering limits.
-- `simulator/car_urdf.py` and `simulator/mjcf.py` generate the physics models
-  used by the PyBullet and MuJoCo backends. Never fork a second vehicle model in
-  the frontend or physics code.
+- `simulator/mjcf.py` generates the MJCF used by the MuJoCo world. Never fork a
+  second vehicle model in the frontend or physics code.
 - Sensor mounts live in `SensorsConfig` in the vehicle body frame:
   x forward, y left, z up, origin at the chassis centre.
 - Body parts are `structure` entries. Box, cylinder and sphere parts may be
@@ -142,8 +140,7 @@ The car is data, not a hand-written URDF.
 - A code-defined car is valid: construct `VehicleConfig` and `SensorsConfig` in
   Python and pass them to `Simulation(vehicle=..., sensors=...)`.
 - After changing YAML, use the dashboard **Reload config** action (or restart
-  the server). A reload must rebuild the URDF/MJCF, sensors, estimator and
-  simulation.
+  the server). A reload must rebuild the MJCF, sensors, estimator and simulation.
 - The dashboard's car studio must show only the car, never track walls, surface,
   lidar returns or trails.
 
@@ -261,7 +258,7 @@ Test layers:
 - Do not use GPS (competition rule).
 - Do not let controllers read ground truth or future sensor data.
 - Do not silently replace realistic sensors with perfect ones to make a test pass.
-- Do not duplicate car geometry in the dashboard, a second URDF or a second MJCF.
+- Do not duplicate car geometry in the dashboard or a second physics model.
 - Do not put track geometry in the car-only studio view.
 - Do not add ROS 2, Gazebo or heavy GPU dependencies without an ADR; the MVP is
   deliberately lightweight.
@@ -278,15 +275,12 @@ onboard/            portable code copied to the Raspberry Pi
   drivers/          JSON-lines protocol and hardware protocols
 simulator/          host-only physics and sensor core
   config.py         pydantic config models + YAML loading
-  car_urdf.py       generated URDF from VehicleConfig
   mjcf.py           generated MuJoCo MJCF from VehicleConfig
   bridge.py         SimRobotAPI implementation
-  world.py          PyBullet backend and raycasts
-  mujoco_world.py   MuJoCo backend and raycasts
+  mujoco_world.py   MuJoCo world and raycasts
   sensors/          lidar, ultrasonic, encoder, IMU and steering models
   simulation.py     fixed-step loop, latency filtering, lap timing
   track.py          test track and procedural obstacles
-  assets/           reference URDF only; runtime models are generated
 configs/            shared, portable configuration
   vehicle*.yaml     car geometry, structure, motor, tires, steering
   sensors*.yaml     sensor mounts and non-ideal characteristics

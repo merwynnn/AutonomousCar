@@ -41,7 +41,7 @@ class Mount(StrictModel):
     """Sensor pose in the vehicle body frame.
 
     x forward, y left, z up; origin at the chassis centre. ``rpy_deg`` is a
-    roll/pitch/yaw rotation applied in that order (URDF convention).
+    roll/pitch/yaw rotation applied in that order.
     """
 
     position_m: tuple[float, float, float] = (0.0, 0.0, 0.0)

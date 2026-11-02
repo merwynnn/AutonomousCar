@@ -7,7 +7,7 @@ FastAPI dashboard (dashboard/, host only)
     │
 DashboardSimulation (adapts simulator.Simulation)
     │
-simulator/  (MuJoCo/PyBullet, simulated sensors, track, timing; host only)
+simulator/  (MuJoCo, simulated sensors, track, timing; host only)
     │  implements onboard.api.RobotAPI via simulator/bridge.py
 onboard/    (portable contract, shared estimator, Pi runtime and drivers)
     │
@@ -84,5 +84,5 @@ A scenario references its vehicle and sensors relative to `configs/sim/`
 (`../vehicle*.yaml`). `Simulation` can also receive `VehicleConfig` and
 `SensorsConfig` directly from Python.
 
-The generated URDF/MJCF, dashboard car studio and physics collision geometry all use
+The generated MJCF, dashboard car studio and physics collision geometry all use
 the same `VehicleConfig`; `dashboard/spec.py` serializes it for the browser.
