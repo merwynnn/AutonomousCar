@@ -423,6 +423,13 @@ export interface ScanMessage {
   t: number;
   t_available?: number;
   frame_id: string;
+  /** World pose of the scan-start lidar frame at `t`. */
+  pose?: {
+    x: number;
+    y: number;
+    z: number;
+    theta: number;
+  };
   angles: number[];
   ranges: (number | null)[];
   intensities: number[];
@@ -456,6 +463,8 @@ export interface DebugLayers {
   coverage: boolean;
   labels: boolean;
   debug: boolean;
+  /** Show raw (stale) and odometry-compensated scans at the live car pose. */
+  compensation: boolean;
 }
 
 export type ServerMessage =

@@ -377,10 +377,12 @@ Contract rules:
 ## 6. Sensors
 
 - Lidar: 720 beams by default, range/angle noise, quantization, per-beam
-  timestamps, motion distortion, divergence/mixed pixels, incidence dropout,
+  capture times, motion distortion, divergence/mixed pixels, incidence dropout,
   dead beams, dropped scans, intensity, wall-height occlusion, mount RPY,
   latency/jitter and calibration offset. Rays are traced in 3D so a tilted mount
-  changes what is measured.
+  changes what is measured. `Observation.lidar_current` re-expresses the latest
+  scan in the current lidar frame using the estimated odometry; the raw scan
+  remains in `Observation.sensors.lidar`.
 - Ultrasonic: cone integration, blind zone, max range, range noise, low update
   rate, latency, cross-talk, specular dropouts and missed thin objects.
 - Encoders: rear-wheel tick counts at 50 Hz, wheel-radius and track-width

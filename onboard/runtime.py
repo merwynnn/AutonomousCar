@@ -22,6 +22,7 @@ from onboard.api import (
     StateEstimate,
 )
 from onboard.estimator.base import StateEstimator
+from onboard.scan_motion import ScanMotionCompensator
 
 
 @runtime_checkable
@@ -59,6 +60,7 @@ class SensorRobot:
         control_dt: float = 1.0 / 60.0,
         clock: Callable[[], float] | None = None,
         limits: RobotLimits | None = None,
+        scan_compensator: ScanMotionCompensator | None = None,
     ) -> None:
         if control_dt <= 0.0:
             raise ValueError("control_dt must be positive")
@@ -69,6 +71,7 @@ class SensorRobot:
         self.control_dt = control_dt
         self.clock = clock
         self.limits = limits or RobotLimits()
+        self.scan_compensator = scan_compensator
         self._now = 0.0
         self._observation: Observation | None = None
 
@@ -76,19 +79,33 @@ class SensorRobot:
     def observation(self) -> Observation | None:
         return self._observation
 
-    def reset(self) -> Observation:
-        self._now = self.clock() if self.clock is not None else 0.0
-        self.estimator.reset(self.initial_pose)
-        self.sink.apply(Actuation(), self._now)
-        sensors = self.source.read(self._now)
-        state = self.estimator.update(sensors, self._now)
-        self._observation = Observation(
+    def _make_observation(
+        self,
+        sensors: SensorFrame,
+        state: StateEstimate,
+    ) -> Observation:
+        compensated = None
+        if self.scan_compensator is not None:
+            self.scan_compensator.update(state)
+            compensated = self.scan_compensator.compensate(sensors.lidar, state)
+        return Observation(
             t=self._now,
             dt=self.control_dt,
             sensors=sensors,
             state=state,
             limits=self.limits,
+            compensated_lidar=compensated,
         )
+
+    def reset(self) -> Observation:
+        self._now = self.clock() if self.clock is not None else 0.0
+        self.estimator.reset(self.initial_pose)
+        if self.scan_compensator is not None:
+            self.scan_compensator.reset()
+        self.sink.apply(Actuation(), self._now)
+        sensors = self.source.read(self._now)
+        state = self.estimator.update(sensors, self._now)
+        self._observation = self._make_observation(sensors, state)
         return self._observation
 
     def step(self, command: Actuation) -> Observation:
@@ -98,13 +115,7 @@ class SensorRobot:
         self.sink.apply(command, self._now)
         sensors = self.source.read(self._now)
         state = self.estimator.update(sensors, self._now)
-        self._observation = Observation(
-            t=self._now,
-            dt=self.control_dt,
-            sensors=sensors,
-            state=state,
-            limits=self.limits,
-        )
+        self._observation = self._make_observation(sensors, state)
         return self._observation
 
     def close(self) -> None:

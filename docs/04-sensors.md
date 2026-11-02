@@ -25,6 +25,33 @@ The model:
 The dashboard live mode forces one sub-ray per beam to keep frame rate; CLI and
 batch simulation keep the configured divergence.
 
+### Motion compensation
+
+A scan is acquired over a full sweep and expressed in the lidar frame at the
+start of that sweep. By the time a controller receives it, the car has moved.
+`onboard/scan_motion.py` keeps a short history of the estimated vehicle pose
+(from `StateEstimate`, never ground truth) and re-expresses the latest scan in
+the current lidar frame:
+
+```text
+p_now = T_lidar(now)^-1 * T_lidar(scan_start) * p_scan
+```
+
+The result is exposed as `Observation.compensated_lidar`; the convenience
+property `Observation.lidar_current` returns it and falls back to the raw scan.
+The raw measurement remains available as `Observation.sensors.lidar` and stays
+in the scan-start lidar frame.
+
+The transform is rigid and planar. It corrects the bulk motion between scans,
+including the lidar mount lever arm, but not per-beam motion distortion inside
+the 100 ms sweep. Full deskewing needs per-beam timestamps from the driver,
+which the current `LidarObservation` does not yet expose.
+
+Timing note: the model currently marks a scan available after
+`latency_ms` from scan start, while a physical sweep takes one full period.
+The scan is therefore optimistic compared with a real driver; a per-beam
+availability model is the next timing improvement.
+
 ## Ultrasonic
 
 `UltrasonicConfig` includes rate, cone angle, rays, min/max range, range noise,

@@ -1,6 +1,7 @@
 """Reactive wall-follow controller for the dashboard demo.
 
-It uses lidar ranges only. No pose, map or ground truth is read.
+It uses the motion-compensated lidar scan when one is available and falls back
+to the raw scan otherwise. No map or ground truth is read.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from onboard.api import Actuation, Observation
 
 
 def _sector_min(observation: Observation, low_deg: float, high_deg: float) -> float:
-    scan = observation.lidar
+    scan = observation.lidar_current
     if scan is None:
         return float("inf")
     low = math.radians(low_deg)

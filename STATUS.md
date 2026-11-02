@@ -30,7 +30,9 @@
     and latency;
   - steering-angle sensor with noise, quantization and latency;
   - VESC-class motor telemetry (`MotorSample`) with timestamp filtering;
-  - lidar and ultrasonic models unchanged and still timestamp-filtered.
+  - lidar scan motion compensation from the shared estimated odometry
+    (`onboard/scan_motion.py`, `Observation.lidar_current`);
+  - lidar and ultrasonic models timestamp-filtered.
 - **Hardware-ready serial path**:
   - calibrated steering/speed targets and sequence numbers in the packet;
   - `MockBoard` exercises `SensorRobot` + serial drivers without hardware;
@@ -66,6 +68,8 @@
     strip instead of stopping the server.
 - Dashboard at `dashboard/`:
   - live track scene with lidar returns, trail and odometry;
+  - **Compare** lidar layer showing raw (stale) and odometry-compensated point
+    clouds at the live car pose, with scan-age readout;
   - **Car studio** showing only the car, with body parts, wheels and sensor
     mounts from the same config;
   - **Tuning console** for all vehicle/sensor parameters, live apply,
@@ -99,6 +103,12 @@ Calibration: [docs/11-calibration.md](docs/11-calibration.md).
 - No SLAM, MCL, racing line or map in this branch.
 - The estimator is a complementary wheel/IMU filter, not a full EKF, and does
   not use lidar scan matching.
+- Lidar motion compensation is a rigid 2D warp between scan updates. It does not
+  deskew individual beams inside the sweep because per-beam timestamps are not
+  yet exposed by `LidarObservation`.
+- The lidar model publishes a scan after `latency_ms` from scan start, while the
+  sweep itself takes one full period. A per-beam availability model is still
+  needed before the latency/timestamp behaviour is fully realistic.
 - MuJoCo tyre behaviour is contact-based; it is not yet a Pacejka/brush tyre
   model calibrated against the real car.
 - Suspension stiffness is represented at the joint/contact level rather than a

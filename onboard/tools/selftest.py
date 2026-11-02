@@ -18,6 +18,7 @@ from onboard.drivers.serial_link import SerialActuatorSink, SerialSensorSource
 from onboard.drivers.transport import SerialPortTransport
 from onboard.estimator import WheelImuEstimator
 from onboard.runtime import SensorRobot
+from onboard.scan_motion import ScanMotionCompensator
 
 
 def _build_robot(
@@ -63,6 +64,10 @@ def _build_robot(
         estimator_impl,
         control_dt=1.0 / 60.0,
         limits=limits,
+        scan_compensator=ScanMotionCompensator(
+            config.lidar_mount_position_m,
+            config.lidar_mount_yaw_rad,
+        ),
     )
 
 

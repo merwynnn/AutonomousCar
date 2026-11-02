@@ -949,6 +949,53 @@ kbd {
   box-shadow: 0 0 0 2px rgba(189, 91, 91, 0.16);
 }
 
+.scan-compare-legend {
+  position: absolute;
+  bottom: 38px;
+  left: 9px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 23px;
+  padding: 0 9px;
+  border: 1px solid #32373e;
+  background: rgba(19, 21, 24, 0.86);
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  backdrop-filter: blur(4px);
+}
+
+.scan-compare-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.scan-swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.scan-swatch.raw {
+  background: var(--red);
+}
+
+.scan-swatch.compensated {
+  background: var(--green);
+}
+
+.scan-compare-legend .scan-age {
+  color: var(--dim);
+  border-left: 1px solid #32373e;
+  padding-left: 10px;
+}
+
 .viewport-stats {
   position: absolute;
   top: 9px;

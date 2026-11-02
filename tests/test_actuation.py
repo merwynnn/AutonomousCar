@@ -33,6 +33,16 @@ def test_hardware_config_is_shared_by_simulator_and_onboard() -> None:
     assert from_file.calibration_status == "uncalibrated"
 
 
+def test_onboard_config_loads_the_lidar_mount_for_compensation() -> None:
+    config = load_onboard_config(
+        ROOT / "configs" / "vehicle_awake2027.yaml",
+        ROOT / "configs" / "sensors_awake2027.yaml",
+        ROOT / "configs" / "estimator.yaml",
+    )
+    assert config.lidar_mount_position_m == pytest.approx((0.105, 0.0, 0.05))
+    assert config.lidar_mount_yaw_rad == pytest.approx(0.0)
+
+
 def test_steering_servo_mapping_round_trips_with_sign_and_trim() -> None:
     calibration = SteeringCalibration(
         center_us=1500.0,

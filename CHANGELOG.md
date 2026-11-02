@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-11-02 — Lidar motion compensation
+
+- Added `onboard.scan_motion.ScanMotionCompensator`, a portable rigid 2D warp
+  from the scan-start lidar frame into the current lidar frame using the shared
+  estimated odometry. The lidar mount lever arm is included.
+- `Observation.compensated_lidar` exposes the warped scan; the convenience
+  property `Observation.lidar_current` returns it and falls back to raw data.
+  `Observation.sensors.lidar` remains the unmodified raw measurement.
+- `Simulation` and `SensorRobot` now produce the compensated scan every control
+  tick. `OnboardConfig` loads the lidar mount.
+- Added a dashboard **Compare** layer that draws the raw stale scan in red and
+  the odometry-compensated scan in green at the live car pose, plus a scan-age
+  readout and legend.
+- `wall_follow` and `gap_follow` now consume `observation.lidar_current`; the
+  template documents both the compensated and raw access paths.
+- Fixed the dashboard scan rendering to anchor measurements at the scan-start
+  lidar pose instead of re-attaching old scans to the live car every frame.
+
 ## 2026-11-02 — Non-fatal algorithm errors
 
 - Controller import/reload failures and runtime exceptions no longer stop the

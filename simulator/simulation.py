@@ -23,6 +23,7 @@ from onboard.api import (
 )
 from onboard.config import EstimatorTuning, load_estimator_tuning
 from onboard.estimator.wheel_imu import WheelImuEstimator
+from onboard.scan_motion import ScanMotionCompensator
 
 from simulator.config import (
     DEFAULT_ESTIMATOR_PATH,
@@ -32,6 +33,8 @@ from simulator.config import (
     SensorsConfig,
     VehicleConfig,
     load_bundle,
+    mount_position,
+    mount_rpy_deg,
 )
 from simulator.mujoco_world import MuJoCoWorld
 from simulator.sensors.encoders import EncoderModel
@@ -150,6 +153,12 @@ class Simulation:
             wheelbase_m=self.vehicle.wheelbase_m,
             ticks_per_rev=self.sensors.encoders.ticks_per_rev,
         )
+        lidar_mount = self.sensors.lidar.mount
+        self.scan_compensator = ScanMotionCompensator(
+            mount_position_m=mount_position(lidar_mount),
+            mount_yaw_rad=math.radians(mount_rpy_deg(lidar_mount)[2]),
+            max_scan_age_s=0.5,
+        )
         self.lidar = LidarModel(self._lidar_config, self.world, seed=self.scenario.seed)
         self.ultrasonic = UltrasonicModel(
             self.sensors.ultrasonic, self.world, seed=self.scenario.seed
@@ -247,6 +256,7 @@ class Simulation:
         self._next_steering_time = 0.0
 
         self.estimator.reset(Pose2(start.x, start.y, start.theta))
+        self.scan_compensator.reset()
         self._sample_scan()
         self._sample_sonars()
         state = self.world.state()
@@ -375,12 +385,15 @@ class Simulation:
             if update_estimator
             else self.estimator.state
         )
+        self.scan_compensator.update(state)
+        compensated = self.scan_compensator.compensate(sensors.lidar, state)
         return Observation(
             t=self.sim_time,
             dt=self.control_dt,
             sensors=sensors,
             state=state,
             limits=self.limits,
+            compensated_lidar=compensated,
         )
 
     # ------------------------------------------------------------------- step

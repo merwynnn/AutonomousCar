@@ -86,7 +86,24 @@ width and object density. **Default** restores the reference test track.
 - Orbit, top and chase cameras; turntable in car studio.
 - Auto/manual drive, demo controller and speed limit.
 - Tune, reload config and reload algorithms.
-- Layer toggles: lidar, trail, odometry, sensors, coverage, labels, debug.
+- Layer toggles: lidar, compare, trail, odometry, sensors, coverage, labels,
+  debug.
+
+The **Compare** layer switches the lidar view from “raw scan at its measurement
+pose” to two clouds at the live car pose:
+
+- red: the old scan interpreted as if it were measured at the current car pose
+  (no motion compensation);
+- green: the same scan warped into the current lidar frame using the dashboard’s
+  history of estimated odometry.
+
+Both clouds use the live true car pose as the world anchor, so the raw cloud
+drifts off the walls while the compensated cloud stays on them. The legend and
+the **scan age** readout show how old the measurement is. This is a display-only
+comparison; the controller’s actual interface is
+`Observation.compensated_lidar` / `Observation.lidar_current`.
+
+![Raw versus odometry-compensated lidar scan](assets/dashboard-scan-compare.png)
 
 **Reload config** reloads the scenario/vehicle/sensor YAML and rebuilds the
 physics, sensors, estimator and simulation. It pauses the run. **Reload algo**

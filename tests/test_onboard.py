@@ -5,11 +5,13 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import numpy as np
 import pytest
 from onboard.api import (
     Actuation,
     EncoderSample,
     ImuSample,
+    LidarObservation,
     Observation,
     Pose2,
     SensorFrame,
@@ -23,6 +25,7 @@ from onboard.drivers.serial_link import (
 )
 from onboard.estimator import WheelImuEstimator
 from onboard.runtime import ControllerRuntime, SensorRobot
+from onboard.scan_motion import ScanMotionCompensator
 from simulator.config import DEFAULT_ESTIMATOR_PATH
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -172,6 +175,37 @@ def test_sensor_robot_and_controller_runtime() -> None:
     assert len(sink.commands) == 4  # reset + three steps
     runtime.close()
     assert source.closed and sink.closed
+
+
+def test_sensor_robot_publishes_a_compensated_scan() -> None:
+    base = _frame(0.0)
+    scan = LidarObservation(
+        angles_rad=np.array([0.0]),
+        ranges_m=np.array([2.0]),
+        intensities=np.array([100.0]),
+        valid=np.array([True]),
+        t_measure=0.0,
+        t_available=0.0,
+    )
+    frame = SensorFrame(
+        lidar=scan,
+        encoders=base.encoders,
+        imu=base.imu,
+        steering=base.steering,
+    )
+    robot = SensorRobot(
+        _FakeSource(frame),
+        _FakeSink(),
+        _estimator(),
+        scan_compensator=ScanMotionCompensator((0.0, 0.0, 0.0), 0.0),
+    )
+    try:
+        observation = robot.reset()
+        assert observation.compensated_lidar is not None
+        assert observation.compensated_lidar.motion_compensated is True
+        assert observation.lidar_current is observation.compensated_lidar
+    finally:
+        robot.close()
 
 
 def test_serial_packet_round_trip() -> None:

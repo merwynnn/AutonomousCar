@@ -82,6 +82,14 @@ export class TrackScene {
   private lidarGeometry: THREE.BufferGeometry | null = null;
   private lidarPositions = new Float32Array(0);
   private lidarColors = new Float32Array(0);
+  private rawCurrentPoints: THREE.Points | null = null;
+  private rawCurrentGeometry: THREE.BufferGeometry | null = null;
+  private rawCurrentPositions = new Float32Array(0);
+  private compensatedPoints: THREE.Points | null = null;
+  private compensatedGeometry: THREE.BufferGeometry | null = null;
+  private compensatedPositions = new Float32Array(0);
+  private latestScan: ScanMessage | null = null;
+  private odometryHistory: Array<{ t: number; x: number; y: number; theta: number }> = [];
   private trail: THREE.Line | null = null;
   private trailPositions = new Float32Array(1800 * 3);
   private trailCount = 0;
@@ -97,6 +105,9 @@ export class TrackScene {
 
   private latestState: StateMessage | null = null;
   private lidarHeight = 0.14;
+  private lidarMountX = 0;
+  private lidarMountY = 0;
+  private lidarMountYaw = 0;
   private viewMode: ViewMode = 'track';
   private cameraMode: CameraMode = 'orbit';
   private layers: DebugLayers = {
@@ -107,6 +118,7 @@ export class TrackScene {
     coverage: false,
     labels: true,
     debug: true,
+    compensation: false,
   };
 
   private animationFrame = 0;
@@ -156,6 +168,7 @@ export class TrackScene {
     this.scene.add(this.studioGroup);
     this.buildStudio();
     this.buildLidar();
+    this.buildMotionCompensation();
     this.buildTrail();
     this.buildOdomTrail();
     this.debugOverlay = new DebugOverlayLayer(this.scene);
@@ -458,6 +471,9 @@ export class TrackScene {
     this.sensors = hello.sensors;
     const lidar = hello.sensors.mounts.find((mount) => mount.kind === 'lidar');
     this.lidarHeight = lidar ? lidar.ground_height_m : hello.vehicle.ride_height_m + 0.05;
+    this.lidarMountX = lidar ? lidar.position_m[0] : 0;
+    this.lidarMountY = lidar ? lidar.position_m[1] : 0;
+    this.lidarMountYaw = lidar ? deg(lidar.rpy_deg[2]) : 0;
 
     if (this.trackCar) {
       this.scene.remove(this.trackCar.group);
@@ -656,6 +672,50 @@ export class TrackScene {
     this.scene.add(this.lidarPoints);
   }
 
+  private buildMotionCompensation(): void {
+    this.rawCurrentGeometry = new THREE.BufferGeometry();
+    this.rawCurrentGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.rawCurrentPositions, 3),
+    );
+    this.rawCurrentGeometry.setDrawRange(0, 0);
+    this.rawCurrentPoints = new THREE.Points(
+      this.rawCurrentGeometry,
+      new THREE.PointsMaterial({
+        color: 0xbd5b5b,
+        size: 0.024,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.62,
+        depthWrite: false,
+      }),
+    );
+    this.rawCurrentPoints.frustumCulled = false;
+    this.rawCurrentPoints.renderOrder = 1;
+    this.scene.add(this.rawCurrentPoints);
+
+    this.compensatedGeometry = new THREE.BufferGeometry();
+    this.compensatedGeometry.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.compensatedPositions, 3),
+    );
+    this.compensatedGeometry.setDrawRange(0, 0);
+    this.compensatedPoints = new THREE.Points(
+      this.compensatedGeometry,
+      new THREE.PointsMaterial({
+        color: 0x7ba873,
+        size: 0.03,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+      }),
+    );
+    this.compensatedPoints.frustumCulled = false;
+    this.compensatedPoints.renderOrder = 2;
+    this.scene.add(this.compensatedPoints);
+  }
+
   private buildTrail(): void {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(this.trailPositions, 3));
@@ -703,8 +763,29 @@ export class TrackScene {
     if (this.latestState && state.t < this.latestState.t - 1e-6) {
       this.clearTrails();
       this.lidarGeometry?.setDrawRange(0, 0);
+      this.rawCurrentGeometry?.setDrawRange(0, 0);
+      this.compensatedGeometry?.setDrawRange(0, 0);
+      this.latestScan = null;
+      this.odometryHistory = [];
     }
     this.latestState = state;
+    const previousOdom = this.odometryHistory[this.odometryHistory.length - 1];
+    if (!previousOdom || state.t > previousOdom.t + 1e-6) {
+      this.odometryHistory.push({
+        t: state.t,
+        x: state.odometry.x,
+        y: state.odometry.y,
+        theta: state.odometry.theta,
+      });
+    } else if (Math.abs(state.t - previousOdom.t) <= 1e-6) {
+      previousOdom.x = state.odometry.x;
+      previousOdom.y = state.odometry.y;
+      previousOdom.theta = state.odometry.theta;
+    }
+    const historyCutoff = state.t - 2.0;
+    while (this.odometryHistory.length > 2 && this.odometryHistory[0].t < historyCutoff) {
+      this.odometryHistory.shift();
+    }
     this.debugOverlay.update(
       state.debug,
       state.car,
@@ -753,11 +834,21 @@ export class TrackScene {
     if (this.cameraMode === 'chase' && this.viewMode === 'track') {
       this.applyChaseCamera(state);
     }
+    if (this.layers.compensation) this.updateMotionCompensation();
   }
 
-  updateScan(scan: ScanMessage, state: StateMessage): void {
+  updateScan(scan: ScanMessage): void {
     if (!this.lidarGeometry || !this.lidarPoints) return;
+    this.latestScan = scan;
     const count = scan.angles.length;
+    // The scan is expressed in the lidar frame at the start of its sweep.
+    // Render it with that pose, never with the live car pose: re-anchoring an
+    // old scan to the current pose makes the entire cloud rotate and slide
+    // with the car between scans.
+    const originX = scan.pose?.x ?? this.latestState?.car.x ?? 0;
+    const originY = scan.pose?.y ?? this.latestState?.car.y ?? 0;
+    const originHeight = scan.pose?.z ?? this.lidarHeight;
+    const heading = scan.pose?.theta ?? this.latestState?.car.theta ?? 0;
     if (this.lidarPositions.length < count * 3) {
       this.lidarPositions = new Float32Array(count * 3);
       this.lidarColors = new Float32Array(count * 3);
@@ -777,11 +868,11 @@ export class TrackScene {
     for (let index = 0; index < count; index += 1) {
       const range = scan.ranges[index];
       if (range === null || !Number.isFinite(range) || range <= 0) continue;
-      const angle = state.car.theta + scan.angles[index];
+      const angle = heading + scan.angles[index];
       const offset = visible * 3;
-      this.lidarPositions[offset] = state.car.x + Math.cos(angle) * range;
-      this.lidarPositions[offset + 1] = this.lidarHeight;
-      this.lidarPositions[offset + 2] = state.car.y + Math.sin(angle) * range;
+      this.lidarPositions[offset] = originX + Math.cos(angle) * range;
+      this.lidarPositions[offset + 1] = originHeight;
+      this.lidarPositions[offset + 2] = originY + Math.sin(angle) * range;
       const t = Math.min(1, Math.max(0, range / 8));
       color.copy(near).lerp(far, t);
       this.lidarColors[offset] = color.r;
@@ -793,6 +884,148 @@ export class TrackScene {
     this.lidarGeometry.attributes.position.needsUpdate = true;
     this.lidarGeometry.attributes.color.needsUpdate = true;
     this.applyLayers();
+    if (this.layers.compensation) this.updateMotionCompensation();
+  }
+
+  private wrapAngle(angle: number): number {
+    return Math.atan2(Math.sin(angle), Math.cos(angle));
+  }
+
+  private poseAtOdometry(t: number): { x: number; y: number; theta: number } | null {
+    const history = this.odometryHistory;
+    if (history.length === 0) return null;
+    if (t < history[0].t) {
+      // A page reload can start with a scan slightly older than the first
+      // odometry sample. Use it only for a short grace period.
+      return history[0].t - t <= 0.25 ? history[0] : null;
+    }
+    const last = history[history.length - 1];
+    if (t >= last.t) return last;
+    let low = 0;
+    let high = history.length - 1;
+    while (low + 1 < high) {
+      const middle = (low + high) >> 1;
+      if (history[middle].t <= t) low = middle;
+      else high = middle;
+    }
+    const before = history[low];
+    const after = history[high];
+    const span = after.t - before.t;
+    if (span <= 1e-9) return after;
+    const alpha = Math.min(1, Math.max(0, (t - before.t) / span));
+    return {
+      x: before.x + (after.x - before.x) * alpha,
+      y: before.y + (after.y - before.y) * alpha,
+      theta: this.wrapAngle(
+        before.theta + this.wrapAngle(after.theta - before.theta) * alpha,
+      ),
+    };
+  }
+
+  private lidarPose(body: { x: number; y: number; theta: number }): {
+    x: number;
+    y: number;
+    theta: number;
+  } {
+    const c = Math.cos(body.theta);
+    const s = Math.sin(body.theta);
+    return {
+      x: body.x + c * this.lidarMountX - s * this.lidarMountY,
+      y: body.y + s * this.lidarMountX + c * this.lidarMountY,
+      theta: this.wrapAngle(body.theta + this.lidarMountYaw),
+    };
+  }
+
+  private ensureCompensationBuffers(count: number): void {
+    if (this.rawCurrentPositions.length < count * 3) {
+      this.rawCurrentPositions = new Float32Array(count * 3);
+      this.compensatedPositions = new Float32Array(count * 3);
+      this.rawCurrentGeometry?.setAttribute(
+        'position',
+        new THREE.BufferAttribute(this.rawCurrentPositions, 3),
+      );
+      this.compensatedGeometry?.setAttribute(
+        'position',
+        new THREE.BufferAttribute(this.compensatedPositions, 3),
+      );
+    }
+  }
+
+  /**
+   * Draw the stale scan twice: as a controller would see it without motion
+   * compensation, and warped into the current lidar frame using the estimated
+   * odometry. Both clouds are anchored at the live (true) lidar pose so the
+   * track geometry is the reference.
+   */
+  private updateMotionCompensation(): void {
+    if (!this.rawCurrentGeometry || !this.compensatedGeometry) return;
+    const scan = this.latestScan;
+    const state = this.latestState;
+    if (!this.layers.compensation || !scan || !state || scan.angles.length === 0) {
+      this.rawCurrentGeometry.setDrawRange(0, 0);
+      this.compensatedGeometry.setDrawRange(0, 0);
+      return;
+    }
+    const scanAge = state.t - scan.t;
+    if (scanAge < -1e-6 || scanAge > 0.5) {
+      this.rawCurrentGeometry.setDrawRange(0, 0);
+      this.compensatedGeometry.setDrawRange(0, 0);
+      return;
+    }
+    const scanOdom = this.poseAtOdometry(scan.t);
+    const nowOdom = this.poseAtOdometry(state.t);
+    if (!scanOdom || !nowOdom) {
+      this.rawCurrentGeometry.setDrawRange(0, 0);
+      this.compensatedGeometry.setDrawRange(0, 0);
+      return;
+    }
+
+    const scanLidar = this.lidarPose(scanOdom);
+    const nowLidar = this.lidarPose(nowOdom);
+    const deltaWorldX = scanLidar.x - nowLidar.x;
+    const deltaWorldY = scanLidar.y - nowLidar.y;
+    const cNow = Math.cos(nowLidar.theta);
+    const sNow = Math.sin(nowLidar.theta);
+    const translationX = cNow * deltaWorldX + sNow * deltaWorldY;
+    const translationY = -sNow * deltaWorldX + cNow * deltaWorldY;
+    const deltaTheta = this.wrapAngle(scanLidar.theta - nowLidar.theta);
+    const cDelta = Math.cos(deltaTheta);
+    const sDelta = Math.sin(deltaTheta);
+
+    const currentLidar = this.lidarPose(state.car);
+    const cCurrent = Math.cos(currentLidar.theta);
+    const sCurrent = Math.sin(currentLidar.theta);
+    this.ensureCompensationBuffers(scan.angles.length);
+
+    let visible = 0;
+    for (let index = 0; index < scan.angles.length; index += 1) {
+      const range = scan.ranges[index];
+      if (range === null || !Number.isFinite(range) || range <= 0) continue;
+      const angle = scan.angles[index];
+      const localX = Math.cos(angle) * range;
+      const localY = Math.sin(angle) * range;
+      const offset = visible * 3;
+
+      this.rawCurrentPositions[offset] =
+        currentLidar.x + cCurrent * localX - sCurrent * localY;
+      this.rawCurrentPositions[offset + 1] = this.lidarHeight;
+      this.rawCurrentPositions[offset + 2] =
+        currentLidar.y + sCurrent * localX + cCurrent * localY;
+
+      const compensatedX = cDelta * localX - sDelta * localY + translationX;
+      const compensatedY = sDelta * localX + cDelta * localY + translationY;
+      this.compensatedPositions[offset] =
+        currentLidar.x + cCurrent * compensatedX - sCurrent * compensatedY;
+      this.compensatedPositions[offset + 1] = this.lidarHeight;
+      this.compensatedPositions[offset + 2] =
+        currentLidar.y + sCurrent * compensatedX + cCurrent * compensatedY;
+      visible += 1;
+    }
+
+    this.rawCurrentGeometry.setDrawRange(0, visible);
+    this.compensatedGeometry.setDrawRange(0, visible);
+    this.rawCurrentGeometry.attributes.position.needsUpdate = true;
+    this.compensatedGeometry.attributes.position.needsUpdate = true;
   }
 
   private appendTrail(
@@ -833,7 +1066,10 @@ export class TrackScene {
     this.studioGroup.visible = carMode;
     if (this.trackCar) this.trackCar.group.visible = !carMode;
     if (this.studioCar) this.studioCar.group.visible = carMode;
-    if (this.lidarPoints) this.lidarPoints.visible = !carMode && this.layers.scan;
+    if (this.lidarPoints) {
+      this.lidarPoints.visible =
+        !carMode && this.layers.scan && !this.layers.compensation;
+    }
     if (this.trail) this.trail.visible = !carMode && this.layers.trail;
     if (this.odomTrail) this.odomTrail.visible = !carMode && this.layers.odometry;
     if (this.centerline) this.centerline.visible = !carMode;
@@ -861,6 +1097,12 @@ export class TrackScene {
 
   setLayers(layers: DebugLayers): void {
     this.layers = { ...layers };
+    if (this.layers.compensation) {
+      this.updateMotionCompensation();
+    } else {
+      this.rawCurrentGeometry?.setDrawRange(0, 0);
+      this.compensatedGeometry?.setDrawRange(0, 0);
+    }
     this.applyLayers();
   }
 
@@ -876,7 +1118,18 @@ export class TrackScene {
       this.studioCar.coverageGroup.visible = this.layers.coverage;
       this.studioCar.labelGroup.visible = this.layers.labels && this.layers.sensors;
     }
-    if (this.lidarPoints) this.lidarPoints.visible = this.layers.scan && !carMode;
+    if (this.lidarPoints) {
+      this.lidarPoints.visible =
+        this.layers.scan && !this.layers.compensation && !carMode;
+    }
+    if (this.rawCurrentPoints) {
+      this.rawCurrentPoints.visible =
+        this.layers.scan && this.layers.compensation && !carMode;
+    }
+    if (this.compensatedPoints) {
+      this.compensatedPoints.visible =
+        this.layers.scan && this.layers.compensation && !carMode;
+    }
     if (this.trail) this.trail.visible = this.layers.trail && !carMode;
     if (this.odomTrail) this.odomTrail.visible = this.layers.odometry && !carMode;
     if (this.studioLidarRing) this.studioLidarRing.visible = this.layers.coverage;

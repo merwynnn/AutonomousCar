@@ -22,6 +22,13 @@ class LidarScan:
     t_measure: float
     t_available: float
     frame_id: str = "lidar"
+    # World pose of the scan-start lidar frame. ``(x, y, z)`` is the sensor
+    # origin and ``yaw`` the heading of the sensor x-axis. Consumers that need
+    # to put the scan back into the world must use this pose, not the current
+    # vehicle pose: the scan is deliberately expressed in the frame at the
+    # beginning of the rotating sweep.
+    sensor_origin_world_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    sensor_yaw_world_rad: float = 0.0
 
     @property
     def beam_count(self) -> int:
@@ -83,6 +90,10 @@ class LidarModel:
             start_body_rotation @ self.mount_position
         )
         start_sensor_rotation = start_body_rotation @ self.mount_rotation
+        sensor_yaw_world = math.atan2(
+            float(start_sensor_rotation[1, 0]),
+            float(start_sensor_rotation[0, 0]),
+        )
 
         origins: list[tuple[float, float, float]] = []
         ray_directions: list[tuple[float, float, float]] = []
@@ -209,4 +220,10 @@ class LidarModel:
             t_measure=t,
             t_available=t + latency * scale,
             frame_id=cfg.frame_id,
+            sensor_origin_world_m=(
+                float(start_origin[0]),
+                float(start_origin[1]),
+                float(start_origin[2]),
+            ),
+            sensor_yaw_world_rad=sensor_yaw_world,
         )

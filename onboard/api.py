@@ -71,10 +71,23 @@ class LidarObservation:
     t_measure: float
     t_available: float
     frame_id: str = "lidar"
+    # When true, angles/ranges are re-expressed in the current lidar frame at
+    # ``t_compensated``. ``t_measure``/``t_available`` still describe the
+    # original raw measurement.
+    motion_compensated: bool = False
+    t_compensated: float | None = None
 
     @property
     def beam_count(self) -> int:
         return int(self.angles_rad.size)
+
+    @property
+    def age_s(self) -> float | None:
+        """Age of the measurement at the compensation time, if known."""
+
+        if self.t_compensated is None:
+            return None
+        return max(0.0, self.t_compensated - self.t_measure)
 
 
 @dataclass(frozen=True)
@@ -211,8 +224,22 @@ class Observation:
     sensors: SensorFrame
     state: StateEstimate
     limits: RobotLimits = field(default_factory=RobotLimits)
+    # Scan re-expressed in the current lidar frame by the shared
+    # ``ScanMotionCompensator``. ``sensors.lidar`` remains the raw measurement.
+    compensated_lidar: LidarObservation | None = None
 
     # ----------------------------------------------------- compatibility
+    @property
+    def lidar_current(self) -> LidarObservation | None:
+        """Best scan in the current lidar frame, falling back to raw data.
+
+        Algorithms that do not care about the distinction should use this
+        property instead of ``observation.lidar``. The raw scan remains
+        available as ``observation.sensors.lidar``.
+        """
+
+        return self.compensated_lidar or self.sensors.lidar
+
     @property
     def odometry(self) -> Pose2:
         return self.state.pose

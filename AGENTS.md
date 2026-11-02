@@ -280,6 +280,7 @@ onboard/            portable code copied to the Raspberry Pi
   actuation.py      shared actuator calibration and command shaping
   config.py         estimator tuning + shared geometry/hardware loading
   estimator/        wheel + IMU estimator used by sim and hardware
+  scan_motion.py    estimated-odometry lidar scan motion compensation
   runtime.py        SensorRobot / ControllerRuntime
   drivers/          JSON-lines protocol, mock board and hardware protocols
 simulator/          host-only physics and sensor core

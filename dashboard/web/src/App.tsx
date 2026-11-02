@@ -147,8 +147,8 @@ function SceneCanvas({
   }, [state]);
 
   useEffect(() => {
-    if (state && scan) sceneRef.current?.updateScan(scan, state);
-  }, [scan, state]);
+    if (scan) sceneRef.current?.updateScan(scan);
+  }, [scan]);
 
   useEffect(() => {
     sceneRef.current?.setViewMode(viewMode);
@@ -1064,15 +1064,22 @@ function ViewportHud({
   state,
   viewMode,
   scan,
+  layers,
 }: {
   hello: HelloMessage | null;
   state: StateMessage | null;
   viewMode: ViewMode;
   scan: ScanMessage | null;
+  layers: DebugLayers;
 }) {
   const valid = scan?.ranges.filter((range) => range !== null).length ?? 0;
   const total = scan?.ranges.length ?? 0;
   const running = state ? !state.paused && !state.finished : false;
+  const scanAgeMs =
+    state && scan && scan.angles.length > 0
+      ? Math.max(0, (state.t - scan.t) * 1000)
+      : null;
+  const showCompensation = layers.compensation && viewMode === 'track';
   return (
     <>
       <div className="viewport-status">
@@ -1083,6 +1090,15 @@ function ViewportHud({
         <i />
         <span>{state?.control_mode === 'manual' ? 'MANUAL' : (state?.auto_controller ?? 'AUTO').replace('_', '-').toUpperCase()}</span>
       </div>
+      {showCompensation ? (
+        <div className="scan-compare-legend">
+          <span><i className="scan-swatch raw" />raw · no compensation</span>
+          <span><i className="scan-swatch compensated" />odometry compensated</span>
+          {scanAgeMs !== null ? (
+            <span className="scan-age">{scanAgeMs.toFixed(0)} ms scan age</span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="viewport-stats">
         {viewMode === 'car' ? (
           <>
@@ -1107,6 +1123,8 @@ function ViewportHud({
         <strong>{num(state?.t, 1)}<em> s</em></strong>
         <span>yaw</span>
         <strong>{num(state ? state.car.theta * 180 / Math.PI : undefined, 1)}<em> °</em></strong>
+        <span>scan age</span>
+        <strong>{scanAgeMs === null ? '—' : scanAgeMs.toFixed(0)}<em> ms</em></strong>
       </div>
       <div className="viewport-hints">
         <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
@@ -1150,6 +1168,7 @@ export default function App() {
     coverage: false,
     labels: false,
     debug: true,
+    compensation: false,
   });
   const [selection, setSelection] = useState<Selection>('vehicle');
   const [outlinerOpen, setOutlinerOpen] = useState(true);
@@ -1483,7 +1502,13 @@ export default function App() {
               layers={layers}
               turntable={turntable}
             />
-            <ViewportHud hello={hello} state={state} viewMode={viewMode} scan={scan} />
+            <ViewportHud
+              hello={hello}
+              state={state}
+              viewMode={viewMode}
+              scan={scan}
+              layers={layers}
+            />
             <DebugDock state={state} layers={layers} />
             {state?.controller_error ? (
               <div
@@ -1506,6 +1531,7 @@ export default function App() {
               {(
                 [
                   ['scan', 'Lidar'],
+                  ['compensation', 'Compare'],
                   ['trail', 'Trail'],
                   ['odometry', 'Odom'],
                   ['sensors', 'Sensors'],
@@ -1514,11 +1540,19 @@ export default function App() {
                   ['debug', 'Debug'],
                 ] as Array<[keyof DebugLayers, string]>
               ).map(([key, label]) => (
-                <label key={key} className={`layer-toggle ${viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'debug') ? 'disabled' : ''}`}>
+                <label
+                  key={key}
+                  className={`layer-toggle ${viewMode === 'car' && (key === 'scan' || key === 'compensation' || key === 'trail' || key === 'odometry' || key === 'debug') ? 'disabled' : ''}`}
+                  title={
+                    key === 'compensation'
+                      ? 'Compare raw and estimated-odometry-compensated scans at the live car pose'
+                      : undefined
+                  }
+                >
                   <input
                     type="checkbox"
                     checked={layers[key]}
-                    disabled={viewMode === 'car' && (key === 'scan' || key === 'trail' || key === 'odometry' || key === 'debug')}
+                    disabled={viewMode === 'car' && (key === 'scan' || key === 'compensation' || key === 'trail' || key === 'odometry' || key === 'debug')}
                     onChange={(event) =>
                       setLayers((current) => ({ ...current, [key]: event.target.checked }))
                     }

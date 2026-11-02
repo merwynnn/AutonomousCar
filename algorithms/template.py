@@ -30,7 +30,8 @@ class TemplateController:
         speed_limit: float | None = None,
     ) -> Actuation:
         # Replace this with your algorithm. Examples:
-        #   scan = observation.lidar
+        #   scan = observation.lidar_current  # odometry-compensated, current frame
+        #   raw = observation.sensors.lidar   # raw measurement, scan-start frame
         #   ranges = scan.ranges_m if scan is not None else ...
         #   error = ...
         self.t = observation.t

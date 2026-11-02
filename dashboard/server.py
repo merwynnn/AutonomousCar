@@ -485,6 +485,15 @@ class DashboardSimulation:
             "t": round(scan.t_measure, 4),
             "t_available": round(scan.t_available, 4),
             "frame_id": scan.frame_id,
+            # Pose of the scan-start lidar frame. A scan is acquired over a
+            # rotating sweep, so it must be rendered with the pose at
+            # ``t_measure``, not with the latest vehicle state.
+            "pose": {
+                "x": round(scan.sensor_origin_world_m[0], 4),
+                "y": round(scan.sensor_origin_world_m[1], 4),
+                "z": round(scan.sensor_origin_world_m[2], 4),
+                "theta": round(scan.sensor_yaw_world_rad, 5),
+            },
             "angles": [round(float(value), 5) for value in scan.angles],
             "ranges": ranges,
             "intensities": [round(float(value), 1) for value in scan.intensities],

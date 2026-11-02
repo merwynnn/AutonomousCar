@@ -51,15 +51,19 @@ Observation
 │   ├── pose, speed_mps, yaw_rate_rad_s
 │   ├── covariance, valid, source
 │   └── gyro_bias_rad_s, slip_detected
-└── limits: RobotLimits
-    ├── max_steering_rad
-    ├── max_steering_rate_rad_s
-    └── max_speed_mps
+├── limits: RobotLimits
+│   ├── max_steering_rad
+│   ├── max_steering_rate_rad_s
+│   └── max_speed_mps
+└── compensated_lidar: LidarObservation | None
+    (raw scan re-expressed in the current lidar frame;
+     `lidar_current` falls back to `sensors.lidar`)
 ```
 
 Raw data and fused state are both available. Compatibility properties
 (`observation.lidar`, `observation.odometry`, ...) keep older controllers
-working.
+working. `onboard/scan_motion.py` produces the compensated scan from the
+estimated pose history and the lidar mount; it never reads ground truth.
 
 ## Data flow
 
@@ -68,10 +72,12 @@ working.
    encoders, IMU, steering and motor telemetry.
 3. The shared `onboard.estimator.WheelImuEstimator` consumes only the frames
    whose `t_available` is in the past and produces `StateEstimate`.
-4. `DashboardSimulation` calls the controller with the resulting `Observation`.
-5. The manager broadcasts `state`, `scan` and `hello` messages over WebSocket.
-6. The browser renders messages. It never predicts or integrates physics.
-7. Commands (`run.start`, `drive.command`, `config.reload`, etc.) travel back
+4. `onboard.scan_motion.ScanMotionCompensator` re-expresses the latest scan in
+   the current lidar frame using the estimated pose history and mount.
+5. `DashboardSimulation` calls the controller with the resulting `Observation`.
+6. The manager broadcasts `state`, `scan` and `hello` messages over WebSocket.
+7. The browser renders messages. It never predicts or integrates physics.
+8. Commands (`run.start`, `drive.command`, `config.reload`, etc.) travel back
    over the same WebSocket.
 
 On the real car the same estimator and controller run in `onboard/runtime.py`.

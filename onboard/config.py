@@ -81,6 +81,8 @@ class OnboardConfig:
     ticks_per_rev: int
     encoder_rate_hz: float
     tuning: EstimatorTuning
+    lidar_mount_position_m: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    lidar_mount_yaw_rad: float = 0.0
     hardware: HardwareConfig = field(default_factory=HardwareConfig)
 
 
@@ -118,6 +120,32 @@ def _require_number(data: dict[str, Any], key: str, source: Path) -> float:
     return float(value)
 
 
+def _require_vector3(
+    data: dict[str, Any], key: str, source: Path
+) -> tuple[float, float, float]:
+    value = data.get(key, [0.0, 0.0, 0.0])
+    if (
+        not isinstance(value, list)
+        or len(value) != 3
+        or not all(isinstance(item, int | float) for item in value)
+    ):
+        raise ValueError(f"{source}: expected a 3-number '{key}' list")
+    return (float(value[0]), float(value[1]), float(value[2]))
+
+
+def _require_mount(
+    sensors: dict[str, Any], source: Path
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    lidar = _require_mapping(sensors, "lidar", source)
+    mount = lidar.get("mount", {})
+    if not isinstance(mount, dict):
+        raise ValueError(f"{source}: expected a 'lidar.mount' mapping")
+    return (
+        _require_vector3(mount, "position_m", source),
+        _require_vector3(mount, "rpy_deg", source),
+    )
+
+
 def load_onboard_config(
     vehicle_path: str | Path,
     sensors_path: str | Path,
@@ -145,6 +173,7 @@ def load_onboard_config(
         if hardware_source.exists()
         else HardwareConfig()
     )
+    lidar_position, lidar_rpy = _require_mount(sensors, sensors_source)
     return OnboardConfig(
         vehicle_name=str(vehicle.get("name", "unnamed_vehicle")),
         wheel_radius_m=_require_number(vehicle, "wheel_radius_m", vehicle_source),
@@ -158,6 +187,8 @@ def load_onboard_config(
         ),
         ticks_per_rev=ticks,
         encoder_rate_hz=float(encoders.get("rate_hz", 50.0)),
+        lidar_mount_position_m=lidar_position,
+        lidar_mount_yaw_rad=math.radians(lidar_rpy[2]),
         tuning=load_estimator_tuning(estimator_path),
         hardware=hardware,
     )

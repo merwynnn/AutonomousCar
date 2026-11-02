@@ -9,6 +9,7 @@ from onboard.drivers.mock_board import MockBoard
 from onboard.drivers.serial_link import SerialActuatorSink, SerialSensorSource
 from onboard.estimator import WheelImuEstimator
 from onboard.runtime import ControllerRuntime, SensorRobot
+from onboard.scan_motion import ScanMotionCompensator
 from onboard.tools.selftest import main as selftest_main
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +44,10 @@ def _robot() -> SensorRobot:
             max_steering_rad=0.49,
             max_steering_rate_rad_s=1.57,
             max_speed_mps=config.hardware.drive.max_speed_mps,
+        ),
+        scan_compensator=ScanMotionCompensator(
+            config.lidar_mount_position_m,
+            config.lidar_mount_yaw_rad,
         ),
     )
 
