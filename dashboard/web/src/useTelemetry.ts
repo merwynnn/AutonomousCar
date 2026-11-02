@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ConfigResultMessage,
+  ControllerResultMessage,
   HelloMessage,
   ScanMessage,
   ServerMessage,
@@ -24,6 +25,7 @@ export interface Telemetry {
   history: SpeedSample[];
   configResult: ConfigResultMessage | null;
   trackResult: TrackResultMessage | null;
+  controllerResult: ControllerResultMessage | null;
   send: (message: object) => void;
 }
 
@@ -37,6 +39,8 @@ export function useTelemetry(): Telemetry {
   const [history, setHistory] = useState<SpeedSample[]>([]);
   const [configResult, setConfigResult] = useState<ConfigResultMessage | null>(null);
   const [trackResult, setTrackResult] = useState<TrackResultMessage | null>(null);
+  const [controllerResult, setControllerResult] =
+    useState<ControllerResultMessage | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
@@ -82,6 +86,9 @@ export function useTelemetry(): Telemetry {
             case 'track.result':
               setTrackResult(message);
               break;
+            case 'controller.result':
+              setControllerResult(message);
+              break;
           }
         } catch {
           // Ignore malformed frames; the next frame will arrive shortly.
@@ -117,5 +124,15 @@ export function useTelemetry(): Telemetry {
     }
   }, []);
 
-  return { status, hello, state, scan, history, configResult, trackResult, send };
+  return {
+    status,
+    hello,
+    state,
+    scan,
+    history,
+    configResult,
+    trackResult,
+    controllerResult,
+    send,
+  };
 }

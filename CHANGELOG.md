@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-11-02 — Live algorithm reload
+
+- Added a **Reload algo** toolbar button and `controller.reload` WebSocket
+  command.
+- The backend re-imports `algorithms/*.py` (debug contract first, registry last),
+  rebuilds controller instances and keeps the current simulation, track and lap
+  state. The new controller takes over on the next tick.
+- Reload failures are reported in the dashboard without replacing the working
+  controllers.
+- Clarified in the docs that **Reload config** reloads YAML and rebuilds physics
+  and sensors; it does not re-import Python code.
+
 ## 2026-11-02 — Generic controller debug and gap solver candidates
 
 - Added a controller-neutral `DebugFrame` contract (`algorithms/debug.py`) for

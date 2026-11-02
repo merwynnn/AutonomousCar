@@ -12,20 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib
 import math
 import os
+import sys
 import time
 from collections.abc import AsyncIterator, MutableMapping
 from pathlib import Path
 from typing import Any, Literal
 
-from algorithms.debug import DebugFrame
-from algorithms.registry import (
-    CONTROLLERS,
-    DEFAULT_CONTROLLER,
-    ControllerSpec,
-    controller_list,
-)
+from algorithms import registry as controller_registry
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -70,7 +66,7 @@ class DashboardSimulation:
         self.paused = True
         self.finished = False
         self.control_mode: str = "auto"
-        self.auto_controller: str = DEFAULT_CONTROLLER
+        self.auto_controller: str = controller_registry.DEFAULT_CONTROLLER
         self.speed_limit = 1.5
         self.manual = Actuation()
         self.manual_time = -10.0
@@ -78,15 +74,25 @@ class DashboardSimulation:
         self._queues: set[asyncio.Queue[dict[str, Any]]] = set()
         self._task: asyncio.Task[None] | None = None
         self._reload_pending = False
+        self._controller_reload_pending = False
         self._pending_config: dict[str, Any] | None = None
         self._pending_track: dict[str, Any] | None = None
-        self.controllers: dict[str, Any] = {
-            key: spec.build() for key, spec in CONTROLLERS.items()
-        }
+        self._controller_specs: dict[str, controller_registry.ControllerSpec] = dict(
+            controller_registry.CONTROLLERS
+        )
+        self.controllers: dict[str, Any] = self._build_controllers(
+            self._controller_specs
+        )
+
+    @staticmethod
+    def _build_controllers(
+        specs: dict[str, controller_registry.ControllerSpec],
+    ) -> dict[str, Any]:
+        return {key: spec.build() for key, spec in specs.items()}
 
     @property
-    def controller_spec(self) -> ControllerSpec:
-        return CONTROLLERS[self.auto_controller]
+    def controller_spec(self) -> controller_registry.ControllerSpec:
+        return self._controller_specs[self.auto_controller]
 
     @property
     def active_controller(self) -> Any:
@@ -119,6 +125,75 @@ class DashboardSimulation:
         self._scan_key = None
         self._reset_controllers()
         self._broadcast(self.hello_message())
+
+    def reload_controllers(self) -> tuple[bool, str]:
+        """Re-import algorithm modules and rebuild controller instances.
+
+        The simulation, track and lap state are deliberately left untouched:
+        the new controller takes over from the current position on the next
+        control tick. Reload the ``debug`` module first, then the controllers,
+        then the registry so its class references point at the freshly loaded
+        modules.
+        """
+
+        names = sorted(
+            name
+            for name in sys.modules
+            if name.startswith("algorithms.") and name != "algorithms.registry"
+        )
+        if "algorithms.debug" in names:
+            names.remove("algorithms.debug")
+            names.insert(0, "algorithms.debug")
+
+        reloaded: list[str] = []
+        for name in names:
+            module = sys.modules.get(name)
+            if module is None:
+                continue
+            try:
+                importlib.reload(module)
+            except Exception as exc:  # noqa: BLE001
+                message = f"Could not reload {name}: {exc}"
+                self._broadcast(
+                    {"type": "controller.result", "ok": False, "message": message}
+                )
+                return False, message
+            reloaded.append(name)
+
+        try:
+            importlib.reload(controller_registry)
+        except Exception as exc:  # noqa: BLE001
+            message = f"Could not reload algorithms.registry: {exc}"
+            self._broadcast(
+                {"type": "controller.result", "ok": False, "message": message}
+            )
+            return False, message
+
+        try:
+            new_specs = dict(controller_registry.CONTROLLERS)
+            new_controllers = self._build_controllers(new_specs)
+        except Exception as exc:  # noqa: BLE001
+            message = f"Could not rebuild controllers: {exc}"
+            self._broadcast(
+                {"type": "controller.result", "ok": False, "message": message}
+            )
+            return False, message
+
+        self._controller_specs = new_specs
+        self.controllers = new_controllers
+        if self.auto_controller not in self._controller_specs:
+            self.auto_controller = controller_registry.DEFAULT_CONTROLLER
+        self._broadcast(self.hello_message())
+        self._broadcast(self.state_message())
+
+        message = (
+            f"Reloaded {len(reloaded) + 1} algorithm modules; "
+            "controllers rebuilt from the current vehicle state."
+        )
+        self._broadcast(
+            {"type": "controller.result", "ok": True, "message": message}
+        )
+        return True, message
 
     @staticmethod
     def _merge_yaml(target: MutableMapping[str, Any], source: dict[str, Any]) -> None:
@@ -296,7 +371,10 @@ class DashboardSimulation:
             },
             "race": {"laps": self.scenario.race.laps},
             "warnings": warnings,
-            "controllers": controller_list(),
+            "controllers": [
+                {"id": spec.id, "label": spec.label}
+                for spec in self._controller_specs.values()
+            ],
             "active_controller": self.auto_controller,
             "paths": {
                 "scenario": str(self.scenario_path),
@@ -412,7 +490,7 @@ class DashboardSimulation:
         build = getattr(self.active_controller, "debug_frame", None)
         if not callable(build):
             return None
-        frame: DebugFrame = build()
+        frame = build()
         return frame.to_dict()
 
     # ---------------------------------------------------------------- track
@@ -521,9 +599,13 @@ class DashboardSimulation:
             self.control_mode = mode if mode in {"auto", "manual"} else "auto"
             self.manual = Actuation()
         elif kind == "control.controller":
-            controller = str(message.get("controller", DEFAULT_CONTROLLER))
+            controller = str(
+                message.get("controller", controller_registry.DEFAULT_CONTROLLER)
+            )
             self.auto_controller = (
-                controller if controller in CONTROLLERS else DEFAULT_CONTROLLER
+                controller
+                if controller in self._controller_specs
+                else controller_registry.DEFAULT_CONTROLLER
             )
             self._reset_controllers()
         elif kind == "drive.command":
@@ -535,6 +617,8 @@ class DashboardSimulation:
             self.manual_time = time.monotonic()
         elif kind == "config.reload":
             self._reload_pending = True
+        elif kind == "controller.reload":
+            self._controller_reload_pending = True
         elif kind == "config.apply":
             self._pending_config = message
         elif kind == "track.generate":
@@ -585,6 +669,9 @@ class DashboardSimulation:
                 self._reload_pending = False
                 with contextlib.suppress(Exception):
                     self.reload_config()
+            if self._controller_reload_pending:
+                self._controller_reload_pending = False
+                self.reload_controllers()
             if not self.paused and not self.finished:
                 self.step_once()
             telemetry_count += 1

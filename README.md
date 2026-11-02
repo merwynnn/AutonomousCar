@@ -282,9 +282,18 @@ candidate labels. Use the **Debug** layer toggle to hide or show the overlay.
 Controllers can expose the same kind of view by returning a `DebugFrame` from
 `algorithms/debug.py`; see [docs/08-dashboard.md](docs/08-dashboard.md).
 
-After editing YAML, click **Reload config**. The dashboard rebuilds the MJCF,
-sensors, estimator and simulation and pushes a fresh `hello` message to the
-browser.
+After editing YAML, click **Reload config**. The dashboard reloads the scenario,
+vehicle and sensor files and rebuilds the MJCF, sensors, estimator and
+simulation. It pauses the run and pushes a fresh `hello` message to the browser.
+It does not re-import Python modules.
+
+After editing a file under `algorithms/`, click **Reload algo**. The backend
+re-imports the algorithm modules and registry, rebuilds controller instances and
+leaves the simulation, track, lap timing and current vehicle position untouched.
+The new controller takes over on the next control tick. This is the quick path
+for iterating on a controller without restarting `dashboard.server`. It reloads
+the portable `algorithms/` package only; changes under `onboard/` or
+`simulator/` still require a server restart.
 
 ### REST and WebSocket
 
@@ -292,7 +301,7 @@ browser.
 - `WS /ws/telemetry` — hello, state and scan messages; commands include
   `run.start`, `run.pause`, `run.reset`, `run.step`, `run.set_speed`,
   `control.mode`, `control.controller`, `drive.command`, `config.reload`,
-  `config.apply`, `track.generate`, `track.default`.
+  `config.apply`, `controller.reload`, `track.generate`, `track.default`.
 
 ## 5. Add an algorithm
 

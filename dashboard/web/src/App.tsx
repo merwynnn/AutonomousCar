@@ -54,6 +54,7 @@ function Icon({ name }: { name: string }) {
     step: <path d="M6 5v14l9-7zM17 5h2v14h-2z" />,
     reset: <path d="M5 5v6h6M5 11a7 7 0 1 1 2 5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
     reload: <path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="currentColor" strokeWidth="1.7" />,
+    code: <path d="M9 6 4 12l5 6M15 6l5 6-5 6M13.5 4l-3 16" fill="none" stroke="currentColor" strokeWidth="1.6" />,
     car: <path d="M5 16l1.2-5.2A2 2 0 0 1 8.1 9h7.8a2 2 0 0 1 1.9 1.8L19 16M5 16h14v3h-2v-2H7v2H5zM8 19h1M15 19h1" fill="none" stroke="currentColor" strokeWidth="1.6" />,
     track: <path d="M4 14c0-6 4-10 8-10s8 4 8 10-4 6-8 6-8 0-8-6zM8 14c0-4 2-6 4-6s4 2 4 6-2 2-4 2-4 2-4-2z" fill="none" stroke="currentColor" strokeWidth="1.5" />,
     camera: <path d="M4 8h3l2-3h6l2 3h3v10H4zM12 16a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" fill="none" stroke="currentColor" strokeWidth="1.5" />,
@@ -1133,7 +1134,8 @@ const DRIVE_KEYS: Record<string, DriveKey> = {
 };
 
 export default function App() {
-  const { status, hello, state, scan, send, configResult, trackResult } = useTelemetry();
+  const { status, hello, state, scan, send, configResult, trackResult, controllerResult } =
+    useTelemetry();
   const [viewMode, setViewMode] = useState<ViewMode>('track');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
   const [turntable, setTurntable] = useState(true);
@@ -1176,6 +1178,13 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
   }, [trackResult]);
+
+  useEffect(() => {
+    if (!controllerResult) return;
+    setToast(controllerResult.message);
+    const timer = window.setTimeout(() => setToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [controllerResult]);
 
   useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
@@ -1250,6 +1259,7 @@ export default function App() {
 
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
+  const onReloadControllers = () => send({ type: 'controller.reload' });
   const openTune = (tab: 'vehicle' | 'sensors') => {
     setTuningTab(tab);
     setTuningOpen(true);
@@ -1428,8 +1438,14 @@ export default function App() {
           <ToolButton
             icon="reload"
             label="Reload config"
-            title="Reload vehicle.yaml, sensors.yaml and scenario.yaml"
+            title="Reload vehicle.yaml, sensors.yaml and scenario.yaml (rebuilds physics and sensors)"
             onClick={onReload}
+          />
+          <ToolButton
+            icon="code"
+            label="Reload algo"
+            title="Re-import algorithms/*.py and rebuild controllers without resetting the run"
+            onClick={onReloadControllers}
           />
         </div>
       </div>

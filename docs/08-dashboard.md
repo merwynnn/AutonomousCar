@@ -85,8 +85,18 @@ width and object density. **Default** restores the reference test track.
 - Run, pause, step and reset.
 - Orbit, top and chase cameras; turntable in car studio.
 - Auto/manual drive, demo controller and speed limit.
-- Tune and reload config.
+- Tune, reload config and reload algorithms.
 - Layer toggles: lidar, trail, odometry, sensors, coverage, labels, debug.
+
+**Reload config** reloads the scenario/vehicle/sensor YAML and rebuilds the
+physics, sensors, estimator and simulation. It pauses the run. **Reload algo**
+re-imports `algorithms/*.py` and the controller registry, rebuilds controller
+instances and keeps the current simulation, track and lap state. The new
+controller takes over on the next tick; use **Reset** for a fresh start. The
+reload covers `algorithms/*.py`; changes under `onboard/` or `simulator/` still
+require a server restart.
+
+![Reload algo with live simulation state](assets/dashboard-reload-algo.png)
 
 The Track / Car only view switch sits in the viewport header, next to the camera
 and sensor-realism readout.
@@ -110,10 +120,12 @@ REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`, `
 
 WebSocket `/ws/telemetry`:
 
-- server: `hello`, `state`, `scan`, `config.result`, `track.result`;
+- server: `hello`, `state`, `scan`, `config.result`, `track.result`,
+  `controller.result`;
 - client: `run.start`, `run.pause`, `run.reset`, `run.step`,
   `run.set_speed`, `control.mode`, `control.controller`, `drive.command`,
-  `config.reload`, `config.apply`, `track.generate`, `track.default`, `ping`.
+  `config.reload`, `config.apply`, `controller.reload`, `track.generate`,
+  `track.default`, `ping`.
 
 `hello.controllers` advertises the registry. `state.debug` carries the active
 controller's optional `DebugFrame`; it is `null` in manual mode or when the

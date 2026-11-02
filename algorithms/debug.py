@@ -317,7 +317,9 @@ def _table_payload(table: Table) -> dict[str, Any]:
 
 
 def _overlay_payload(overlay: Overlay) -> dict[str, Any]:
-    if isinstance(overlay, PointsOverlay):
+    # Dispatch on ``kind`` rather than ``isinstance`` so frames created before a
+    # hot reload of this module still serialise correctly.
+    if overlay.kind == "points":
         return {
             "kind": overlay.kind,
             "frame": overlay.frame,
@@ -332,7 +334,7 @@ def _overlay_payload(overlay: Overlay) -> dict[str, Any]:
                 for point in overlay.points
             ],
         }
-    if isinstance(overlay, PolylineOverlay):
+    if overlay.kind == "polyline":
         return {
             "kind": overlay.kind,
             "frame": overlay.frame,
@@ -341,7 +343,7 @@ def _overlay_payload(overlay: Overlay) -> dict[str, Any]:
             "closed": overlay.closed,
             "points": _points(overlay.points),
         }
-    if isinstance(overlay, RayOverlay):
+    if overlay.kind == "ray":
         return {
             "kind": overlay.kind,
             "frame": overlay.frame,
@@ -351,7 +353,7 @@ def _overlay_payload(overlay: Overlay) -> dict[str, Any]:
             "angle_rad": _coord(overlay.angle_rad),
             "range_m": _coord(overlay.range_m),
         }
-    if isinstance(overlay, SectorOverlay):
+    if overlay.kind == "sector":
         return {
             "kind": overlay.kind,
             "frame": overlay.frame,

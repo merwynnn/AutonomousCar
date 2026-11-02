@@ -59,7 +59,9 @@
     overlays;
   - the dashboard selects controllers from `algorithms/registry.py`;
   - gap-follow exposes raw/smoothed/clearance/score curves and scored candidates;
-  - debug panels and 3D overlays are controller-neutral.
+  - debug panels and 3D overlays are controller-neutral;
+  - **Reload algo** re-imports controller modules and rebuilds controller
+    instances without resetting the simulation.
 - Dashboard at `dashboard/`:
   - live track scene with lidar returns, trail and odometry;
   - **Car studio** showing only the car, with body parts, wheels and sensor
