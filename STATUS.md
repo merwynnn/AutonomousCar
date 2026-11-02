@@ -34,6 +34,7 @@
 - **Hardware-ready serial path**:
   - calibrated steering/speed targets and sequence numbers in the packet;
   - `MockBoard` exercises `SensorRobot` + serial drivers without hardware;
+  - `onboard.tools.selftest` checks sensors and steering sign on mock or serial;
   - protocol/motor telemetry round-trip tests.
 - **Shared configuration layout**:
   - `configs/vehicle*.yaml`, `configs/sensors*.yaml` and

@@ -8,6 +8,7 @@ PyYAML and dataclasses; it does not import pydantic or any simulator code.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,6 +76,8 @@ class OnboardConfig:
     wheel_radius_m: float
     track_width_m: float
     wheelbase_m: float
+    max_steering_rad: float
+    max_steering_rate_rad_s: float
     ticks_per_rev: int
     encoder_rate_hz: float
     tuning: EstimatorTuning
@@ -132,6 +135,7 @@ def load_onboard_config(
     )
     vehicle = load_yaml_mapping(vehicle_source)
     sensors = load_yaml_mapping(sensors_source)
+    steering = _require_mapping(vehicle, "steering", vehicle_source)
     encoders = _require_mapping(sensors, "encoders", sensors_source)
     ticks = encoders.get("ticks_per_rev")
     if not isinstance(ticks, int) or ticks <= 0:
@@ -146,6 +150,12 @@ def load_onboard_config(
         wheel_radius_m=_require_number(vehicle, "wheel_radius_m", vehicle_source),
         track_width_m=_require_number(vehicle, "track_width_m", vehicle_source),
         wheelbase_m=_require_number(vehicle, "wheelbase_m", vehicle_source),
+        max_steering_rad=math.radians(
+            _require_number(steering, "max_angle_deg", vehicle_source)
+        ),
+        max_steering_rate_rad_s=math.radians(
+            _require_number(steering, "rate_deg_s", vehicle_source)
+        ),
         ticks_per_rev=ticks,
         encoder_rate_hz=float(encoders.get("rate_hz", 50.0)),
         tuning=load_estimator_tuning(estimator_path),

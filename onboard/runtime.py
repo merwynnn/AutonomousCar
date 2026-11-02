@@ -72,6 +72,10 @@ class SensorRobot:
         self._now = 0.0
         self._observation: Observation | None = None
 
+    @property
+    def observation(self) -> Observation | None:
+        return self._observation
+
     def reset(self) -> Observation:
         self._now = self.clock() if self.clock is not None else 0.0
         self.estimator.reset(self.initial_pose)

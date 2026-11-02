@@ -13,6 +13,7 @@
   calibrated steering/speed targets and motor telemetry.
 - Added `MockBoard` for hardware-free end-to-end tests of `SensorRobot` and the
   serial drivers.
+- Added `awake-selftest` and an optional `hardware` extra for pyserial.
 
 ## 2026-11-02 — MuJoCo-only core
 

@@ -26,10 +26,14 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
 ]
+hardware = [
+    "pyserial>=3.5",
+]
 
 [project.scripts]
 awake-sim-core = "simulator.cli:main"
 awake-dashboard = "dashboard.server:main"
+awake-selftest = "onboard.tools.selftest:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["simulator", "algorithms", "onboard", "dashboard", "examples"]

@@ -71,6 +71,15 @@ backlash and latency plus the VESC command mode, speed/current limits and
 watchdog. `onboard.drivers.mock_board.MockBoard` speaks the same serial protocol
 so the complete loop can be tested before the car is available.
 
+```bash
+# on the host, no hardware
+uv run python -m onboard.tools.selftest --profile mock
+
+# on the Pi, with the board connected
+uv sync --extra hardware
+awake-selftest --profile serial --port /dev/ttyACM0
+```
+
 The low-level board should timestamp the sample and keep a short ring buffer so
 the Pi can compensate for transport latency. Do not timestamp on arrival.
 

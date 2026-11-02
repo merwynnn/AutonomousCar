@@ -98,6 +98,9 @@ tests/
 ```bash
 uv sync --extra dev
 
+# optional: real serial transport
+uv sync --extra hardware
+
 # backend (terminal 1)
 uv run python -m dashboard.server
 
@@ -114,6 +117,12 @@ Open the Vite URL (usually `http://localhost:5173`). The API runs on
 `http://localhost:8000`. A production build is served by the backend after
 `npm run build`. The dashboard defaults to the reference car in
 `configs/sim/awake_2027.yaml` and the MuJoCo physics world.
+
+Hardware-free self-test of the portable robot path:
+
+```bash
+uv run python -m onboard.tools.selftest --profile mock
+```
 
 Headless simulator:
 

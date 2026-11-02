@@ -9,6 +9,7 @@ from onboard.drivers.mock_board import MockBoard
 from onboard.drivers.serial_link import SerialActuatorSink, SerialSensorSource
 from onboard.estimator import WheelImuEstimator
 from onboard.runtime import ControllerRuntime, SensorRobot
+from onboard.tools.selftest import main as selftest_main
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -73,3 +74,7 @@ def test_controller_runtime_runs_against_mock_board() -> None:
         assert observation.motor is not None
     finally:
         runtime.close()
+
+
+def test_selftest_passes_against_mock_board() -> None:
+    assert selftest_main(["--profile", "mock"]) == 0
