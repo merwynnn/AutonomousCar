@@ -34,6 +34,10 @@ memorisation is acceptable; privileged training information is not required.
    already on disk. Validate the winner at the reference start before export.
 6. Use `cma` as an optional `train` dependency; it is not required to run the
    simulator, dashboard or car.
+7. Support domain-randomised training on procedural tracks with random shape,
+   lane width, object density and object size. Keep the reference track in a
+   fraction of generations and always re-validate before export, so a lucky
+   random circuit cannot silently replace the reference lap.
 
 ## Consequences
 
@@ -46,8 +50,10 @@ memorisation is acceptable; privileged training information is not required.
 - CMA-ES is sample-hungry. Six workers is the measured throughput knee on the
   development machine; the runner reports ETA and writes machine-readable
   status files so long runs are observable.
-- No ground truth, future scan or perfect odometry enters the policy or the
-  fitness function.
+- The policy receives only `Observation`. Training fitness uses true progress,
+  lap time and physics contacts for supervision/evaluation; none of these are
+  fed into the policy. The estimator starts at the known start pose, then runs
+  on wheel/IMU data like the real car.
 
 ## Alternatives considered
 

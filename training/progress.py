@@ -161,6 +161,7 @@ class RunReporter:
         sigma: float,
         track_length_m: float,
         generation_seconds: float,
+        track_note: str = "",
     ) -> None:
         self.phase = "running"
         self.history.append(generation_seconds)
@@ -187,6 +188,7 @@ class RunReporter:
             f"(gen {best_generation}, {best_contacts} contacts) "
             f"| current {lap_text} | sigma {sigma:.4f} "
             f"| progress {result.progress_m:.2f}/{track_length_m:.2f} m"
+            + (f" | track {track_note}" if track_note else "")
         )
         print(text, flush=True)
         self._write(
@@ -216,6 +218,7 @@ class RunReporter:
                 "workers": self.workers,
                 "subrays": self.subrays,
                 "seed": self.seed,
+                "track": track_note,
                 "out": str(self.out),
                 "budget_seconds": self.budget_seconds or None,
                 "updated_at": time.time(),

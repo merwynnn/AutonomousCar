@@ -19,7 +19,29 @@ from algorithms.learned_gap import (
     StructuredGapPolicy,
     b2_layout,
 )
+from simulator.random_track import build_random_track
 from simulator.simulation import Simulation
+from simulator.track import TrackGeometry
+
+
+@dataclass(frozen=True)
+class TrackSpec:
+    """Deterministic description of one random training track."""
+
+    seed: int
+    width_m: float = 0.9
+    object_density: float = 0.25
+    object_scale: float = 1.25
+    object_scale_jitter: float = 0.30
+
+    def build(self) -> TrackGeometry:
+        return build_random_track(
+            seed=self.seed,
+            width_m=self.width_m,
+            object_density=self.object_density,
+            object_scale=self.object_scale,
+            object_scale_jitter=self.object_scale_jitter,
+        )
 
 
 @dataclass(frozen=True)
@@ -145,14 +167,17 @@ def run_vector(
     vector: np.ndarray,
     config: RolloutConfig,
     start_s: float | None = None,
+    track_spec: TrackSpec | None = None,
 ) -> RolloutResult:
     """Run one candidate in a fresh simulation (used by tests and single runs)."""
 
     monitor = ContactMonitor()
+    track = track_spec.build() if track_spec is not None else None
     sim = Simulation(
         "configs/sim/awake_2027.yaml",
         lidar_subrays=config.subrays,
         seed=config.seed,
+        track=track,
         physics_step_hook=lambda world: monitor.update(world, sim.sim_time),
     )
     sim.scenario.race.laps = 1
@@ -272,6 +297,7 @@ __all__ = [
     "ContactMonitor",
     "RolloutConfig",
     "RolloutResult",
+    "TrackSpec",
     "b2_scalar_slice",
     "evaluate_with_simulation",
     "run_vector",

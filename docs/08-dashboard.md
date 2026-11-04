@@ -72,7 +72,10 @@ It supports `Ctrl+Z`/`Ctrl+Y` undo/redo, live apply and save-to-YAML. The steeri
 quick-tune strip exposes `rate_deg_s`, latency, max angle and deadband.
 
 The **Test track** details panel generates random smooth tracks with seed, lane
-width and object density. **Default** restores the reference test track.
+width, object density and object size. Object size scales the nominal
+crate/pole footprint; per-object jitter mixes small and larger obstacles while
+keeping each footprint inside the lane. **Default** restores the reference test
+track.
 
 ![Random track generator](assets/dashboard-random-track.png)
 

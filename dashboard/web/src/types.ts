@@ -232,6 +232,8 @@ export interface HelloMessage {
     seed: number;
     object_density: number;
     width_m: number;
+    object_scale: number;
+    object_scale_jitter: number;
   };
   race: { laps: number };
   warnings: string[];

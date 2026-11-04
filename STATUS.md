@@ -59,10 +59,13 @@
 - **CMA-ES-evolved gap controller** (`learned_gap`, dashboard label
   “Learned gap (CMA-ES)”):
   - B1 structured policy and B2 learned beam scorer, NumPy-only runtime;
-  - current shipped policy: **9.33 s, 0 contacts**, 1 lap, realistic sensors,
-    seed 42; verified at lidar sub-rays 1 (9.33 s) and 3 (9.35 s);
+  - current shipped policy: **9.10 s, 0 contacts**, 1 lap, realistic sensors,
+    seed 42; verified at lidar sub-rays 1 (9.10 s) and 3 (9.12 s), and on 3/6
+    held-out random tracks (old policy: 2/6);
   - training lives in the host-only `training/` package and writes
     `data/training/` status/checkpoints (git-ignored);
+  - random-track training with random object density, lane width and object
+    size, with reference-track validation before export;
   - preflight + live progress/ETA via `training.watch`;
   - weights in `algorithms/weights/policy.npz`, with the B1 warm-start source
     in `algorithms/weights/policy_b1.npz`.

@@ -156,7 +156,18 @@ uv run python -m training.cma_opt --stage b2a --preflight --workers 6 \
 uv run python -m training.cma_opt --stage b2a --generations 60 --popsize 16 \
   --sigma0 0.18 --workers 6 --init data/training/b2a_init.npz
 uv run python -m training.watch --stage b2a
+
+# randomised tracks, object density and object sizes
+uv run python -m training.cma_opt --stage b2a --generations 40 --popsize 12 \
+  --sigma0 0.08 --workers 6 --init algorithms/weights/policy.npz \
+  --random-track --reference-track-prob 0.25 \
+  --object-density-range 0.15 0.75 --object-scale-range 1.10 1.60 \
+  --track-width-range 0.85 1.00 --out data/training/policy_random.npz
 ```
+
+Every promoted candidate is still re-validated on the reference track before
+it can be exported, so random-track training cannot silently replace the
+reference lap with a lucky random circuit.
 
 Training is host-only. Logs, checkpoints and status files go to the
 git-ignored `data/training/`; only the chosen weights are committed. The

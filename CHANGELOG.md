@@ -16,9 +16,17 @@
   Pi runtime do not need it.
 - Added `Simulation.physics_step_hook` so training can count wall/obstacle
   contacts at physics resolution rather than control-tick resolution.
-- Reference result: **9.33 s, 0 contacts**, 1 lap, realistic sensors, seed 42
-  (baseline furthest-gap: 25.55 s). Verified at lidar sub-rays 1 and 3.
-- Added `tests/test_learned_gap.py`, ADR-004 and the experiment record
+- Reference result: **9.10 s, 0 contacts**, 1 lap, realistic sensors, seed 42
+  (baseline furthest-gap: 25.55 s). Verified at lidar sub-rays 1 and 3
+  (9.10 s / 9.12 s) and on 3/6 held-out random tracks.
+- Added random-track training with random object density, lane width and
+  object size. Every promoted candidate is re-validated on the reference
+  track before export.
+- Random tracks now vary crate/pole size (`object_scale`,
+  `object_scale_jitter`) and clamp each footprint inside the lane. The
+  dashboard track panel exposes an **Object size** slider.
+- Added `tests/test_learned_gap.py`, a pose-independence regression test,
+  random-track size tests, ADR-004 and the experiment record
   `docs/experiments/EXP-2026-11-04-cmaes-gap.md`.
 
 ## 2026-11-02 — Lidar motion compensation

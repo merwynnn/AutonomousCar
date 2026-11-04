@@ -549,7 +549,12 @@ function DetailsPanel({
   speed: number;
   onSpeed: (speed: number) => void;
   onOpenTune: () => void;
-  onGenerateTrack: (seed: number, density: number, width: number) => void;
+  onGenerateTrack: (
+    seed: number,
+    density: number,
+    width: number,
+    objectScale: number,
+  ) => void;
   onDefaultTrack: () => void;
   onCollapse: () => void;
 }) {
@@ -843,7 +848,12 @@ function TrackDetails({
   onDefaultTrack,
 }: {
   hello: HelloMessage;
-  onGenerateTrack: (seed: number, density: number, width: number) => void;
+  onGenerateTrack: (
+    seed: number,
+    density: number,
+    width: number,
+    objectScale: number,
+  ) => void;
   onDefaultTrack: () => void;
 }) {
   const track = hello.track;
@@ -851,12 +861,19 @@ function TrackDetails({
   const [seed, setSeed] = useState(meta.seed);
   const [density, setDensity] = useState(meta.object_density);
   const [width, setWidth] = useState(meta.width_m);
+  const [objectScale, setObjectScale] = useState(meta.object_scale);
 
   useEffect(() => {
     setSeed(meta.seed);
     setDensity(meta.object_density);
     setWidth(meta.width_m);
-  }, [meta.seed, meta.object_density, meta.width_m]);
+    setObjectScale(meta.object_scale);
+  }, [
+    meta.seed,
+    meta.object_density,
+    meta.width_m,
+    meta.object_scale,
+  ]);
 
   return (
     <>
@@ -906,11 +923,25 @@ function TrackDetails({
             <strong>{width.toFixed(2)} m</strong>
           </div>
         </label>
+        <label className="details-field">
+          <span>Object size</span>
+          <div className="details-slider">
+            <input
+              type="range"
+              min="1.0"
+              max="1.8"
+              step="0.05"
+              value={objectScale}
+              onChange={(event) => setObjectScale(Number(event.target.value))}
+            />
+            <strong>{objectScale.toFixed(2)}×</strong>
+          </div>
+        </label>
         <div className="button-row details-actions">
           <button
             type="button"
             className="primary"
-            onClick={() => onGenerateTrack(seed, density, width)}
+            onClick={() => onGenerateTrack(seed, density, width, objectScale)}
             title="Generate a random closed track with collidable obstacles"
           >
             Generate
@@ -925,9 +956,10 @@ function TrackDetails({
           </button>
         </div>
         <p className="small-note">
-          Object density 0 = empty circuit, 1 = maximum crates/poles. Generated
-          tracks stay inside the 15 × 8 m arena. <strong>Default</strong> restores
-          the reference test track.
+          Object density 0 = empty circuit, 1 = maximum crates/poles. Object
+          size scales the nominal crate/pole footprint and keeps it inside the
+          lane. Generated tracks stay inside the 15 × 8 m arena.{' '}
+          <strong>Default</strong> restores the reference test track.
         </p>
       </PropertyGroup>
       <PropertyGroup title="Geometry">
@@ -1296,12 +1328,18 @@ export default function App() {
     setSpeed(value);
     send({ type: 'run.set_speed', speed: value });
   };
-  const onGenerateTrack = (seed: number, density: number, width: number) => {
+  const onGenerateTrack = (
+    seed: number,
+    density: number,
+    width: number,
+    objectScale: number,
+  ) => {
     send({
       type: 'track.generate',
       seed: Math.round(seed),
       object_density: density,
       width_m: width,
+      object_scale: objectScale,
     });
   };
   const onDefaultTrack = () => send({ type: 'track.default' });

@@ -23,6 +23,13 @@ wall/obstacle contact and a reproducible one-lap time?
 Training is in `training/`; the runtime policy is
 `algorithms/learned_gap.py` with weights in `algorithms/weights/policy.npz`.
 
+The policy input is exactly `Observation`: lidar (raw or estimated-odometry
+compensated), the wheel+IMU `StateEstimate`, actuator limits and `dt`. Training
+fitness uses simulator progress, lap time and physics contacts, but those values
+are never passed to the controller. `tests/test_learned_gap.py` includes a
+regression test that falsifies the estimated pose and asserts the actuation is
+unchanged.
+
 ## Baselines
 
 | Controller | Lap | Contacts | Notes |
@@ -73,7 +80,8 @@ uv run python -m training.cma_opt --stage b2a --generations 60 --popsize 16 \
 ```
 
 The run also found a 9.32 s candidate at generation 59 that was not persisted
-by the host filesystem; the exported 9.33 s policy is the verified record.
+by the host filesystem; the exported 9.33 s policy is the verified record. A
+later random-track refinement improved it to **9.10 s** (see below).
 
 ## B2b — residual hidden layer
 
@@ -90,6 +98,55 @@ B2a remains the shipped policy.
 
 The runner now performs that reference-start validation on every promoted
 candidate, so a future B2b run can only export a clean reference lap.
+
+## Random-track generalisation
+
+The reference-trained B2a policy was evaluated on six held-out random tracks
+before any random-track training. All runs used the same policy, seed and
+sensor model; only the track changed.
+
+| Track seed | Object density | Object size | Width | Result | Contacts |
+| ---: | ---: | ---: | ---: | --- | ---: |
+| 1 | 0.0 | 1.4 | 0.90 m | DNF at 14.5/24.7 m | 1 |
+| 2 | 0.3 | 1.4 | 0.90 m | DNF at 7.9/22.1 m | 1 |
+| 3 | 0.6 | 1.4 | 0.90 m | **7.93 s** | 0 |
+| 4 | 0.9 | 1.5 | 0.90 m | DNF at 6.1/24.3 m | 1 |
+| 5 | 0.5 | 1.6 | 0.88 m | **8.97 s** | 0 |
+| 6 | 0.5 | 1.2 | 1.00 m | DNF at 10.7/24.2 m | 1 |
+
+Only 2/6 clean: the reference policy is a strong but track-specific reactive
+controller. This is the motivation for randomised-track training. A candidate
+is still exported only after it validates on the reference track.
+
+Random-track training command:
+
+```bash
+uv run python -m training.cma_opt --stage b2a --generations 40 --popsize 12 \
+  --sigma0 0.08 --workers 6 --init algorithms/weights/policy.npz \
+  --random-track --reference-track-prob 0.25 \
+  --object-density-range 0.15 0.75 --object-scale-range 1.10 1.60 \
+  --track-width-range 0.85 1.00 --out data/training/policy_random.npz
+```
+
+The generator scales crate/pole footprints and clamps each object so its
+footprint stays inside the lane. Per-object jitter mixes small and larger
+obstacles.
+
+The random-track run improved the reference-best clean lap to **9.10 s**
+(generation 0, 0 contacts), while evaluating every generation on a different
+track. The best random-track policy was saved separately and both were
+evaluated on the held-out set above.
+
+| Policy | Reference sub-rays 1 | Reference sub-rays 3 | Held-out random clean |
+| --- | ---: | ---: | ---: |
+| Old reference-only B2a | 9.33 s | 9.35 s | 2/6 |
+| **Random-trained reference best (shipped)** | **9.10 s** | **9.12 s** | **3/6** |
+| Random-track best (not shipped) | 9.23 s | 9.25 s | 2/6 |
+
+The shipped policy is the random-trained reference best. It is faster on the
+reference and cleaner on the held-out set; the “random-track best” overfits one
+fast random circuit. This is why the runner keeps the two bests separate and
+only ships the one that also validates on the reference.
 
 ## Reproduction and monitoring
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 from algorithms.learned_gap import (
     N_BEAM_FEATURES,
@@ -15,7 +17,7 @@ from algorithms.learned_gap import (
     beam_features,
 )
 from algorithms.registry import CONTROLLERS
-from onboard.api import Actuation
+from onboard.api import Actuation, Pose2
 from simulator.simulation import Simulation
 
 
@@ -85,6 +87,33 @@ def test_shipped_weights_load_and_produce_bounded_actuation() -> None:
             assert 0.0 <= command.throttle <= 1.0
             assert abs(command.steering) <= observation.limits.max_steering_rad + 1e-9
             observation = simulation.step(command)
+
+
+def test_learned_policy_does_not_read_pose_or_true_state() -> None:
+    """The controller must depend on sensors, not on pose/ground truth."""
+
+    with Simulation(
+        "configs/sim/awake_2027.yaml",
+        realism="ideal",
+        lidar_subrays=1,
+        seed=42,
+    ) as simulation:
+        observation = simulation.reset()
+        for _ in range(3):
+            observation = simulation.step(Actuation())
+        falsified = replace(
+            observation,
+            state=replace(
+                observation.state,
+                pose=Pose2(999.0, -999.0, 2.5),
+            ),
+        )
+
+        first = LearnedGapController()
+        second = LearnedGapController()
+        first.reset()
+        second.reset()
+        assert first.update(observation) == second.update(falsified)
 
 
 def test_corrupt_weights_fall_back_to_the_default_policy(tmp_path) -> None:

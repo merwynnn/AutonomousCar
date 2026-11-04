@@ -440,12 +440,11 @@ def _resample_front(
     centers = 0.5 * (edges[:-1] + edges[1:])
     out_ranges = np.full(n_beams, max_range, dtype=float)
     out_valid = np.zeros(n_beams, dtype=bool)
-    for i in range(n_beams):
-        mask = valid & (angles >= edges[i]) & (angles < edges[i + 1])
-        if np.any(mask):
-            value = float(np.min(ranges[mask]))
-            out_ranges[i] = min(value, max_range)
-            out_valid[i] = True
+    mask = valid & (angles >= edges[0]) & (angles <= edges[-1])
+    if np.any(mask):
+        bins = np.clip(np.digitize(angles[mask], edges) - 1, 0, n_beams - 1)
+        np.minimum.at(out_ranges, bins, np.minimum(ranges[mask], max_range))
+        out_valid = np.bincount(bins, minlength=n_beams) > 0
     return centers, out_ranges, out_valid
 
 
@@ -466,18 +465,16 @@ def _window_stats(
     free = windows >= threshold
     free_fraction = np.where(windows_valid, free, False).mean(axis=1)
     # Distance to the nearest blocked bin on each side, normalised by n.
-    left_free = np.zeros(n, dtype=float)
-    right_free = np.zeros(n, dtype=float)
     blocked = (~valid) | (values < threshold)
-    for i in range(n):
-        j = i
-        while j >= 0 and not blocked[j]:
-            j -= 1
-        left_free[i] = min(n, i - j) / n
-        j = i
-        while j < n and not blocked[j]:
-            j += 1
-        right_free[i] = min(n, j - i) / n
+    indices = np.arange(n)
+    # The original scan-edge semantics: with no blocked bin, the distance is
+    # measured to the array edge (1/n or (n-i)/n), not to a large sentinel.
+    left_blocked = np.maximum.accumulate(np.where(blocked, indices, -1))
+    left_free = (indices - left_blocked) / n
+    right_blocked = np.minimum.accumulate(
+        np.where(blocked, indices, n)[::-1]
+    )[::-1]
+    right_free = (right_blocked - indices) / n
     return clearance, free_fraction, left_free, right_free
 
 
@@ -682,6 +679,17 @@ class BeamScorerPolicy:
         self.params = B2Params.from_vector(vector, hidden)
         self.hidden = hidden
         self.n_beams = n_beams
+        # The scalar layout and the scan window are fixed for a loaded policy.
+        # Precompute them once: this is the hot path on a small onboard CPU.
+        self.scalars = _unit_to_params(self.params.scalars, B2_SCALARS)
+        self.front_sector = float(np.radians(self.scalars[0]))
+        self.gap_threshold = float(self.scalars[1])
+        self.max_range = float(self.scalars[2])
+        beam_step = 2.0 * self.front_sector / max(self.n_beams, 1)
+        self.window = _coerce_odd(
+            np.radians(float(self.scalars[9])) / max(beam_step, 1e-6),
+            self.n_beams,
+        )
         self.reset()
 
     def reset(self) -> None:
@@ -692,31 +700,27 @@ class BeamScorerPolicy:
         self.last_debug: dict[str, object] = {}
 
     def _features(self, observation: Observation) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-        scalars = _unit_to_params(self.params.scalars, B2_SCALARS)
-        front_sector = np.radians(float(scalars[0]))
-        gap_threshold = float(scalars[1])
-        max_range = float(scalars[2])
-        scan = _front_scan(observation, front_sector)
+        scan = _front_scan(observation, self.front_sector)
         if scan is None:
             return None
         angles, ranges, valid = scan
         centers, resampled, resampled_valid = _resample_front(
-            angles, ranges, valid, front_sector, self.n_beams, max_range
-        )
-        beam_step = 2.0 * front_sector / max(self.n_beams, 1)
-        window = _coerce_odd(
-            np.radians(float(scalars[9])) / max(beam_step, 1e-6),
+            angles,
+            ranges,
+            valid,
+            self.front_sector,
             self.n_beams,
+            self.max_range,
         )
         features = beam_features(
             centers,
             resampled,
             resampled_valid,
-            max_range,
-            gap_threshold,
-            window=window,
+            self.max_range,
+            self.gap_threshold,
+            window=self.window,
             previous_bearing=self.last_selected_bearing,
-            front_sector=front_sector,
+            front_sector=self.front_sector,
         )
         state = observation.state
         max_steer = max(float(observation.limits.max_steering_rad), 1e-6)
@@ -740,9 +744,9 @@ class BeamScorerPolicy:
             self.last_debug = {"valid": 0.0}
             return Actuation(throttle=0.0, steering=self.steering)
         centers, features, global_features = data
-        scalars = _unit_to_params(self.params.scalars, B2_SCALARS)
-        front_sector = np.radians(float(scalars[0]))
-        max_range = float(scalars[2])
+        scalars = self.scalars
+        front_sector = self.front_sector
+        max_range = self.max_range
         steer_gain = float(scalars[3])
         steer_bias = float(scalars[4])
         steer_smoothing = float(scalars[5])

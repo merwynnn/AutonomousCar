@@ -64,6 +64,8 @@ class DashboardSimulation:
         self.track_seed = 2027
         self.track_density = 0.25
         self.track_width_m = 0.9
+        self.track_object_scale = 1.25
+        self.track_object_scale_jitter = 0.30
         self.sim = self._build_sim()
         self.paused = True
         self.finished = False
@@ -384,6 +386,8 @@ class DashboardSimulation:
                 "seed": self.track_seed,
                 "object_density": round(self.track_density, 3),
                 "width_m": round(self.track_width_m, 3),
+                "object_scale": round(self.track_object_scale, 3),
+                "object_scale_jitter": round(self.track_object_scale_jitter, 3),
             },
             "race": {"laps": self.scenario.race.laps},
             "warnings": warnings,
@@ -575,14 +579,20 @@ class DashboardSimulation:
         seed = int(message.get("seed", 2027))
         density = float(message.get("object_density", 0.25))
         width = float(message.get("width_m", 0.9))
+        object_scale = float(message.get("object_scale", 1.25))
+        object_scale_jitter = float(message.get("object_scale_jitter", 0.30))
         track = build_random_track(
             seed=seed,
             width_m=width,
             object_density=density,
+            object_scale=object_scale,
+            object_scale_jitter=object_scale_jitter,
         )
         self.track_seed = seed
         self.track_density = max(0.0, min(1.0, density))
         self.track_width_m = max(0.8, min(1.0, width))
+        self.track_object_scale = max(0.5, min(2.0, object_scale))
+        self.track_object_scale_jitter = max(0.0, min(1.0, object_scale_jitter))
         self._swap_track(track, "random", f"Random track generated (seed {seed}).")
 
     def _default_track(self) -> None:
@@ -590,6 +600,8 @@ class DashboardSimulation:
         self.track_seed = 2027
         self.track_density = 0.25
         self.track_width_m = 0.9
+        self.track_object_scale = 1.0
+        self.track_object_scale_jitter = 0.0
         self._swap_track(track, "default", "Default test track restored.")
 
     # ---------------------------------------------------------------- control

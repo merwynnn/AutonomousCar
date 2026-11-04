@@ -33,7 +33,7 @@ from algorithms.learned_gap import (
 )
 from simulator.track import build_test_track
 
-from training.env import RolloutConfig
+from training.env import RolloutConfig, TrackSpec
 from training.export import load_policy, save_policy
 from training.progress import RunReporter
 from training.vec import RolloutPool
@@ -62,6 +62,35 @@ def _default_vector(stage: str, hidden: int) -> np.ndarray:
 
 def _policy_type(stage: str) -> str:
     return "b1" if stage == "b1" else "b2"
+
+
+def _sample_track(
+    args: argparse.Namespace,
+    rng: np.random.Generator,
+) -> TrackSpec | None:
+    """Sample one generation track; ``None`` means the reference track."""
+
+    if not args.random_track:
+        return None
+    if args.reference_track_prob > 0.0 and rng.random() < args.reference_track_prob:
+        return None
+    return TrackSpec(
+        seed=int(rng.integers(0, 2**31 - 1)),
+        width_m=float(rng.uniform(*args.track_width_range)),
+        object_density=float(rng.uniform(*args.object_density_range)),
+        object_scale=float(rng.uniform(*args.object_scale_range)),
+        object_scale_jitter=args.object_scale_jitter,
+    )
+
+
+def _track_note(track_spec: TrackSpec | None) -> str:
+    if track_spec is None:
+        return "reference"
+    return (
+        f"seed {track_spec.seed} | density {track_spec.object_density:.2f} | "
+        f"size {track_spec.object_scale:.2f}±{track_spec.object_scale_jitter:.2f} | "
+        f"width {track_spec.width_m:.2f} m"
+    )
 
 
 def _load_init(path: Path | None, stage: str, hidden: int) -> np.ndarray:
@@ -157,9 +186,13 @@ def run(args: argparse.Namespace) -> int:
         raise SystemExit(f"init vector has {x0.size} elements, expected {low.size}")
     x0 = np.clip(x0, low + 1e-9, high - 1e-9)
 
-    default_start = float(build_test_track(width_m=0.9).start_s)
-    track_length = float(build_test_track(width_m=0.9).length)
+    reference_track = build_test_track(width_m=0.9)
+    default_start = float(reference_track.start_s)
+    track_length = float(reference_track.length)
     rng = np.random.default_rng(args.seed)
+    track_rng = np.random.default_rng(
+        args.track_seed if args.track_seed is not None else args.seed
+    )
 
     options = {
         "popsize": args.popsize,
@@ -184,6 +217,9 @@ def run(args: argparse.Namespace) -> int:
     best_vector = x0.copy()
     best_fitness = float("inf")
     best_meta: dict[str, Any] = {}
+    best_random_vector = x0.copy()
+    best_random_fitness = float("inf")
+    best_random_meta: dict[str, Any] | None = None
     started = time.perf_counter()
     reason = "max generations"
     reporter = RunReporter(
@@ -227,28 +263,53 @@ def run(args: argparse.Namespace) -> int:
         for generation in range(args.generations):
             generation_started = time.perf_counter()
             solutions = [np.asarray(s, dtype=float) for s in es.ask()]
-            use_random_start = (
-                generation < args.random_start_generations
-                and rng.random() < args.random_start_prob
+            track_spec = _sample_track(args, track_rng)
+            if track_spec is None:
+                use_random_start = (
+                    generation < args.random_start_generations
+                    and rng.random() < args.random_start_prob
+                )
+                start_s = (
+                    (default_start + float(rng.uniform(0.0, track_length)))
+                    % track_length
+                    if use_random_start
+                    else default_start
+                )
+                generation_track_length = track_length
+            else:
+                generated = track_spec.build()
+                start_s = float(generated.start_s)
+                generation_track_length = float(generated.length)
+            results = pool.evaluate(
+                solutions, start_s=start_s, track_spec=track_spec
             )
-            start_s = (
-                (default_start + float(rng.uniform(0.0, track_length))) % track_length
-                if use_random_start
-                else default_start
-            )
-            results = pool.evaluate(solutions, start_s=start_s)
             generation_seconds = time.perf_counter() - generation_started
             fitnesses = [result.fitness for result in results]
             es.tell(solutions, fitnesses)
 
             best_index = int(np.argmin(fitnesses))
             generation_best = results[best_index]
+            if track_spec is not None and fitnesses[best_index] < best_random_fitness:
+                best_random_fitness = float(fitnesses[best_index])
+                best_random_vector = solutions[best_index].copy()
+                best_random_meta = {
+                    **_meta_from_result(
+                        args.stage, generation, generation_best, start_s, args
+                    ),
+                    "track": _track_note(track_spec),
+                    "track_seed": track_spec.seed,
+                    "object_density": track_spec.object_density,
+                    "object_scale": track_spec.object_scale,
+                    "track_width_m": track_spec.width_m,
+                }
             if fitnesses[best_index] < best_fitness:
                 # A candidate that is fast from a random start offset may be
                 # dirty at the reference pose.  Only promote/export a vector
                 # that also validates cleanly at the reference start.
                 validated = pool.evaluate(
-                    [solutions[best_index]], start_s=default_start
+                    [solutions[best_index]],
+                    start_s=default_start,
+                    track_spec=None,
                 )[0]
                 if (
                     validated.contacts == 0
@@ -273,8 +334,9 @@ def run(args: argparse.Namespace) -> int:
                 best_progress=best_meta.get("progress_m", 0.0),
                 best_score=best_meta.get("score"),
                 sigma=float(es.sigma),
-                track_length_m=track_length,
+                track_length_m=generation_track_length,
                 generation_seconds=generation_seconds,
+                track_note=_track_note(track_spec),
             )
 
             if generation % args.log_every == 0 or generation == args.generations - 1:
@@ -293,6 +355,20 @@ def run(args: argparse.Namespace) -> int:
                                 "generation_score": generation_best.score,
                                 "sigma": float(es.sigma),
                                 "start_s": start_s,
+                                "track": _track_note(track_spec),
+                                "track_seed": (
+                                    track_spec.seed if track_spec is not None else None
+                                ),
+                                "object_density": (
+                                    track_spec.object_density
+                                    if track_spec is not None
+                                    else None
+                                ),
+                                "object_scale": (
+                                    track_spec.object_scale
+                                    if track_spec is not None
+                                    else None
+                                ),
                                 "generation_seconds": generation_seconds,
                                 "elapsed_s": time.perf_counter() - started,
                             }
@@ -322,7 +398,9 @@ def run(args: argparse.Namespace) -> int:
         # Candidate ranking uses occasional random start offsets to avoid
         # overfitting the launch pose.  Validate the winner on the reference
         # start before exporting, so the recorded lap is reproducible.
-        final_result = pool.evaluate([best_vector], start_s=default_start)[0]
+        final_result = pool.evaluate(
+            [best_vector], start_s=default_start, track_spec=None
+        )[0]
         best_meta = _meta_from_result(
             args.stage,
             int(best_meta.get("generation", -1)),
@@ -341,6 +419,20 @@ def run(args: argparse.Namespace) -> int:
     }
     (DATA_DIR / f"{args.stage}_best.npz").parent.mkdir(parents=True, exist_ok=True)
     save_policy(DATA_DIR / f"{args.stage}_best.npz", policy_type, best_vector, hidden, meta)
+    if best_random_meta is not None:
+        random_out = (
+            Path(args.random_best_out)
+            if args.random_best_out is not None
+            else DATA_DIR / f"{args.stage}_random_best.npz"
+        )
+        save_policy(
+            random_out, policy_type, best_random_vector, hidden, best_random_meta
+        )
+        print(
+            f"random-track best: lap={best_random_meta.get('clean_lap_time_s')} "
+            f"contacts={best_random_meta.get('contacts')} -> {random_out}",
+            flush=True,
+        )
     exported = _maybe_export(Path(args.out), policy_type, best_vector, hidden, meta)
     reporter.finish(
         reason=reason,
@@ -370,9 +462,62 @@ def main() -> None:
     parser.add_argument("--hidden", type=int, default=16)
     parser.add_argument("--init", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=WEIGHTS_PATH)
+    parser.add_argument(
+        "--random-best-out",
+        type=Path,
+        default=None,
+        help=(
+            "where to save the best random-track policy "
+            "(default: data/training/<stage>_random_best.npz)"
+        ),
+    )
     parser.add_argument("--log-every", type=int, default=1)
     parser.add_argument("--random-start-generations", type=int, default=25)
     parser.add_argument("--random-start-prob", type=float, default=0.20)
+    parser.add_argument(
+        "--random-track",
+        action="store_true",
+        help="train on procedurally generated tracks with random object density",
+    )
+    parser.add_argument(
+        "--track-seed",
+        type=int,
+        default=None,
+        help="seed for track sampling (default: --seed)",
+    )
+    parser.add_argument(
+        "--reference-track-prob",
+        type=float,
+        default=0.20,
+        help="probability of using the reference track in a random-track run",
+    )
+    parser.add_argument(
+        "--object-density-range",
+        type=float,
+        nargs=2,
+        default=[0.15, 0.65],
+        metavar=("MIN", "MAX"),
+    )
+    parser.add_argument(
+        "--object-scale-range",
+        type=float,
+        nargs=2,
+        default=[1.10, 1.70],
+        metavar=("MIN", "MAX"),
+    )
+    parser.add_argument(
+        "--track-width-range",
+        type=float,
+        nargs=2,
+        default=[0.85, 1.00],
+        metavar=("MIN", "MAX"),
+    )
+    parser.add_argument(
+        "--object-scale-jitter",
+        type=float,
+        default=0.30,
+        help="per-object size variation around the sampled scale",
+    )
     parser.add_argument("--budget-seconds", type=float, default=0.0)
     parser.add_argument(
         "--preflight",
@@ -380,6 +525,10 @@ def main() -> None:
         help="evaluate the initial policy and print the estimated budget, then exit",
     )
     args = parser.parse_args()
+    args.reference_track_prob = max(0.0, min(1.0, args.reference_track_prob))
+    args.object_density_range = tuple(sorted(args.object_density_range))
+    args.object_scale_range = tuple(sorted(args.object_scale_range))
+    args.track_width_range = tuple(sorted(args.track_width_range))
     if args.sigma0 is None:
         args.sigma0 = 0.25 if args.stage == "b1" else 0.15
     raise SystemExit(run(args))
