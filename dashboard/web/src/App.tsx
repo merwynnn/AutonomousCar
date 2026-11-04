@@ -1241,17 +1241,7 @@ export default function App() {
     send({ type: 'control.mode', mode: controlMode });
   }, [controlMode, send]);
 
-  // Follow the authoritative backend mode (another tab or the server may
-  // have changed it). This also stops a stale manual key loop.
-  useEffect(() => {
-    const backendMode = state?.control_mode;
-    if (
-      (backendMode === 'auto' || backendMode === 'manual') &&
-      backendMode !== controlMode
-    ) {
-      setControlMode(backendMode);
-    }
-  }, [state?.control_mode, controlMode]);
+
 
   useEffect(() => {
     send({ type: 'control.controller', controller: autoController });
