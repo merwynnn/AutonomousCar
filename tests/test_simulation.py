@@ -74,6 +74,19 @@ def test_shared_estimator_is_deterministic_for_a_fixed_seed() -> None:
     assert first == second
 
 
+def test_physics_step_hook_runs_once_per_substep() -> None:
+    calls: list[int] = []
+    with Simulation(
+        GENERIC_SCENARIO,
+        realism="ideal",
+        lidar_subrays=1,
+        physics_step_hook=lambda _world: calls.append(1),
+    ) as simulation:
+        simulation.reset()
+        simulation.step(Actuation())
+        assert len(calls) == simulation.substeps
+
+
 def test_reset_restores_start_state() -> None:
     with Simulation(GENERIC_SCENARIO, realism="ideal", lidar_subrays=1) as simulation:
         first = simulation.reset()

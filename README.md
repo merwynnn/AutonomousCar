@@ -82,7 +82,10 @@ algorithms/
   registry.py               dashboard-selectable controllers
   gap_follow.py             lidar-only demo controller
   wall_follow.py            lidar-only demo controller
+  learned_gap.py            CMA-ES-evolved gap controller
+  weights/policy.npz        current best evolved policy
   template.py               safe stop placeholder
+training/                   host-only CMA-ES rollout search and reporting
 dashboard/
   server.py                 FastAPI REST + WebSocket adapter
   spec.py                   car, sensor and track JSON payloads
@@ -136,6 +139,29 @@ uv run python -m simulator.cli \
 ```
 
 Switch the scenario with `AWAKE_SCENARIO=/path/to/scenario.yaml`.
+
+The dashboard also lists **Learned gap (CMA-ES)**, which loads
+`algorithms/weights/policy.npz`. To reproduce or improve it:
+
+```bash
+uv sync --extra dev --extra train
+
+# warm-start B2 from the committed B1 policy
+uv run python -m training.warmstart --laps 8 --iterations 0 --speed-cap 2.7 \
+  --out data/training/b2a_init.npz
+
+# preflight (lap, contacts, rough ETA), then the monitored search
+uv run python -m training.cma_opt --stage b2a --preflight --workers 6 \
+  --popsize 16 --init data/training/b2a_init.npz
+uv run python -m training.cma_opt --stage b2a --generations 60 --popsize 16 \
+  --sigma0 0.18 --workers 6 --init data/training/b2a_init.npz
+uv run python -m training.watch --stage b2a
+```
+
+Training is host-only. Logs, checkpoints and status files go to the
+git-ignored `data/training/`; only the chosen weights are committed. The
+dashboard's **Reload algo** action picks up a newly exported `policy.npz`
+without restarting the server.
 
 ## 3. The car is data
 

@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-04 — CMA-ES-evolved gap controller
+
+- Added `algorithms/learned_gap.py`, a portable NumPy-only controller with a
+  structured gap policy (B1) and a learned per-beam scorer with a speed head
+  (B2). It loads `algorithms/weights/policy.npz` and falls back to safe
+  defaults if the file is missing or corrupt.
+- Added **Learned gap (CMA-ES)** to `algorithms/registry.py`, selectable in the
+  dashboard; **Reload algo** picks up newly exported weights.
+- Added the host-only `training/` package: one-lap rollout harness, per-physics
+  substep contact detection, multiprocessing pool, B1→B2 supervised warm start,
+  CMA-ES runner, atomic export, preflight and live progress/ETA reporting, and
+  `training.watch` for a live terminal view.
+- Added optional `train` dependency (`cma>=4.5`); the simulator, dashboard and
+  Pi runtime do not need it.
+- Added `Simulation.physics_step_hook` so training can count wall/obstacle
+  contacts at physics resolution rather than control-tick resolution.
+- Reference result: **9.33 s, 0 contacts**, 1 lap, realistic sensors, seed 42
+  (baseline furthest-gap: 25.55 s). Verified at lidar sub-rays 1 and 3.
+- Added `tests/test_learned_gap.py`, ADR-004 and the experiment record
+  `docs/experiments/EXP-2026-11-04-cmaes-gap.md`.
+
 ## 2026-11-02 — Lidar motion compensation
 
 - Added `onboard.scan_motion.ScanMotionCompensator`, a portable rigid 2D warp

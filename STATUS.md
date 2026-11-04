@@ -1,6 +1,6 @@
 # Project status
 
-> Last updated: 2026-11-02
+> Last updated: 2026-11-04
 > Branch: `sim-core` — MuJoCo-only simulator + portable onboard runtime
 
 ## What works
@@ -56,6 +56,16 @@
 - Runtime MJCF generation from `VehicleConfig`; MuJoCo loads the generated car.
 - Sensor-only algorithm boundary and two lidar-only demo controllers
   (furthest-gap and wall-follow).
+- **CMA-ES-evolved gap controller** (`learned_gap`, dashboard label
+  “Learned gap (CMA-ES)”):
+  - B1 structured policy and B2 learned beam scorer, NumPy-only runtime;
+  - current shipped policy: **9.33 s, 0 contacts**, 1 lap, realistic sensors,
+    seed 42; verified at lidar sub-rays 1 (9.33 s) and 3 (9.35 s);
+  - training lives in the host-only `training/` package and writes
+    `data/training/` status/checkpoints (git-ignored);
+  - preflight + live progress/ETA via `training.watch`;
+  - weights in `algorithms/weights/policy.npz`, with the B1 warm-start source
+    in `algorithms/weights/policy_b1.npz`.
 - Generic controller debug pipeline:
   - `algorithms/debug.py` defines optional readouts, plots, tables and spatial
     overlays;

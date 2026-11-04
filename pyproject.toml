@@ -29,6 +29,9 @@ dev = [
 hardware = [
     "pyserial>=3.5",
 ]
+train = [
+    "cma>=4.5",
+]
 
 [project.scripts]
 awake-sim-core = "simulator.cli:main"

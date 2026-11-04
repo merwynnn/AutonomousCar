@@ -40,7 +40,10 @@ Portable onboard runtime (onboard/, deployable to the Pi)
 Algorithms (algorithms/)
     ├── registry.py: dashboard-selectable controller list
     ├── debug.py: optional DebugFrame contract for custom debug views
+    ├── learned_gap.py: CMA-ES-evolved gap policy + weights loader
     └── Observation -> Actuation controllers (onboard.api + NumPy only)
+Training (training/, host only)
+    └── CMA-ES rollout search, warm start, export and progress reporting
 ```
 
 - The dashboard is a renderer and operator console. It never runs physics.
@@ -298,6 +301,9 @@ configs/            shared, portable configuration
   hardware.yaml     servo/VESC/board calibration shared with the Pi
   sim/              simulator-only scenarios
 algorithms/         portable controllers (onboard.api + NumPy only)
+  learned_gap.py    CMA-ES-evolved B1/B2 gap policy
+  weights/          committed evolved policy (.npz), explicit exception
+training/           host-only CMA-ES search, warm start, export, progress
 dashboard/          host-only FastAPI backend and React/Three.js car lab
   server.py         REST + WebSocket adapter
   spec.py           car/sensor/track JSON payloads
