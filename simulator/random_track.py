@@ -19,6 +19,20 @@ ARENA_CENTER = (ARENA_WIDTH_M / 2.0, ARENA_HEIGHT_M / 2.0)
 WALL_RADIUS_M = 0.08
 
 
+def _max_curvature(points: np.ndarray) -> float:
+    """Discrete maximum curvature of a closed polyline (1/m)."""
+
+    x = np.asarray(points[:, 0], dtype=float)
+    y = np.asarray(points[:, 1], dtype=float)
+    dx = np.gradient(x)
+    dy = np.gradient(y)
+    ddx = np.gradient(dx)
+    ddy = np.gradient(dy)
+    numerator = np.abs(dx * ddy - dy * ddx)
+    denominator = np.maximum((dx * dx + dy * dy) ** 1.5, 1e-9)
+    return float(np.max(numerator / denominator))
+
+
 def _start_distance(centerline: np.ndarray) -> float:
     """Start on the straightest section, away from sharp random corners."""
 
@@ -47,6 +61,7 @@ def build_random_track(
     samples: int = 280,
     object_scale: float = 1.25,
     object_scale_jitter: float = 0.30,
+    max_curvature_per_m: float = 1.60,
 ) -> TrackGeometry:
     """Generate a smooth closed-loop track inside the competition arena.
 
@@ -55,7 +70,8 @@ def build_random_track(
     size; ``object_scale_jitter`` (0..1) randomises each object by that
     fraction, so a track mixes small and noticeably larger obstacles. Objects
     sit just inside the wall and are clamped so their footprint stays on the
-    track.
+    track. ``max_curvature_per_m`` dampens the shape harmonics until every
+    corner is physically drivable, avoiding near-impossible hairpins.
     """
 
     width_m = max(0.8, min(1.0, float(width_m)))
@@ -74,12 +90,23 @@ def build_random_track(
         + amplitude[1] * np.sin(3.0 * angles + phase[1])
         + amplitude[2] * np.sin(5.0 * angles + phase[2])
     )
-    centerline = np.column_stack(
-        [
-            ARENA_CENTER[0] + radius_x * np.cos(angles) * warp,
-            ARENA_CENTER[1] + radius_y * np.sin(angles) * warp,
-        ]
+    max_curvature_per_m = max(0.2, float(max_curvature_per_m))
+    base_offset = np.column_stack(
+        [radius_x * np.cos(angles), radius_y * np.sin(angles)]
     )
+    alpha = 1.0
+    centerline = np.zeros_like(base_offset)
+    for _ in range(24):
+        radial = 1.0 + alpha * (warp - 1.0)
+        centerline = np.column_stack(
+            [
+                ARENA_CENTER[0] + base_offset[:, 0] * radial,
+                ARENA_CENTER[1] + base_offset[:, 1] * radial,
+            ]
+        )
+        if _max_curvature(centerline) <= max_curvature_per_m:
+            break
+        alpha *= 0.82
     inner = offset_polyline(centerline, width_m / 2.0)
     outer = offset_polyline(centerline, -width_m / 2.0)
 

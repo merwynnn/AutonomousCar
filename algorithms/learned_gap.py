@@ -25,7 +25,7 @@ parameters, so it is selectable in the dashboard even before training.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -673,7 +673,30 @@ class StructuredGapPolicy:
 
 
 class BeamScorerPolicy:
-    """B2: learned per-beam scorer with a small target-speed head."""
+    """B2: learned per-beam scorer with a small target-speed head.
+
+    A sensor-only safety envelope wraps the learned head:
+
+    - beams whose clearance is below ``min_clearance_m`` cannot be selected;
+    - target speed is capped by the selected clearance and by the steering
+      angle, so the car actually slows for corners instead of holding a
+      constant throttle;
+    - if the car is pinned against something while still commanding throttle,
+      a short reverse manoeuvre backs it out.
+
+    These rules use only ``Observation`` and are identical in simulation and on
+    the Pi.
+    """
+
+    min_clearance_m = 0.30
+    clearance_speed_gain = 2.2
+    clearance_speed_offset = 0.15
+    steer_slow_gain = 0.25
+    stuck_speed_mps = 0.06
+    stuck_time_s = 0.8
+    recovery_time_s = 0.8
+    recovery_throttle = -0.30
+    recovery_steer = 0.35
 
     def __init__(self, vector: np.ndarray, hidden: int = 0, n_beams: int = N_BEAMS) -> None:
         self.params = B2Params.from_vector(vector, hidden)
@@ -697,6 +720,9 @@ class BeamScorerPolicy:
         self.speed = 0.0
         self.last_throttle = 0.0
         self.last_selected_bearing = 0.0
+        self.stuck_time = 0.0
+        self.recovery_remaining = 0.0
+        self.recovery_steering = 0.0
         self.last_debug: dict[str, object] = {}
 
     def _features(self, observation: Observation) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
@@ -754,15 +780,42 @@ class BeamScorerPolicy:
         speed_min = float(scalars[7])
         speed_max = min(float(scalars[8]), float(observation.limits.max_speed_mps))
         dt = max(observation.dt, 1e-4)
+        max_steer = max(float(observation.limits.max_steering_rad), 1e-6)
+
+        # Reverse out if the car is pinned and still asking for throttle.
+        if self.recovery_remaining > 0.0:
+            self.recovery_remaining = max(0.0, self.recovery_remaining - dt)
+            self.steering = _clip(self.recovery_steering, -max_steer, max_steer)
+            self.speed = 0.0
+            self.last_throttle = self.recovery_throttle
+            self.last_debug = {
+                "valid": 1.0,
+                "recovering": 1.0,
+                "steering_rad": self.steering,
+                "throttle": self.recovery_throttle,
+            }
+            return Actuation(throttle=self.recovery_throttle, steering=self.steering)
 
         p = self.params
         beam_scores = features @ p.beam_linear_w + p.beam_linear_b
         if self.hidden:
             beam_hidden = np.tanh(features @ p.beam_res_w1 + p.beam_res_b1)
             beam_scores = beam_scores + beam_hidden @ p.beam_res_w2 + p.beam_res_b2
-        best = int(np.argmax(beam_scores))
+        clearance_m = features[:, 5] * max_range
+        safe = clearance_m >= self.min_clearance_m
+        if np.any(safe):
+            scored = np.where(safe, beam_scores, -np.inf)
+            best = int(np.argmax(scored))
+            best_score = float(scored[best])
+            forced_slow = False
+        else:
+            scored = clearance_m
+            best = int(np.argmax(scored))
+            best_score = float(beam_scores[best])
+            forced_slow = True
         selected = features[best]
         selected_bearing = float(centers[best])
+        selected_clearance = float(clearance_m[best])
         self.last_selected_bearing = selected_bearing
 
         speed_input = np.concatenate([selected, global_features])
@@ -770,34 +823,95 @@ class BeamScorerPolicy:
         if self.hidden:
             speed_hidden = np.tanh(speed_input @ p.speed_res_w1 + p.speed_res_b1)
             speed_logit += float(speed_hidden @ p.speed_res_w2 + p.speed_res_b2)
-        target_speed = speed_min + (speed_max - speed_min) * _sigmoid(speed_logit)
+        head_speed = speed_min + (speed_max - speed_min) * _sigmoid(speed_logit)
+
+        # Safety envelope: slow for tight clearance and for large steering.
+        path_clearance = selected_clearance
+        clearance_cap = _clip(
+            self.clearance_speed_offset + self.clearance_speed_gain * path_clearance,
+            speed_min,
+            speed_max,
+        )
+        steer_fraction = min(1.0, abs(selected_bearing) / max_steer)
+        steer_cap = speed_max * (1.0 - self.steer_slow_gain * steer_fraction)
+        target_speed = min(
+            head_speed,
+            clearance_cap,
+            steer_cap,
+            float(observation.limits.max_speed_mps),
+        )
+        if forced_slow:
+            target_speed = min(target_speed, 0.60)
+            if selected_clearance < 0.20:
+                target_speed = 0.0
+        target_speed = max(speed_min, target_speed)
         alpha = min(1.0, speed_smoothing * dt)
         self.speed += (target_speed - self.speed) * alpha
 
-        max_steer = float(observation.limits.max_steering_rad)
-        desired = _clip(steer_gain * selected_bearing + steer_bias, -max_steer, max_steer)
+        desired = _clip(
+            steer_gain * selected_bearing + steer_bias, -max_steer, max_steer
+        )
         alpha = min(1.0, steer_smoothing * dt)
         self.steering = _clip(
             self.steering + (desired - self.steering) * alpha,
             -max_steer,
             max_steer,
         )
-        throttle = _clip(self.speed / max(float(observation.limits.max_speed_mps), 1e-6), 0.0, 1.0)
+        throttle = _clip(
+            self.speed / max(float(observation.limits.max_speed_mps), 1e-6),
+            0.0,
+            1.0,
+        )
         self.last_throttle = throttle
+
+        # Stuck detection happens after the command is computed so the next
+        # tick can start the reverse manoeuvre.
+        measured_speed = abs(float(observation.state.speed_mps))
+        if measured_speed < self.stuck_speed_mps and self.speed > 0.30:
+            self.stuck_time += dt
+        else:
+            self.stuck_time = 0.0
+        if self.stuck_time >= self.stuck_time_s:
+            self.stuck_time = 0.0
+            self.recovery_remaining = self.recovery_time_s
+            self.recovery_steering = (
+                -self.recovery_steer * float(np.sign(self.steering))
+                if abs(self.steering) > 0.05
+                else 0.0
+            )
+            self.speed = 0.0
+            self.last_throttle = self.recovery_throttle
+            self.last_debug = {
+                "valid": 1.0,
+                "recovering": 1.0,
+                "steering_rad": self.recovery_steering,
+                "throttle": self.recovery_throttle,
+            }
+            return Actuation(
+                throttle=self.recovery_throttle,
+                steering=self.recovery_steering,
+            )
 
         self.last_debug = {
             "valid": 1.0,
             "selected_index": best,
             "selected_bearing_rad": selected_bearing,
             "selected_range_m": float(selected[1]) * max_range,
+            "selected_clearance_m": selected_clearance,
+            "path_clearance_m": path_clearance,
+            "head_speed_mps": head_speed,
+            "clearance_speed_cap_mps": clearance_cap,
+            "steer_speed_cap_mps": steer_cap,
+            "forced_slow": float(forced_slow),
             "target_speed_mps": self.speed,
             "throttle": throttle,
             "steering_rad": self.steering,
-            "beam_score": float(beam_scores[best]),
+            "beam_score": best_score,
             "front_sector_rad": float(front_sector),
             "max_range_m": max_range,
             "angles_rad": centers,
-            "scores": beam_scores,
+            "scores": scored,
+            "recovering": 0.0,
         }
         return Actuation(throttle=throttle, steering=self.steering)
 
@@ -819,17 +933,42 @@ def _load_policy_file(path: Path) -> tuple[str, np.ndarray, int, dict[str, objec
     return policy_type, vector, hidden, meta
 
 
+def _load_fallback_vector(path: Path) -> np.ndarray | None:
+    with np.load(path, allow_pickle=False) as data:
+        if "fallback_vector" not in data:
+            return None
+        return np.asarray(data["fallback_vector"], dtype=float)
+
+
 class LearnedGapController:
-    """Dashboard/CLI controller that loads the current best evolved policy."""
+    """Dashboard/CLI controller that loads the current best evolved policy.
+
+    The fast B2 policy is wrapped with a conservative B1 gap-follow fallback.
+    The fallback engages when the learned policy's selected beam is tight or
+    when every beam is inside the safety clearance; it disengages after a
+    short clear stretch. This keeps the fast policy on open track while giving
+    hard tracks a known-safe low-speed behaviour.
+    """
+
+    fallback_speed_cap = 1.6
+    fallback_enter_clearance_m = 0.55
+    fallback_exit_clearance_m = 0.75
+    fallback_exit_ticks = 12
 
     def __init__(self, weights_path: Path | str | None = None) -> None:
         self.weights_path = Path(weights_path) if weights_path is not None else WEIGHTS_PATH
         self.policy: StructuredGapPolicy | BeamScorerPolicy
+        self.fallback: StructuredGapPolicy | None = None
         self.policy_type = "b1"
         self.meta: dict[str, object] = {}
+        self.fallback_active = False
+        self.fallback_clear_ticks = 0
+        self.last_mode = "learned"
+        self.last_clearance_m = 0.0
         self._load()
 
     def _load(self) -> None:
+        self.fallback = None
         if not self.weights_path.exists():
             self.policy = StructuredGapPolicy()
             self.policy_type = "b1"
@@ -839,6 +978,24 @@ class LearnedGapController:
             policy_type, vector, hidden, meta = _load_policy_file(self.weights_path)
             if policy_type == "b2":
                 self.policy = BeamScorerPolicy(vector, hidden=hidden)
+                fallback_vector = _load_fallback_vector(self.weights_path)
+                if fallback_vector is None:
+                    sibling = self.weights_path.with_name("policy_b1.npz")
+                    if sibling.exists():
+                        _, fallback_vector, _, _ = _load_policy_file(sibling)
+                if (
+                    fallback_vector is not None
+                    and fallback_vector.size == len(B1_DEFAULT)
+                ):
+                    fallback = StructuredGapPolicy(fallback_vector)
+                    fallback.params = replace(
+                        fallback.params,
+                        base_speed_mps=min(
+                            fallback.params.base_speed_mps,
+                            self.fallback_speed_cap,
+                        ),
+                    )
+                    self.fallback = fallback
             else:
                 self.policy = StructuredGapPolicy(vector)
             self.policy_type = policy_type
@@ -846,16 +1003,63 @@ class LearnedGapController:
         except Exception as exc:  # noqa: BLE001 - fall back rather than break the dashboard
             self.policy = StructuredGapPolicy()
             self.policy_type = "b1"
+            self.fallback = None
             self.meta = {"source": "fallback", "error": str(exc)}
 
     def reset(self) -> None:
         self.policy.reset()
+        if self.fallback is not None:
+            self.fallback.reset()
+        self.fallback_active = False
+        self.fallback_clear_ticks = 0
+        self.last_mode = "learned"
+        self.last_clearance_m = 0.0
 
     def update(self, observation: Observation, speed_limit: float | None = None) -> Actuation:
         # The evolved policy owns its speed plan; the generic dashboard speed
         # slider is intentionally not used as a hard cap. ``speed_limit`` is
         # accepted for interface compatibility with the controller registry.
-        return self.policy.act(observation)
+        if not isinstance(self.policy, BeamScorerPolicy) or self.fallback is None:
+            return self.policy.act(observation)
+
+        command = self.policy.act(observation)
+        debug = self.policy.last_debug
+        clearance_value = debug.get("selected_clearance_m", 0.0)
+        clearance = (
+            float(clearance_value)
+            if isinstance(clearance_value, (int, float))
+            else 0.0
+        )
+        forced_value = debug.get("forced_slow", 0.0)
+        forced_slow = (
+            isinstance(forced_value, (int, float)) and float(forced_value) > 0.5
+        )
+        self.last_clearance_m = clearance
+
+        if not self.fallback_active:
+            if forced_slow or clearance < self.fallback_enter_clearance_m:
+                self.fallback_active = True
+                self.fallback_clear_ticks = 0
+                self.fallback.reset()
+        else:
+            if not forced_slow and clearance > self.fallback_exit_clearance_m:
+                self.fallback_clear_ticks += 1
+                if self.fallback_clear_ticks >= self.fallback_exit_ticks:
+                    self.fallback_active = False
+            else:
+                self.fallback_clear_ticks = 0
+
+        if not self.fallback_active:
+            self.last_mode = "learned"
+            return command
+
+        fallback_command = self.fallback.act(observation)
+        # Keep the learned policy's internal state slow while the fallback is
+        # driving, so it does not resume with a stale high speed or steering.
+        self.policy.speed = min(self.policy.speed, self.fallback_speed_cap)
+        self.policy.steering = self.fallback.steering
+        self.last_mode = "fallback"
+        return fallback_command
 
 
 __all__ = [

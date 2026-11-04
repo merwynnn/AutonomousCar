@@ -169,6 +169,25 @@ Every promoted candidate is still re-validated on the reference track before
 it can be exported, so random-track training cannot silently replace the
 reference lap with a lucky random circuit.
 
+Robust random-track B1 recipe and held-out success sweep:
+
+```bash
+uv run python -m training.cma_opt --stage b1 --generations 40 --popsize 12 \
+  --sigma0 0.04 --workers 6 --init algorithms/weights/policy_b1.npz \
+  --out data/training/policy_robust.npz \
+  --random-best-out data/training/policy_robust_random.npz \
+  --random-track --reference-track-prob 0.0 --max-time 60 \
+  --object-density-range 0.0 0.9 --object-scale-range 1.0 1.8 \
+  --track-width-range 0.85 1.0 --object-scale-jitter 0.40 --track-seed 2027
+
+uv run python -m training.evaluate --policy algorithms/weights/policy.npz \
+  --random-sweep 10 --max-time 60 --track-seed 123
+```
+
+One subtlety: with one track per generation CMA-ES can overfit the training
+sequence (we observed a 9.95 s reference policy that was 0/10 on fresh tracks).
+Multi-track validation per candidate is the next robustness improvement.
+
 Training is host-only. Logs, checkpoints and status files go to the
 git-ignored `data/training/`; only the chosen weights are committed. The
 dashboard's **Reload algo** action picks up a newly exported `policy.npz`

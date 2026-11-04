@@ -128,25 +128,62 @@ uv run python -m training.cma_opt --stage b2a --generations 40 --popsize 12 \
   --track-width-range 0.85 1.00 --out data/training/policy_random.npz
 ```
 
+Robust random-track B1 recipe (new track every generation, no reference
+generations; 60 s allows slow clean laps):
+
+```bash
+uv run python -m training.cma_opt --stage b1 --generations 40 --popsize 12 \
+  --sigma0 0.04 --workers 6 --init data/training/b1_robust_init.npz \
+  --out data/training/policy_robust.npz \
+  --random-best-out data/training/policy_robust_random.npz \
+  --random-track --reference-track-prob 0.0 --max-time 60 \
+  --object-density-range 0.0 0.9 --object-scale-range 1.0 1.8 \
+  --track-width-range 0.85 1.0 --object-scale-jitter 0.40 --track-seed 2027
+```
+
+Held-out success-rate sweep:
+
+```bash
+uv run python -m training.evaluate --policy algorithms/weights/policy.npz \
+  --random-sweep 10 --max-time 60 --track-seed 123
+```
+
 The generator scales crate/pole footprints and clamps each object so its
 footprint stays inside the lane. Per-object jitter mixes small and larger
 obstacles.
 
-The random-track run improved the reference-best clean lap to **9.10 s**
-(generation 0, 0 contacts), while evaluating every generation on a different
-track. The best random-track policy was saved separately and both were
-evaluated on the held-out set above.
+The first random-track B2 run improved the reference-best clean lap to
+**9.10 s**, but it was clean on only **3/6** held-out tracks. A later B1
+random-track run reached **9.95 s** on the reference yet was **0/10** on a fresh
+sweep: with one track per generation, CMA-ES can fit the training sequence
+instead of learning a robust policy. Both were rejected for the default
+controller.
 
-| Policy | Reference sub-rays 1 | Reference sub-rays 3 | Held-out random clean |
-| --- | ---: | ---: | ---: |
-| Old reference-only B2a | 9.33 s | 9.35 s | 2/6 |
-| **Random-trained reference best (shipped)** | **9.10 s** | **9.12 s** | **3/6** |
-| Random-track best (not shipped) | 9.23 s | 9.25 s | 2/6 |
+The shipped policy is instead a **robustness-first B1**: the tuned B1 gap
+controller with a 2.2 m/s base, a curvature speed cap (0.6), and clearance
+slowdown thresholds of 0.6 m / 1.1 m. It is selected on held-out tracks, not on
+training-track lap time.
 
-The shipped policy is the random-trained reference best. It is faster on the
-reference and cleaner on the held-out set; the “random-track best” overfits one
-fast random circuit. This is why the runner keeps the two bests separate and
-only ships the one that also validates on the reference.
+| Policy | Reference sub-rays 1 | Reference sub-rays 3 | Fixed tracks | Fresh sweeps |
+| --- | ---: | ---: | ---: | ---: |
+| Old reference-only B2a | 9.33 s | 9.35 s | 2/6 | — |
+| Fast B2 random-trained | 9.10 s | 9.12 s | 3/6 | — |
+| B1 random-trained | 9.95 s | — | — | 0/10 |
+| **Robust B1 (shipped)** | **15.63 s** | **15.67 s** | **6/6** | **27/30** |
+
+The robust B1 is slower but it actually completes unseen tracks. Its throttle
+varies from 0.36 to 0.47 (target speed 1.53–2.01 m/s) as clearance and
+curvature change, so it is not a constant-speed controller.
+
+The generator now also caps the centreline curvature at 1.6 1/m so it does not
+produce near-undrivable hairpins, and every object footprint is clamped inside
+the lane. Remaining random-track failures are dominated by track/obstacle
+geometry rather than the controller.
+
+**Next step for random training:** evaluate each candidate on 2–3 generated
+tracks per generation (worst-case or mean fitness) instead of one. That prevents
+the sequence-fitting seen above and should let a random-trained policy keep the
+robustness while recovering speed.
 
 ## Reproduction and monitoring
 

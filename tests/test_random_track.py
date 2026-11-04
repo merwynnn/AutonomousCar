@@ -83,3 +83,17 @@ def test_gap_debug_exposes_clearance_profile() -> None:
         assert debug.front_sector_rad > 0.0
     finally:
         simulation.close()
+
+
+def test_random_track_curvature_is_bounded() -> None:
+    from simulator.random_track import _max_curvature
+
+    for seed in range(20):
+        track = build_random_track(
+            seed=seed,
+            width_m=0.85,
+            object_density=1.0,
+            object_scale=1.8,
+            object_scale_jitter=0.5,
+        )
+        assert _max_curvature(track.centerline) <= 1.6001

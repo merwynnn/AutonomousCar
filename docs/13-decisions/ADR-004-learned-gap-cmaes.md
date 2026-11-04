@@ -38,6 +38,10 @@ memorisation is acceptable; privileged training information is not required.
    lane width, object density and object size. Keep the reference track in a
    fraction of generations and always re-validate before export, so a lucky
    random circuit cannot silently replace the reference lap.
+8. Select the shipped policy on **held-out** random tracks, not on the
+   training-track best. One track per generation is enough for exploration but
+   not for selection: we observed a 9.95 s reference policy that was 0/10 on a
+   fresh sweep. Multi-track validation per candidate is the next step.
 
 ## Consequences
 

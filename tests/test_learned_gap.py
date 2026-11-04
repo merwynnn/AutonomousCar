@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shutil
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 from algorithms.learned_gap import (
@@ -19,6 +21,11 @@ from algorithms.learned_gap import (
 from algorithms.registry import CONTROLLERS
 from onboard.api import Actuation, Pose2
 from simulator.simulation import Simulation
+from training.export import save_policy
+
+TEACHER_WEIGHTS = (
+    Path(__file__).resolve().parents[1] / "algorithms" / "weights" / "policy_b1.npz"
+)
 
 
 def test_learned_gap_is_dashboard_selectable() -> None:
@@ -158,3 +165,15 @@ def test_beam_scorer_policy_is_finite_with_hidden_layer() -> None:
         command = policy.act(observation)
         assert 0.0 <= command.throttle <= 1.0
         assert np.isfinite(command.steering)
+
+
+def test_b2_controller_loads_a_slow_b1_fallback(tmp_path) -> None:
+    save_policy(tmp_path / "policy.npz", "b2", b2_default_vector(0), 0, {})
+    shutil.copy(
+        TEACHER_WEIGHTS,
+        tmp_path / "policy_b1.npz",
+    )
+    controller = LearnedGapController(tmp_path / "policy.npz")
+    assert controller.policy_type == "b2"
+    assert controller.fallback is not None
+    assert controller.fallback.params.base_speed_mps <= controller.fallback_speed_cap

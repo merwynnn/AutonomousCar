@@ -16,9 +16,14 @@
   Pi runtime do not need it.
 - Added `Simulation.physics_step_hook` so training can count wall/obstacle
   contacts at physics resolution rather than control-tick resolution.
-- Reference result: **9.10 s, 0 contacts**, 1 lap, realistic sensors, seed 42
-  (baseline furthest-gap: 25.55 s). Verified at lidar sub-rays 1 and 3
-  (9.10 s / 9.12 s) and on 3/6 held-out random tracks.
+- Shipped robustness-first policy: **15.63 s, 0 contacts**, 1 lap, realistic
+  sensors, seed 42 (baseline furthest-gap: 25.55 s). Verified at lidar
+  sub-rays 1 and 3 (15.63 s / 15.67 s), **6/6** fixed random tracks and
+  **27/30** fresh random sweeps. The faster 9.10 s B2 was rejected because it
+  contacted walls on held-out tracks.
+- Added a safety envelope and low-speed B1 fallback for the fast B2 policy,
+  plus a stuck-recovery reverse and clearance/curvature speed caps. The robust
+  default uses the B1 speed schedule so throttle actually varies.
 - Added random-track training with random object density, lane width and
   object size. Every promoted candidate is re-validated on the reference
   track before export.
