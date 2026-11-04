@@ -678,12 +678,14 @@ class DashboardSimulation:
             self.controller_error = None
             self._reset_controllers()
         elif kind == "drive.command":
-            self.control_mode = "manual"
+            throttle = max(-1.0, min(1.0, float(message.get("throttle", 0.0))))
+            steering = max(-0.55, min(0.55, float(message.get("steering", 0.0))))
+            # Only a real drive input takes over. Neutral packets from a stale
+            # manual tab must not keep forcing the whole dashboard to manual.
+            if abs(throttle) > 1e-6 or abs(steering) > 1e-6:
+                self.control_mode = "manual"
             self.controller_error = None
-            self.manual = Actuation(
-                throttle=max(-1.0, min(1.0, float(message.get("throttle", 0.0)))),
-                steering=max(-0.55, min(0.55, float(message.get("steering", 0.0)))),
-            )
+            self.manual = Actuation(throttle=throttle, steering=steering)
             self.manual_time = time.monotonic()
         elif kind == "config.reload":
             self._reload_pending = True

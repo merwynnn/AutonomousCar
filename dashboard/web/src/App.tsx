@@ -1159,7 +1159,7 @@ function ViewportHud({
         <strong>{scanAgeMs === null ? '—' : scanAgeMs.toFixed(0)}<em> ms</em></strong>
       </div>
       <div className="viewport-hints">
-        <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
+        <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> drive (Manual)</span>
         <span><kbd>Space</kbd> run / pause</span>
         <span><kbd>R</kbd> reset</span>
         <span><kbd>C</kbd> view</span>
@@ -1241,6 +1241,18 @@ export default function App() {
     send({ type: 'control.mode', mode: controlMode });
   }, [controlMode, send]);
 
+  // Follow the authoritative backend mode (another tab or the server may
+  // have changed it). This also stops a stale manual key loop.
+  useEffect(() => {
+    const backendMode = state?.control_mode;
+    if (
+      (backendMode === 'auto' || backendMode === 'manual') &&
+      backendMode !== controlMode
+    ) {
+      setControlMode(backendMode);
+    }
+  }, [state?.control_mode, controlMode]);
+
   useEffect(() => {
     send({ type: 'control.controller', controller: autoController });
   }, [autoController, send]);
@@ -1249,10 +1261,26 @@ export default function App() {
     send({ type: 'run.set_speed', speed });
   }, [speed, send]);
 
+  // Re-assert the UI state when the socket (re)connects. A page reload can
+  // otherwise inherit a manual mode left behind by a previous client because
+  // the initial messages were sent before the socket was open.
+  useEffect(() => {
+    if (status !== 'open') return;
+    send({ type: 'control.mode', mode: controlMode });
+    send({ type: 'control.controller', controller: autoController });
+    send({ type: 'run.set_speed', speed });
+  }, [status, send, controlMode, autoController, speed]);
+
   useEffect(() => {
     if (controlMode !== 'manual' || tuningOpen) return;
+    let wasActive = false;
     const timer = window.setInterval(() => {
       const keys = keysRef.current;
+      const active = keys.forward || keys.back || keys.left || keys.right;
+      // Do not keep re-asserting manual mode with neutral packets: a stale
+      // tab would otherwise overwrite another client's Auto selection.
+      if (!active && !wasActive) return;
+      wasActive = active;
       const throttle = (keys.forward ? 1 : 0) - (keys.back ? 0.7 : 0);
       // Mirror the manual steering command relative to the simulator's
       // positive-left convention, matching the dashboard's on-screen Q/D feel.
@@ -1265,13 +1293,20 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (tuningOpen) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       const driveKey = DRIVE_KEYS[event.code];
       if (driveKey) {
+        // Never change the driving mode implicitly. Manual driving is an
+        // explicit operator choice; a stray Z/Q/S/D must not take over.
+        if (controlMode !== 'manual') {
+          setToast('Switch to Manual to drive');
+          window.setTimeout(() => setToast(null), 2500);
+          return;
+        }
         event.preventDefault();
         keysRef.current[driveKey] = true;
-        setControlMode('manual');
         if (state?.paused) send({ type: 'run.start' });
         return;
       }
@@ -1306,7 +1341,7 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [running, send, state?.paused, tuningOpen]);
+  }, [running, send, state?.paused, tuningOpen, controlMode]);
 
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
