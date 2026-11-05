@@ -85,17 +85,20 @@ track.
 
 ### Training monitor
 
-The **Training** toolbar button opens `/training.html` in a **separate popup
-window**, so live training graphs never crowd the main dashboard. The popup
-can start and stop CMA-ES runs (stage `b1`/`b2a`/`b2b`, generations, popsize,
-workers, seed, time budget, random-track toggle) and polls the backend once
-per second. It shows a progress bar with ETA, stat cards (best lap, contacts,
-score, progress, sigma) and SVG charts of lap time, score, contacts, sigma and
-wall time per generation against the all-time best. **View best car in
-simulator** hot-loads `data/training/<stage>_best.npz` into the live
-`learned_gap` controller (via `load_weights`) and resets the run, so the best
-car of the current training step can be watched in the main 3D view one car at
-a time.
+The **Training** tab (viewport header, next to Track / Car only; the toolbar
+**Training** button and the `C` key also reach it) shows the CMA-ES monitor
+inline, without crowding the 3D view. It can start and stop training runs
+(stage `b1`/`b2a`/`b2b` — hover a stage tab for what it means, generations,
+popsize, workers, seed, time budget, random-track toggle) and polls the
+backend once per second. It shows a progress bar with ETA, stat cards (best
+lap, contacts, score, progress, sigma) and SVG charts of lap time, score,
+contacts, sigma and wall time per generation against the all-time best, with
+an "About these graphs" explainer. **View best <stage> car in dashboard**
+hot-loads the selected stage's best checkpoint of the current run
+(`data/training/<stage>_best.npz`, updated live as the run improves) into the
+live `learned_gap` controller (via `load_weights`) and resets the run, so the
+best car of the current training step can be watched one car at a time in the
+Track view.
 
 Training runs are subprocesses of `python -m training.cma_opt`; the dashboard
 only reads the `data/training/<stage>_status.json` and `<stage>_history.jsonl`

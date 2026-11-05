@@ -2,8 +2,8 @@
 
 ## Unreleased — dashboard training monitor
 
-- Added a **Training** window: the toolbar button opens `/training.html` in a
-  separate popup so progress graphs never crowd the main dashboard.
+- Added a **Training** tab in the dashboard viewport (toolbar button and `C`
+  key) showing the CMA-ES monitor inline instead of a separate popup window.
 - The popup starts/stops CMA-ES runs (stage, generations, popsize, workers,
   seed, budget, random tracks) and polls live status plus a new per-generation
   history file (`data/training/<stage>_history.jsonl` written by
@@ -11,8 +11,11 @@
 - Charts (SVG, no new dependencies): lap time and score per generation vs
   all-time best, contacts, search sigma and wall time per generation, plus
   stat cards for best lap/contacts/score/progress.
-- **View best car in simulator** loads `data/training/<stage>_best.npz` into
-  the live `learned_gap` controller (`load_weights`) and resets the run.
+- **View best <stage> car in dashboard** loads the selected stage's best
+  checkpoint of the current run (`data/training/<stage>_best.npz`, updated
+  live by the runner) into the live `learned_gap` controller (`load_weights`)
+  and resets the run. Stage tabs carry explanations of b1 / b2a / b2b, and the
+  charts include an "About these graphs" explainer.
 - New REST endpoints: `/api/training/runs`, `/api/training/status`,
   `/api/training/history`, `/api/training/start`, `/api/training/stop`,
   `/api/training/watch-best`; new WebSocket command `training.watch_best` and

@@ -2,7 +2,7 @@ export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];
 
 export type Realism = 'ideal' | 'realistic' | 'harsh';
-export type ViewMode = 'track' | 'car';
+export type ViewMode = 'track' | 'car' | 'training';
 export type CameraMode = 'orbit' | 'top' | 'chase';
 export type JsonObject = Record<string, unknown>;
 

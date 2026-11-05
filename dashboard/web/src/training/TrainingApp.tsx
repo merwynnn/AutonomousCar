@@ -11,8 +11,15 @@ import {
   type TrainingStatus,
 } from './api';
 import { LineChart, StatCard } from './charts';
+import './training.css';
 
 const STAGES = ['b1', 'b2a', 'b2b'] as const;
+
+const STAGE_INFO: Record<string, string> = {
+  b1: 'B1 — structured gap controller: 23 parameters (gap threshold, clearance window, scoring weights, steering gain/rate, speed schedule). Robustness-first, safe fallback.',
+  b2a: 'B2a — linear beam scorer: 36 downsampled beams × 12 features with a linear score and target-speed head (45 params), warm-started from B1. Fastest policy family.',
+  b2b: 'B2b — B2a expanded with a 16-unit residual hidden layer (605 params), evolved with diagonal CMA-ES. Numerically identical to B2a at initialisation.',
+};
 
 function formatDuration(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '--:--';
@@ -128,12 +135,16 @@ export default function TrainingApp() {
               key={name}
               type="button"
               className={`stage-tab ${stage === name ? 'active' : ''} ${knownStages.includes(name) ? '' : 'unknown'}`}
+              title={STAGE_INFO[name]}
               onClick={() => setStage(name)}
             >
               {name}
             </button>
           ))}
         </div>
+        <span className="training-stage-info" title={STAGE_INFO[stage]}>
+          {STAGE_INFO[stage]}
+        </span>
         <span className={`training-phase phase-${status?.phase ?? 'idle'}`}>
           {running ? 'RUNNING' : (status?.phase ?? 'idle').toUpperCase()}
         </span>
@@ -215,9 +226,9 @@ export default function TrainingApp() {
             type="button"
             onClick={onWatchBest}
             disabled={!status?.best_available}
-            title="Load this stage's best checkpoint into the main dashboard simulator"
+            title={`Load the best ${stage} policy of the current run (data/training/${stage}_best.npz) into the Track view simulator`}
           >
-            View best car in simulator
+            View best {stage} car in dashboard
           </button>
         </div>
       </section>
@@ -248,6 +259,15 @@ export default function TrainingApp() {
       </section>
 
       <section className="training-charts">
+        <p className="training-about">
+          <strong>About these graphs</strong> — x-axis is the CMA-ES generation.{' '}
+          <em>Lap time</em>: clean reference-track lap of each generation&apos;s best
+          candidate (solid) vs the all-time best, re-validated clean at the reference
+          start (dashed). <em>Score</em>: the candidate score the optimizer minimises
+          (lower is better). <em>Contacts</em>: wall/obstacle hits at physics
+          resolution. <em>Sigma</em>: CMA-ES search step size — shrinking means the
+          search is converging. <em>Wall time</em>: seconds per generation.
+        </p>
         <LineChart
           title="Lap time per generation"
           yLabel="s"

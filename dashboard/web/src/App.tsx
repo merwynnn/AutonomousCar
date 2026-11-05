@@ -15,6 +15,7 @@ import type {
   WheelSpec,
 } from './types';
 import { useTelemetry, type ConnectionStatus } from './useTelemetry';
+import TrainingApp from './training/TrainingApp';
 
 function formatTime(seconds: number | null | undefined): string {
   if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '—';
@@ -1085,8 +1086,19 @@ function ViewportTabs({
       >
         Car only
       </button>
+      <button
+        type="button"
+        className={viewMode === 'training' ? 'active' : ''}
+        onClick={() => onChange('training')}
+      >
+        Training
+      </button>
       <span className="viewport-tab-note">
-        {viewMode === 'car' ? 'isolated vehicle · no track' : 'track overview'}
+        {viewMode === 'car'
+          ? 'isolated vehicle · no track'
+          : viewMode === 'training'
+            ? 'CMA-ES training monitor'
+            : 'track overview'}
       </span>
     </div>
   );
@@ -1315,7 +1327,9 @@ export default function App() {
       } else if (key === 'r') {
         send({ type: 'run.reset' });
       } else if (key === 'c') {
-        setViewMode((mode) => (mode === 'track' ? 'car' : 'track'));
+        setViewMode((mode) =>
+          mode === 'track' ? 'car' : mode === 'car' ? 'training' : 'track',
+        );
       } else if (key === '1') {
         setCameraMode('orbit');
       } else if (key === '2') {
@@ -1344,8 +1358,7 @@ export default function App() {
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
   const onReloadControllers = () => send({ type: 'controller.reload' });
-  const onOpenTraining = () =>
-    window.open('/training.html', 'awake-training', 'width=1180,height=860');
+  const onOpenTraining = () => setViewMode('training');
   const openTune = (tab: 'vehicle' | 'sensors') => {
     setTuningTab(tab);
     setTuningOpen(true);
@@ -1542,7 +1555,8 @@ export default function App() {
           <ToolButton
             icon="chart"
             label="Training"
-            title="Open the CMA-ES training monitor in a separate window"
+            title="Switch to the CMA-ES training monitor tab (C)"
+            active={viewMode === 'training'}
             onClick={onOpenTraining}
           />
         </div>
@@ -1572,38 +1586,44 @@ export default function App() {
             </div>
           </div>
           <div className="viewport-body">
-            <SceneCanvas
-              hello={hello}
-              state={state}
-              scan={scan}
-              viewMode={viewMode}
-              cameraMode={cameraMode}
-              layers={layers}
-              turntable={turntable}
-            />
-            <ViewportHud
-              hello={hello}
-              state={state}
-              viewMode={viewMode}
-              scan={scan}
-              layers={layers}
-            />
-            <DebugDock state={state} layers={layers} />
-            {state?.controller_error ? (
-              <div
-                className="warning-strip error-strip"
-                title={state.controller_error}
-              >
-                CONTROLLER ERROR · {state.controller_error}
-              </div>
-            ) : hello?.warnings.length ? (
-              <div className="warning-strip">{hello.warnings.join(' · ')}</div>
-            ) : null}
-            <div className="viewport-axis" aria-hidden="true">
-              <span className="axis-x">X</span>
-              <span className="axis-y">Y</span>
-              <span className="axis-z">Z</span>
-            </div>
+            {viewMode === 'training' ? (
+              <TrainingApp />
+            ) : (
+              <>
+                <SceneCanvas
+                  hello={hello}
+                  state={state}
+                  scan={scan}
+                  viewMode={viewMode}
+                  cameraMode={cameraMode}
+                  layers={layers}
+                  turntable={turntable}
+                />
+                <ViewportHud
+                  hello={hello}
+                  state={state}
+                  viewMode={viewMode}
+                  scan={scan}
+                  layers={layers}
+                />
+                <DebugDock state={state} layers={layers} />
+                {state?.controller_error ? (
+                  <div
+                    className="warning-strip error-strip"
+                    title={state.controller_error}
+                  >
+                    CONTROLLER ERROR · {state.controller_error}
+                  </div>
+                ) : hello?.warnings.length ? (
+                  <div className="warning-strip">{hello.warnings.join(' · ')}</div>
+                ) : null}
+                <div className="viewport-axis" aria-hidden="true">
+                  <span className="axis-x">X</span>
+                  <span className="axis-y">Y</span>
+                  <span className="axis-z">Z</span>
+                </div>
+              </>
+            )}
           </div>
           <div className="viewport-footer">
             <div className="layer-toggles">
@@ -1643,7 +1663,9 @@ export default function App() {
             <div className="viewport-footer-hint">
               {viewMode === 'car'
                 ? 'Vehicle isolated from track geometry · sensor mounts shown in body frame'
-                : 'Drag to orbit · scroll to zoom · right-drag to pan'}
+                : viewMode === 'training'
+                  ? 'CMA-ES training runs write data/training/<stage>_*.json(l) · press C to cycle views'
+                  : 'Drag to orbit · scroll to zoom · right-drag to pan'}
             </div>
           </div>
         </main>

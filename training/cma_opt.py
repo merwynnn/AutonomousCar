@@ -252,6 +252,13 @@ def run(args: argparse.Namespace) -> int:
         )
         if initial_result.lap_time_s is not None:
             _maybe_export(Path(args.out), policy_type, best_vector, hidden, best_meta)
+            _maybe_export(
+                DATA_DIR / f"{args.stage}_best.npz",
+                policy_type,
+                best_vector,
+                hidden,
+                best_meta,
+            )
         if args.preflight:
             reporter.finish(
                 reason="preflight",
@@ -323,6 +330,15 @@ def run(args: argparse.Namespace) -> int:
                     )
                     _maybe_export(
                         Path(args.out), policy_type, best_vector, hidden, best_meta
+                    )
+                    # Keep the dashboard's "watch best" checkpoint in sync with
+                    # the best candidate of the run in progress.
+                    _maybe_export(
+                        DATA_DIR / f"{args.stage}_best.npz",
+                        policy_type,
+                        best_vector,
+                        hidden,
+                        best_meta,
                     )
 
             reporter.update(
