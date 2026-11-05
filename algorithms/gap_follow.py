@@ -1,7 +1,19 @@
-"""Lidar-only furthest-gap controller for the dashboard demo.
+"""Contrôleur « trou le plus dégagé » pour le dashboard.
 
-This is a normal algorithm: it sees only ``Observation`` and returns
-``Actuation``. It uses no simulator internals and no ground-truth pose.
+Ce module est une **façade** : la logique de conduite vit dans
+``algorithms/gap_policy.py`` (``StructuredGapPolicy``, la version B1
+entraînable par CMA-ES). Ici, on se contente de :
+
+1. construire la politique B1 avec ses paramètres par défaut (``B1_DEFAULT``) ;
+2. adapter sa signature ``act(observation)`` au contrat du registre
+   ``update(observation, speed_limit)`` — le ``speed_limit`` du tableau de
+   bord est volontairement ignoré, comme pour ``LearnedGapController`` ;
+3. traduire les sorties de la politique en ``GapDebug`` riches pour les
+   panneaux de débogage du dashboard (profils, scores, candidats, overlays).
+
+Ainsi il n'existe qu'une seule implémentation de l'algorithme : toute
+amélioration de ``StructuredGapPolicy`` profite automatiquement au contrôleur
+de démonstration, au training CMA-ES et au warm start B2.
 """
 
 from __future__ import annotations
@@ -28,11 +40,12 @@ from algorithms.debug import (
     Series,
     Table,
 )
+from algorithms.gap_policy import StructuredGapPolicy
 
 
 @dataclass(frozen=True)
 class GapCandidate:
-    """One scored beam candidate, exposed only for debugging."""
+    """Un faisceau candidat scoré, exposé uniquement pour le débogage."""
 
     rank: int
     index: int
@@ -41,6 +54,7 @@ class GapCandidate:
     smoothed_range_m: float
     clearance_m: float
     angle_change_penalty_m: float
+    free_fraction: float
     score: float
     in_gap: bool
     selected: bool
@@ -48,16 +62,17 @@ class GapCandidate:
 
 @dataclass
 class GapDebug:
-    """Informations de débogage pour l'algorithme de suivi de trou, visualisées dans le dashboard.
+    """État de débogage du suivi de trou, visualisé dans le dashboard.
 
-    Ces données permettent de comprendre ce que l'algorithme "voit" et pourquoi il prend
-    certaines décisions de direction et de vitesse.
+    Ces données décrivent ce que la politique « voit » (scan, dégagement,
+    scores) et pourquoi elle choisit une direction et une vitesse.
     """
-    angle_rad: float = 0.0  # Angle de direction souhaité (dans le repère du véhicule, radians)
-    steering_rad: float = 0.0  # Commande de direction réelle après lissage (radians)
-    range_m: float = 0.0  # Distance mesurée au centre du trou choisi (mètres)
-    clearance_m: float = 0.0  # Distance minimale dans la fenêtre de dégagement (mètres)
-    gap_width_rad: float = 0.0  # Largeur angulaire du trou détecté (radians)
+
+    angle_rad: float = 0.0  # Direction visée, avant lissage (radians)
+    steering_rad: float = 0.0  # Direction réelle après lissage (radians)
+    range_m: float = 0.0  # Distance lissée au faisceau choisi (mètres)
+    clearance_m: float = 0.0  # Dégagement minimal dans la fenêtre (mètres)
+    gap_width_rad: float = 0.0  # Largeur angulaire du trou (radians)
     gap_left_rad: float = 0.0
     gap_right_rad: float = 0.0
     front_sector_rad: float = 0.0
@@ -67,7 +82,7 @@ class GapDebug:
     profile: np.ndarray = field(
         default_factory=lambda: np.zeros((0, 2), dtype=float)
     )
-    # --- richer decision data for the generic debug panel -----------------
+    # --- Données de décision pour le panneau de débogage générique ---------
     status: str = "IDLE"
     detail: str = ""
     best_bearing_rad: float = 0.0
@@ -103,302 +118,72 @@ class GapDebug:
     candidates: tuple[GapCandidate, ...] = ()
 
 
-class FurthestGapController:
-    """Contrôleur d'évitement d'obstacles basé sur le lidar qui dirige vers le trou le plus large et dégagé.
+def _penalty_profile(
+    policy: StructuredGapPolicy,
+    angles: np.ndarray,
+) -> np.ndarray:
+    """Termes de pénalité « doux » du score, par faisceau.
 
-    L'idée principale : le lidar mesure les distances autour du véhicule. L'algorithme cherche
-    la direction avec le plus d'espace libre (un "trou" entre les obstacles) et tourne vers cette
-    direction tout en ajustant la vitesse selon la proximité des obstacles.
-
-    L'algorithme fonctionne en plusieurs étapes :
-    1. Filtrage : on ne garde que les mesures du lidar dans le secteur avant (±front_sector_deg)
-    2. Lissage : on applique une moyenne mobile sur les distances pour réduire le bruit
-    3. Dégagement : pour chaque faisceau, on calcule la distance minimale dans une fenêtre angulaire
-    4. Scoring : on note chaque direction en fonction du dégagement, avec une légère préférence
-       pour la direction précédente (pour éviter de zigzaguer)
-    5. Largeur du trou : on mesure la largeur angulaire de l'espace libre autour de la meilleure direction
-    6. Commandes : on lisse la direction et on réduit la vitesse si les obstacles sont proches
+    Le score B1 est ``récompenses - pénalités`` ; les panneaux affichent la
+    part de pénalité ( changement de direction + biais vers l'avant ) séparément
+    pour expliquer pourquoi un faisceau dégagé peut ne pas être choisi.
     """
 
-    def __init__(
-        self,
-        max_steering: float = 0.50,
-        front_sector_deg: float = 100.0,
-        clearance_window_deg: float = 60.0,
-        min_gap_m: float = 0.60,
-        max_speed_for_throttle: float = 5.5,
-        angle_change_weight: float = 0.15,
-    ) -> None:
-        """Initialise le contrôleur de suivi de trou.
-
-        Args:
-            max_steering: Angle de direction maximum en radians (la commande sera limitée à cette valeur).
-                          Par exemple 0.50 rad ≈ 28.6°.
-            front_sector_deg: Secteur angulaire devant le véhicule (en degrés, ±) à considérer pour
-                              la détection de trous. Par exemple 100° signifie de -100° à +100°.
-            clearance_window_deg: Taille de la fenêtre (en degrés) utilisée pour calculer le dégagement
-                                  minimal. Plus cette valeur est grande, plus l'algorithme est prudent.
-            min_gap_m: Distance minimale (en mètres) qu'un faisceau doit dégager pour être
-                       considéré comme libre. C'est un seuil de portée, pas une largeur
-                       métrique de trou.
-            max_speed_for_throttle: Vitesse (en m/s) à laquelle l'accélérateur atteint 100%. Au-delà,
-                                    la vitesse est limitée par ce paramètre.
-            angle_change_weight: Poids de la pénalité de changement d'angle, en mètres par radian.
-                                 Plus il est grand, plus l'algorithme préfère garder la direction précédente.
-        """
-        self.max_steering = max_steering
-        self.front_sector = np.radians(front_sector_deg)
-        self.clearance_window_deg = clearance_window_deg
-        self.min_gap_m = min_gap_m
-        self.max_speed_for_throttle = max_speed_for_throttle
-        self.angle_change_weight = angle_change_weight
-        self.steering = 0.0
-        self.last_angle = 0.0
-        self.debug = GapDebug()
-
-    def reset(self) -> None:
-        """Réinitialise l'état interne du contrôleur pour un nouveau run.
-
-        Cette méthode est appelée au début de chaque simulation pour effacer la mémoire
-        de l'algorithme (direction précédente, informations de débogage). Cela garantit
-        que chaque run commence dans le même état.
-        """
-        self.steering = 0.0
-        self.last_angle = 0.0
-        self.debug = GapDebug()
-
-    def update(self, observation: Observation, speed_limit: float = 1.5) -> Actuation:
-        """Calcule les commandes (accélérateur et direction) à partir des observations des capteurs.
-
-        Cette méthode est appelée à chaque pas de temps de la simulation (60 fois par seconde).
-        Elle analyse les données du lidar pour décider vers où tourner et à quelle vitesse avancer.
-
-        Args:
-            observation: Contient toutes les lectures des capteurs (lidar, odométrie, etc.).
-                        Seul le lidar est utilisé par cet algorithme.
-            speed_limit: Vitesse maximale autorisée en m/s (définie dans la configuration du scénario).
-                         L'algorithme peut choisir d'aller moins vite si les obstacles sont proches.
-
-        Returns:
-            Actuation: Un objet contenant deux commandes :
-                       - throttle: valeur entre 0 et 1 (0 = arrêt, 1 = accélération maximale)
-                       - steering: angle de direction en radians (positif = gauche, négatif = droite)
-        """
-        # Récupération du scan dans le repère lidar courant. `lidar_current`
-        # utilise la compensation d'odométrie quand elle est disponible et
-        # retombe sur le scan brut sinon.
-        scan = observation.lidar_current
-        if scan is None:
-            # Si pas de lidar, on s'arrête
-            self.debug = GapDebug(
-                valid=False,
-                status="NO SCAN",
-                detail="lidar unavailable",
-                front_sector_rad=float(self.front_sector),
-            )
-            return Actuation(throttle=0.0, steering=self.steering)
-
-        # dt est le temps écoulé depuis le dernier appel (en secondes)
-        # On utilise une valeur minimale pour éviter les divisions par zéro
-        dt = max(observation.dt, 1e-4)
-
-        # Conversion des données du lidar en tableaux NumPy pour faciliter les calculs
-        angles = np.asarray(scan.angles_rad, dtype=float)  # Angles des faisceaux (radians)
-        ranges = np.asarray(scan.ranges_m, dtype=float)   # Distances mesurées (mètres)
+    p = policy.params
+    return (
+        p.angle_change_weight * np.abs(angles - policy.last_angle)
+        + p.center_bias_weight * np.abs(angles)
+    )
 
 
+def _speed_reason(policy: StructuredGapPolicy, clearance_m: float) -> str:
+    """Étiquette courte expliquant le palier de vitesse choisi."""
 
-        # Filtrage des mesures valides :
-        # - scan.valid : le capteur a renvoyé une mesure
-        # - np.isfinite : la distance n'est pas infinie ou NaN
-        # - ranges > 0.05 : on ignore les mesures trop proches (bruit du capteur)
-        valid = scan.valid & np.isfinite(ranges) & (ranges > 0.05)
+    p = policy.params
+    if clearance_m < p.clearance_slow_1_m:
+        return "tight clearance"
+    if clearance_m < p.clearance_slow_2_m:
+        return "cautious clearance"
+    return "open"
 
-        # On ne garde que les mesures dans le secteur avant du véhicule
-        # np.abs(angles) donne la valeur absolue de l'angle
-        # self.front_sector est la limite angulaire (par exemple 0.87 rad pour 50°)
-        front = valid & (np.abs(angles) <= self.front_sector)
 
-        # Si aucune mesure valide dans le secteur avant, on s'arrête
-        if not np.any(front):
-            self.debug = GapDebug(
-                valid=False,
-                status="NO FRONT",
-                detail=(
-                    "no valid lidar returns within "
-                    f"±{np.degrees(self.front_sector):.0f}°"
-                ),
-                front_sector_rad=float(self.front_sector),
-                beam_count=scan.beam_count,
-                scan_t=float(scan.t_measure),
-            )
-            return Actuation(throttle=0.0, steering=0.0)
+def _sample_front(
+    angles: np.ndarray,
+    front: np.ndarray,
+    arrays: dict[str, np.ndarray],
+    max_points: int = 90,
+) -> dict[str, np.ndarray]:
+    """Réduit le secteur avant à ~``max_points`` points pour les graphes.
 
-        # Remplacement des distances hors secteur par la distance maximale
-        # Cela permet d'ignorer les angles morts et de ne pas fausser les calculs
-        open_range = float(np.nanmax(ranges[front]))
-        work = np.where(front, ranges, open_range)
+    Les calculs (scoring, candidats) restent en pleine résolution ; seul le
+    rendu est décimé pour garder les panneaux lisibles et légers.
+    """
 
-        # Lissage des distances avec une moyenne mobile sur 7 faisceaux
-        # Le lidar a du bruit (mesures qui varient légèrement), donc on moyenne
-        # pour obtenir une estimation plus stable de la distance réelle
-        kernel = np.ones(7) / 7.0  # Noyau de convolution : 7 valeurs qui s'additionnent à 1
-        # On ajoute 3 valeurs de chaque côté pour gérer les bords (padding)
-        padded = np.concatenate([work[-3:], work, work[:3]])
-        # np.convolve applique le noyau de convolution (moyenne mobile)
-        # mode="same" garde la même taille de tableau
-        # [3:-3] supprime le padding ajouté
-        work = np.convolve(padded, kernel, mode="same")[3:-3]
+    front_indices = np.flatnonzero(front)
+    step = max(1, front_indices.size // max_points)
+    sampled = front_indices[::step]
+    return {name: np.asarray(values)[sampled] for name, values in arrays.items()}
 
-        # Calcul du dégagement minimal dans une fenêtre glissante
-        # L'idée : pour chaque direction, on regarde la distance minimale dans un secteur angulaire
-        # Cela donne une estimation "pessimiste" mais sûre de l'espace disponible
-        # Si on regarde juste la distance dans une direction, on pourrait manquer un obstacle juste à côté
 
-        # step : écart angulaire moyen entre deux faisceaux consécutifs (en radians)
-        # np.diff calcule les différences entre angles consécutifs
-        # np.median prend la valeur médiane pour être robuste aux variations
-        step = abs(float(np.median(np.diff(angles))))
+def _build_candidates(
+    angles: np.ndarray,
+    ranges: np.ndarray,
+    work: np.ndarray,
+    clearance: np.ndarray,
+    free: np.ndarray,
+    free_fraction: np.ndarray,
+    scores: np.ndarray,
+    penalty: np.ndarray,
+    best: int,
+    limit: int = 8,
+) -> tuple[GapCandidate, ...]:
+    """Classe les meilleurs faisceaux du secteur avant par score décroissant."""
 
-        # window : nombre de faisceaux dans la fenêtre de dégagement
-        # On convertit l'angle (degrés) en radians, puis on divise par l'écart entre faisceaux
-        window = max(1, int(round(np.radians(self.clearance_window_deg) / step)))
-
-        # On préfère une fenêtre de taille impaire pour qu'elle soit centrée sur un faisceau
-        if window % 2 == 0:
-            window += 1
-
-        # On limite la taille de la fenêtre pour ne pas dépasser le nombre de faisceaux disponibles
-        window = min(window, angles.size if angles.size % 2 == 1 else angles.size - 1)
-
-        # pad : nombre de faisceaux à ajouter de chaque côté pour gérer les bords
-        pad = window // 2
-
-        # On ajoute du padding pour que la fenêtre glissante puisse fonctionner sur les bords
-        # On recopie les valeurs du début à la fin et vice versa (padding circulaire)
-        padded_work = (
-            np.concatenate([work[-pad:], work, work[:pad]]) if pad > 0 else work
-        )
-
-        # sliding_window_view crée une vue où chaque ligne est une fenêtre de taille 'window'
-        # C'est très efficace car cela ne copie pas les données, cela crée juste une vue
-        windows = np.lib.stride_tricks.sliding_window_view(padded_work, window)
-
-        # clearance : pour chaque fenêtre, on prend la distance minimale
-        # C'est le "pire cas" dans ce secteur angulaire
-        clearance = windows.min(axis=1)
-
-        # Calcul des scores pour chaque direction
-        # On veut maximiser le dégagement (clearance) mais on préfère légèrement garder
-        # la direction précédente pour éviter que le véhicule zigzague constamment
-        # angle_change_weight est un coefficient empirique : plus il est grand, plus on préfère la direction précédente
-        angle_change_penalty = self.angle_change_weight * 3* np.abs(angles - self.last_angle)
-        scores = clearance - angle_change_penalty
-
-        # On met un score très bas (-inf) pour les directions hors secteur avant
-        # Cela garantit qu'elles ne seront jamais choisies
-        scores[~front] = -np.inf
-
-        # On choisit la direction avec le score maximum
-        best = int(np.argmax(scores))
-        best_bearing = float(angles[best])  # Direction du meilleur faisceau
-        desired = best_bearing  # Angle souhaité (direction vers laquelle tourner)
-        best_clearance = float(clearance[best])  # Dégagement dans cette direction
-        best_range = float(work[best])  # Distance brute à cet angle
-
-        # Mise à jour de l'angle précédent pour la pénalité de changement d'angle
-        self.last_angle = best_bearing
-
-        # Mesure de la largeur du trou en détectant l'espace libre contigu autour du meilleur faisceau
-        # Un "trou" est une zone contiguë où toutes les distances sont supérieures à un seuil
-        # Le seuil est le maximum entre : min_gap_m (portée minimum) et 75% du meilleur dégagement
-        # Cela permet d'adapter le seuil à la situation : plus de dégagement = seuil plus élevé
-        threshold = max(self.min_gap_m, 0.75 * best_clearance)
-        free = front & (work >= threshold)
-        gap_detected = bool(free[best])
-
-        if free[best]:
-            # Si le meilleur faisceau est dans une zone libre, on étend vers la gauche et la droite
-            # pour trouver les limites du trou
-            lo = best  # Limite gauche (index)
-            hi = best  # Limite droite (index)
-
-            # On étend vers la gauche tant qu'il y a de l'espace libre
-            while lo > 0 and free[lo - 1]:
-                lo -= 1
-
-            # On étend vers la droite tant qu'il y a de l'espace libre
-            while hi < free.size - 1 and free[hi + 1]:
-                hi += 1
-
-            # La largeur du trou est la différence d'angle entre les limites
-            gap_width = float(abs(angles[hi] - angles[lo]))
-        else:
-            # Si le meilleur faisceau n'est pas dans une zone libre (cas rare),
-            # on estime la largeur avec la taille de la fenêtre de dégagement
-            gap_width = float(window * abs(step))
-            lo = max(0, best - window // 2)
-            hi = min(angles.size - 1, best + window // 2)
-
-        # Limitation de l'angle souhaité à la direction maximale du véhicule
-        # On ne peut pas tourner plus que max_steering (limite mécanique)
-        desired = max(-self.max_steering, min(self.max_steering, desired))
-
-        # Lissage de la direction avec un filtre passe-bas
-        # Au lieu de tourner brusquement vers la nouvelle direction, on tourne progressivement
-        # smoothing est le coefficient de lissage :
-        # - Si dt est petit (simulation rapide), smoothing est petit = changement lent
-        # - Si dt est grand, smoothing approche 1 = changement rapide
-        # 10.0 est un coefficient empirique qui détermine la rapidité du lissage
-        smoothing = min(1.0, 10.0 * dt)
-
-        # Mise à jour de la direction : on se rapproche de 'desired' proportionnellement à 'smoothing'
-        # C'est une interpolation linéaire entre l'ancienne et la nouvelle direction
-        self.steering += (desired - self.steering) * smoothing
-
-        # On s'assure que la direction finale reste dans les limites
-        self.steering = max(-self.max_steering, min(self.max_steering, self.steering))
-
-        # Réduction de la vitesse lorsque le dégagement est faible
-        # La vitesse de base est au minimum 0.45 m/s (pour que le véhicule bouge toujours un peu)
-        # ou la limite de vitesse configurée, selon laquelle est plus grand
-        speed = max(0.45, speed_limit)
-        speed_reason = "open"
-
-        # Si les obstacles sont très proches (dégagement < 0.50 m), on ralentit fortement
-        if best_clearance < 0.50:
-            speed = min(speed, 0.55)  # Vitesse maximale 0.55 m/s (très lent)
-            speed_reason = "tight clearance"
-        # Si les obstacles sont modérément proches (dégagement < 0.80 m), on ralentit un peu
-        elif best_clearance < 0.80:
-            speed = min(speed, 1.0)  # Vitesse maximale 1.0 m/s (lent)
-            speed_reason = "cautious clearance"
-
-        # Calcul de l'accélérateur (throttle) à partir de la vitesse cible
-        # throttle est une valeur entre 0 et 1 qui représente la puissance du moteur
-        # On divise la vitesse par max_speed_for_throttle pour normaliser
-        # Si speed = max_speed_for_throttle, throttle = 1 (pleine puissance)
-        # Si speed est plus petit, throttle est proportionnellement plus petit
-        throttle = max(0.0, min(1.0, speed / self.max_speed_for_throttle))
-
-        # Données échantillonnées pour le graphe : on ne garde que le secteur avant
-        # et on réduit à ~90 points pour garder le panneau lisible et léger.
-        front_indices = np.flatnonzero(front)
-        sample_step = max(1, front_indices.size // 90)
-        sample_indices = front_indices[::sample_step]
-        sampled_angles = angles[sample_indices]
-        sampled_raw = ranges[sample_indices]
-        sampled_smoothed = work[sample_indices]
-        sampled_clearance = clearance[sample_indices]
-        sampled_scores = scores[sample_indices]
-        sampled_penalty = angle_change_penalty[sample_indices]
-        sampled_free = free[sample_indices]
-        profile = np.column_stack([sampled_angles, sampled_clearance])
-
-        # Classement des faisceaux candidats. Les candidats sont calculés sur
-        # toute la résolution du scan, pas sur le profil décimé du graphe.
-        ranked = front_indices[np.argsort(scores[front_indices])[::-1]]
-        candidates = tuple(
+    front_indices = np.flatnonzero(np.isfinite(scores))
+    ranked = front_indices[np.argsort(scores[front_indices])[::-1]]
+    candidates = []
+    for rank, index in enumerate(ranked[:limit]):
+        candidates.append(
             GapCandidate(
                 rank=rank + 1,
                 index=int(index),
@@ -406,60 +191,214 @@ class FurthestGapController:
                 raw_range_m=float(ranges[index]),
                 smoothed_range_m=float(work[index]),
                 clearance_m=float(clearance[index]),
-                angle_change_penalty_m=float(angle_change_penalty[index]),
+                angle_change_penalty_m=float(penalty[index]),
+                free_fraction=float(free_fraction[index]),
                 score=float(scores[index]),
                 in_gap=bool(free[index]),
                 selected=bool(index == best),
             )
-            for rank, index in enumerate(ranked[:8])
         )
+    return tuple(candidates)
 
-        # Mise à jour des informations de débogage pour la visualisation dans le dashboard
-        # Ces données permettent de voir ce que l'algorithme a calculé
-        # (direction, vitesse, trou choisi) et pourquoi.
-        self.debug = GapDebug(
-            angle_rad=desired,  # Direction souhaitée après limitation
-            steering_rad=self.steering,  # Direction réelle après lissage
-            range_m=best_range,  # Distance au centre du trou
-            clearance_m=best_clearance,  # Dégagement minimal
-            gap_width_rad=gap_width,  # Largeur angulaire du trou
-            gap_left_rad=float(min(angles[lo], angles[hi])),
-            gap_right_rad=float(max(angles[lo], angles[hi])),
-            front_sector_rad=float(self.front_sector),
-            throttle=throttle,
+
+class FurthestGapController:
+    """Contrôleur de suivi de trou : façade de ``StructuredGapPolicy``.
+
+    L'algorithme (résumé) :
+
+    1. **Filtrage** : seules les mesures du secteur avant (±``front_sector_deg``)
+       sont conservées.
+    2. **Lissage** : moyenne mobile sur ``smoothing_beams`` faisceaux pour
+       réduire le bruit du lidar.
+    3. **Dégagement** : pour chaque faisceau, distance minimale dans une
+       fenêtre angulaire — une estimation « pessimiste » de l'espace libre,
+       qui ne rate pas un obstacle juste à côté de la direction visée.
+    4. **Scoring** : chaque direction est notée par une somme pondérée
+       (dégagement, portée, largeur de trou) moins des pénalités
+       (changement de direction, écart à l'avant).
+    5. **Commandes** : le faisceau gagnant donne la direction (lissée par un
+       filtre passe-bas) ; la vitesse suit un palier qui ralentit quand le
+       dégagement diminue, et se courbe selon le virage en cours.
+
+    Le comportement par défaut est le preset « mur » de B1 (``B1_DEFAULT``) :
+    c'est la même politique que celle optimisée par CMA-ES.
+    """
+
+    def __init__(self, policy: StructuredGapPolicy | None = None) -> None:
+        # Politique unique : par défaut, paramètres B1 hand-tunés.
+        self.policy = policy if policy is not None else StructuredGapPolicy()
+        self.debug = GapDebug(front_sector_rad=np.radians(
+            self.policy.params.front_sector_deg
+        ))
+
+    def reset(self) -> None:
+        """Remet à zéro l'état interne (direction, mémoire, débogage)."""
+
+        self.policy.reset()
+        self.debug = GapDebug(front_sector_rad=np.radians(
+            self.policy.params.front_sector_deg
+        ))
+
+    def update(self, observation: Observation, speed_limit: float = 1.5) -> Actuation:
+        """Un pas de contrôle : lit les capteurs, renvoie les commandes.
+
+        Args:
+            observation: L'état des capteurs (seul le lidar est utilisé).
+            speed_limit: Ignoré. La politique B1 possède son propre plan de
+                vitesse (paliers de dégagement + limite en virage), cohérent
+                avec ``LearnedGapController`` ; le curseur du dashboard n'est
+                pas un plafond dur.
+
+        Returns:
+            Actuation: ``throttle`` entre 0 et 1, ``steering`` en radians
+            (positif = gauche).
+        """
+
+        scan = observation.lidar_current
+        if scan is None:
+            self.debug = GapDebug(
+                valid=False,
+                status="NO SCAN",
+                detail="lidar unavailable",
+                front_sector_rad=np.radians(self.policy.params.front_sector_deg),
+            )
+            return self.policy.act(observation)
+
+        # 1. Surface de score AVANT d'agir : elle reflète exactement ce que la
+        #    politique va voir (la pénalité de changement de direction utilise
+        #    encore la direction précédente).
+        surface = self.policy.score_surface(observation)
+        penalty = None
+        if surface is not None:
+            penalty = _penalty_profile(
+                self.policy, np.asarray(surface["angles"], dtype=float)
+            )
+
+        # 2. La politique unique décide : direction lissée + plan de vitesse.
+        command = self.policy.act(observation)
+
+        # 3. Traduction en débogage pour le dashboard.
+        self.debug = self._build_debug(observation, command, surface, scan, penalty)
+        return command
+
+    def _build_debug(
+        self,
+        observation: Observation,
+        command: Actuation,
+        surface: dict | None,
+        scan,
+        penalty: np.ndarray | None,
+    ) -> GapDebug:
+        """Construit le ``GapDebug`` à partir de la surface de score B1."""
+
+        front_sector_rad = np.radians(self.policy.params.front_sector_deg)
+        if surface is None or not self.policy.last_debug.get("valid", 0.0):
+            return GapDebug(
+                valid=False,
+                status="NO FRONT",
+                detail=(
+                    "no valid lidar returns within "
+                    f"±{np.degrees(front_sector_rad):.0f}°"
+                ),
+                front_sector_rad=float(front_sector_rad),
+                beam_count=scan.beam_count,
+                scan_t=float(scan.t_measure),
+            )
+
+        # Champs calculés par la politique au dernier tick.
+        info = self.policy.last_debug
+        best = int(np.argmax(np.asarray(surface["scores"], dtype=float)))
+        angles = np.asarray(surface["angles"], dtype=float)
+        front = np.asarray(surface["front"], dtype=bool)
+        work = np.asarray(surface["work"], dtype=float)
+        clearance = np.asarray(surface["clearance"], dtype=float)
+        free = np.asarray(surface["free"], dtype=bool)
+        scores = np.asarray(surface["scores"], dtype=float)
+        threshold = float(surface["threshold"])
+        window = int(surface["window"])
+        ranges = np.asarray(scan.ranges_m, dtype=float)
+        assert penalty is not None
+
+        # Limites du trou contigu autour du faisceau choisi.
+        lo = best
+        hi = best
+        while lo > 0 and free[lo - 1]:
+            lo -= 1
+        while hi < free.size - 1 and free[hi + 1]:
+            hi += 1
+        gap_left = float(min(angles[lo], angles[hi]))
+        gap_right = float(max(angles[lo], angles[hi]))
+        gap_width = float(abs(angles[hi] - angles[lo]))
+
+        # Séries décimées du secteur avant pour les graphes.
+        sampled = _sample_front(
+            angles,
+            front,
+            {
+                "angles": angles,
+                "raw": ranges,
+                "smoothed": work,
+                "clearance": clearance,
+                "scores": scores,
+                "penalty": penalty,
+                "free": free,
+            },
+        )
+        profile = np.column_stack([sampled["angles"], sampled["clearance"]])
+        gap_detected = bool(free[best])
+        best_clearance = float(clearance[best])
+
+        return GapDebug(
+            angle_rad=float(info.get("target_bearing_rad", 0.0)),
+            steering_rad=float(command.steering),
+            range_m=float(work[best]),
+            clearance_m=best_clearance,
+            gap_width_rad=gap_width,
+            gap_left_rad=gap_left,
+            gap_right_rad=gap_right,
+            front_sector_rad=float(front_sector_rad),
+            throttle=float(command.throttle),
             min_clearance_m=float(clearance[front].min()),
-            valid=True,  # Indique que le calcul a réussi
+            valid=True,
             profile=profile,
             status="TRACKING" if gap_detected else "FALLBACK",
             detail=(
-                f"{np.degrees(gap_width):.0f}° opening, speed: {speed_reason}"
+                f"{np.degrees(gap_width):.0f}° opening, "
+                f"speed: {_speed_reason(self.policy, best_clearance)}"
                 if gap_detected
                 else "no contiguous free opening; width estimated from window"
             ),
-            best_bearing_rad=best_bearing,
-            target_bearing_rad=desired,
+            best_bearing_rad=float(info.get("best_bearing_rad", 0.0)),
+            target_bearing_rad=float(info.get("target_bearing_rad", 0.0)),
             threshold_m=threshold,
             window_beams=window,
             beam_count=scan.beam_count,
             scan_t=float(scan.t_measure),
-            target_speed_mps=speed,
+            target_speed_mps=float(info.get("target_speed_mps", 0.0)),
             gap_detected=gap_detected,
-            angles_rad=sampled_angles,
-            raw_ranges_m=sampled_raw,
-            smoothed_ranges_m=sampled_smoothed,
-            clearance_profile_m=sampled_clearance,
-            scores=sampled_scores,
-            penalty_m=sampled_penalty,
-            free_mask=sampled_free,
+            angles_rad=sampled["angles"],
+            raw_ranges_m=sampled["raw"],
+            smoothed_ranges_m=sampled["smoothed"],
+            clearance_profile_m=sampled["clearance"],
+            scores=sampled["scores"],
+            penalty_m=sampled["penalty"],
+            free_mask=sampled["free"],
             chosen_index=best,
-            candidates=candidates,
+            candidates=_build_candidates(
+                angles,
+                ranges,
+                work,
+                clearance,
+                free,
+                np.asarray(surface["free_fraction"], dtype=float),
+                scores,
+                penalty,
+                best,
+            ),
         )
 
-        # Retour des commandes pour le véhicule
-        return Actuation(throttle=throttle, steering=self.steering)
-
     def debug_frame(self) -> DebugFrame:
-        """Build the dashboard-neutral debug snapshot for this controller."""
+        """Construit l'instantané de débogage pour le dashboard."""
 
         debug = self.debug
         if not debug.valid:
@@ -697,7 +636,7 @@ def _spread_candidates(
     limit: int = 3,
     min_separation_rad: float = 0.16,
 ) -> tuple[GapCandidate, ...]:
-    """Keep only a few well-separated candidates so the 3D view stays readable."""
+    """Garde quelques candidats bien séparés pour garder la vue 3D lisible."""
 
     selected: list[GapCandidate] = []
     for candidate in candidates:
