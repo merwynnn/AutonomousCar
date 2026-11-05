@@ -83,6 +83,29 @@ def _sample_track(
     )
 
 
+def _generation_tracks(
+    args: argparse.Namespace,
+    rng: np.random.Generator,
+) -> list[TrackSpec | None]:
+    """Tracks of one generation.
+
+    With ``--tracks-per-generation 1`` the legacy behaviour is kept: a single
+    track sampled per generation (reference with probability
+    ``reference_track_prob``). With ``K > 1`` the generation always starts
+    with the reference track (so the target lap time keeps direct selection
+    pressure) followed by ``K - 1`` sampled random tracks: the fitness of a
+    candidate is the mean of its scores over the ``K`` tracks, which selects
+    jointly for speed on the reference circuit and robustness on fresh
+    generated tracks.
+    """
+
+    if args.tracks_per_generation <= 1:
+        return [_sample_track(args, rng)]
+    return [None] + [
+        _sample_track(args, rng) for _ in range(args.tracks_per_generation - 1)
+    ]
+
+
 def _track_note(track_spec: TrackSpec | None) -> str:
     if track_spec is None:
         return "reference"
@@ -105,6 +128,16 @@ def _load_init(path: Path | None, stage: str, hidden: int) -> np.ndarray:
         vector = b2_expand_to_hidden(vector, hidden)
     if stage == "b1" and policy_type != "b1":
         raise SystemExit(f"{path} is {policy_type}, not b1")
+    if stage == "b1" and vector.size < len(B1_SPECS):
+        # Legacy shorter genome: new dimensions start at their default.
+        pad = np.array(
+            [
+                (spec.default - spec.low) / (spec.high - spec.low)
+                for spec in B1_SPECS[vector.size :]
+            ],
+            dtype=float,
+        )
+        vector = np.concatenate([vector, pad])
     return vector
 
 
@@ -245,7 +278,10 @@ def run(args: argparse.Namespace) -> int:
         initial_started = time.perf_counter()
         initial_result = pool.evaluate([x0], start_s=default_start)[0]
         reporter.initial(initial_result, time.perf_counter() - initial_started)
-        best_fitness = float(initial_result.fitness)
+        # With multi-track generations the fitness is a mean over tracks, so
+        # the promotion threshold starts open rather than at the single-track
+        # initial fitness (a different scale).
+        best_fitness = float("inf")
         best_vector = x0.copy()
         best_meta = _meta_from_result(
             args.stage, -1, initial_result, default_start, args
@@ -270,32 +306,54 @@ def run(args: argparse.Namespace) -> int:
         for generation in range(args.generations):
             generation_started = time.perf_counter()
             solutions = [np.asarray(s, dtype=float) for s in es.ask()]
-            track_spec = _sample_track(args, track_rng)
-            if track_spec is None:
-                use_random_start = (
-                    generation < args.random_start_generations
-                    and rng.random() < args.random_start_prob
+            specs = _generation_tracks(args, track_rng)
+            per_track_results: list[list[Any]] = []
+            start_s = default_start
+            generation_track_length = track_length
+            for track_index, track_spec in enumerate(specs):
+                sensor_seed = (
+                    int(rng.integers(0, 2**31 - 1))
+                    if args.vary_sensor_seed
+                    else None
                 )
-                start_s = (
-                    (default_start + float(rng.uniform(0.0, track_length)))
-                    % track_length
-                    if use_random_start
-                    else default_start
+                if track_spec is None:
+                    use_random_start = (
+                        generation < args.random_start_generations
+                        and rng.random() < args.random_start_prob
+                    )
+                    spec_start = (
+                        (default_start + float(rng.uniform(0.0, track_length)))
+                        % track_length
+                        if use_random_start
+                        else default_start
+                    )
+                    spec_length = track_length
+                else:
+                    generated = track_spec.build()
+                    spec_start = float(generated.start_s)
+                    spec_length = float(generated.length)
+                if track_index == 0:
+                    start_s = spec_start
+                    generation_track_length = spec_length
+                per_track_results.append(
+                    pool.evaluate(
+                        solutions,
+                        start_s=spec_start,
+                        track_spec=track_spec,
+                        seed=sensor_seed,
+                    )
                 )
-                generation_track_length = track_length
-            else:
-                generated = track_spec.build()
-                start_s = float(generated.start_s)
-                generation_track_length = float(generated.length)
-            results = pool.evaluate(
-                solutions, start_s=start_s, track_spec=track_spec
-            )
+            results = per_track_results[0]
             generation_seconds = time.perf_counter() - generation_started
-            fitnesses = [result.fitness for result in results]
+            fitnesses = [
+                float(np.mean([track_results[i].fitness for track_results in per_track_results]))
+                for i in range(len(solutions))
+            ]
             es.tell(solutions, fitnesses)
 
             best_index = int(np.argmin(fitnesses))
             generation_best = results[best_index]
+            track_spec = specs[0]
             if track_spec is not None and fitnesses[best_index] < best_random_fitness:
                 best_random_fitness = float(fitnesses[best_index])
                 best_random_vector = solutions[best_index].copy()
@@ -312,12 +370,17 @@ def run(args: argparse.Namespace) -> int:
             if fitnesses[best_index] < best_fitness:
                 # A candidate that is fast from a random start offset may be
                 # dirty at the reference pose.  Only promote/export a vector
-                # that also validates cleanly at the reference start.
-                validated = pool.evaluate(
-                    [solutions[best_index]],
-                    start_s=default_start,
-                    track_spec=None,
-                )[0]
+                # that also validates cleanly at the reference start.  When the
+                # generation already includes the reference track, its result
+                # is reused instead of a second rollout.
+                if specs[0] is None:
+                    validated = results[best_index]
+                else:
+                    validated = pool.evaluate(
+                        [solutions[best_index]],
+                        start_s=default_start,
+                        track_spec=None,
+                    )[0]
                 if (
                     validated.contacts == 0
                     and validated.lap_time_s is not None
@@ -500,6 +563,24 @@ def main() -> None:
         type=int,
         default=None,
         help="seed for track sampling (default: --seed)",
+    )
+    parser.add_argument(
+        "--tracks-per-generation",
+        type=int,
+        default=1,
+        help=(
+            "evaluate every candidate on this many tracks per generation "
+            ">1: reference track plus N-1 random tracks, mean fitness"
+        ),
+    )
+    parser.add_argument(
+        "--vary-sensor-seed",
+        action="store_true",
+        help=(
+            "resample the sensor-noise seed every generation (common random "
+            "numbers are kept within a generation) to avoid overfitting one "
+            "noise realization"
+        ),
     )
     parser.add_argument(
         "--reference-track-prob",

@@ -724,7 +724,7 @@ class LearnedGapController:
                         _, fallback_vector, _, _ = _load_policy_file(sibling)
                 if (
                     fallback_vector is not None
-                    and fallback_vector.size == len(B1_DEFAULT)
+                    and fallback_vector.size <= len(B1_DEFAULT)
                 ):
                     fallback = StructuredGapPolicy(fallback_vector)
                     fallback.params = replace(

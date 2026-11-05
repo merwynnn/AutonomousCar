@@ -136,6 +136,11 @@ B1_SPECS: tuple[ParamSpec, ...] = (
     ParamSpec("speed_smoothing", 2.0, 20.0, 8.0),  # lissage de la vitesse
     ParamSpec("throttle_max_speed", 2.0, 5.5, 4.0),  # 100 % d'accélérateur
     ParamSpec("speed_min_mps", 0.20, 1.0, 0.40),  # vitesse plancher
+    # --- Anticipations (ajoutées en fin de génome : les anciens vecteurs
+    # plus courts restent valides, les nouveaux paramètres prennent leur
+    # valeur par défaut) ------------------------------------------------------
+    ParamSpec("clearance_speed_gain", 0.0, 6.0, 0.0),  # cap continu dégagement->vitesse
+    ParamSpec("steer_anticipation_gain", 0.0, 4.0, 0.0),  # ralentir AVANT le virage
 )
 
 B1_DEFAULT = np.array([spec.default for spec in B1_SPECS], dtype=float)
@@ -175,10 +180,27 @@ class B1Params:
     speed_smoothing: float
     throttle_max_speed: float
     speed_min_mps: float
+    clearance_speed_gain: float
+    steer_anticipation_gain: float
 
     @classmethod
     def from_vector(cls, vector: np.ndarray | None = None) -> B1Params:
-        values = B1_DEFAULT if vector is None else _unit_to_params(vector, B1_SPECS)
+        if vector is None:
+            values = B1_DEFAULT
+        else:
+            vector = np.clip(np.asarray(vector, dtype=float), 0.0, 1.0)
+            if vector.size < len(B1_SPECS):
+                # Ancien fichier de poids plus court : les dimensions
+                # manquantes prennent leur valeur par défaut (en unités [0, 1]).
+                pad = np.array(
+                    [
+                        (spec.default - spec.low) / (spec.high - spec.low)
+                        for spec in B1_SPECS[vector.size :]
+                    ],
+                    dtype=float,
+                )
+                vector = np.concatenate([vector, pad])
+            values = _unit_to_params(vector, B1_SPECS)
         return cls(**{spec.name: float(values[i]) for i, spec in enumerate(B1_SPECS)})
 
 
@@ -413,6 +435,20 @@ class StructuredGapPolicy:
         measured_speed = max(float(observation.state.speed_mps), 0.2)
         curvature = abs(float(observation.state.yaw_rate_rad_s)) / measured_speed
         speed = min(speed, p.base_speed_mps / (1.0 + p.curvature_speed_gain * curvature))
+        # Anticipation continue : ralentir AVANT que le lacet ne s'installe,
+        # à partir de l'angle visé (fraction de la butée de direction), et
+        # cap linéaire dégagement -> vitesse en complément des deux paliers.
+        if p.steer_anticipation_gain > 0.0:
+            steer_fraction = min(
+                1.0, abs(desired) / max(p.max_steering_rad, 1e-6)
+            )
+            speed = min(
+                speed,
+                p.base_speed_mps
+                / (1.0 + p.steer_anticipation_gain * steer_fraction),
+            )
+        if p.clearance_speed_gain > 0.0:
+            speed = min(speed, p.clearance_speed_gain * best_clearance)
         speed = _clip(speed, p.speed_min_mps, p.base_speed_mps)
         # Lissage passe-bas, puis conversion en throttle normalisé.
         alpha = min(1.0, p.speed_smoothing * dt)

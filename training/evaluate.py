@@ -54,6 +54,12 @@ def main() -> None:
     parser.add_argument("--object-scale-jitter", type=float, default=0.3)
     parser.add_argument("--track-width", type=float, default=0.9)
     parser.add_argument(
+        "--seed-sweep",
+        type=int,
+        default=0,
+        help="evaluate the reference track across this many sensor-noise seeds",
+    )
+    parser.add_argument(
         "--random-sweep",
         type=int,
         default=0,
@@ -82,6 +88,31 @@ def main() -> None:
         seed=args.seed,
         max_time_s=args.max_time,
     )
+
+    if args.seed_sweep > 0:
+        clean = 0
+        seed_times: list[float] = []
+        for index in range(args.seed_sweep):
+            seed = 1000 + index
+            seed_config = RolloutConfig(
+                policy_type=policy_type,
+                hidden=hidden,
+                subrays=args.subrays[0],
+                seed=seed,
+                max_time_s=args.max_time,
+            )
+            result = run_vector(vector, seed_config)
+            if _format_result(f"sensor seed {seed}", result):
+                clean += 1
+                if result.lap_time_s is not None:
+                    seed_times.append(result.lap_time_s)
+        summary = (
+            f"mean clean lap {np.mean(seed_times):.2f} s | best {np.min(seed_times):.2f} s"
+            if seed_times
+            else "no clean laps"
+        )
+        print(f"clean {clean}/{args.seed_sweep} | {summary}")
+        return
 
     if args.random_sweep > 0:
         rng = np.random.default_rng(args.track_seed)

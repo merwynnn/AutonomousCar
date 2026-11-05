@@ -30,19 +30,20 @@ _WORKER_SIM: Simulation | None = None
 _WORKER_MONITOR: ContactMonitor | None = None
 _WORKER_CONFIG: RolloutConfig | None = None
 _WORKER_DEFAULT_START: float = 0.0
-_WORKER_TRACK_KEY: TrackSpec | None = None
+_WORKER_KEY: tuple[TrackSpec | None, int] | None = None
 
 
 def _build_simulation(
     config: RolloutConfig,
     track_spec: TrackSpec | None,
+    seed: int | None = None,
 ) -> tuple[Simulation, ContactMonitor, float]:
     monitor = ContactMonitor()
     track = track_spec.build() if track_spec is not None else None
     sim = Simulation(
         "configs/sim/awake_2027.yaml",
         lidar_subrays=config.subrays,
-        seed=config.seed,
+        seed=config.seed if seed is None else int(seed),
         track=track,
         physics_step_hook=lambda world: monitor.update(world, sim.sim_time),
     )
@@ -53,34 +54,35 @@ def _build_simulation(
 
 def init_worker(config: RolloutConfig) -> None:
     global _WORKER_SIM, _WORKER_MONITOR, _WORKER_CONFIG
-    global _WORKER_DEFAULT_START, _WORKER_TRACK_KEY
+    global _WORKER_DEFAULT_START, _WORKER_KEY
     sim, monitor, start = _build_simulation(config, None)
     _WORKER_SIM = sim
     _WORKER_MONITOR = monitor
     _WORKER_CONFIG = config
     _WORKER_DEFAULT_START = start
-    _WORKER_TRACK_KEY = None
+    _WORKER_KEY = None
 
 
-def _ensure_track(track_spec: TrackSpec | None) -> None:
-    global _WORKER_SIM, _WORKER_MONITOR, _WORKER_DEFAULT_START, _WORKER_TRACK_KEY
+def _ensure_track(track_spec: TrackSpec | None, seed: int | None) -> None:
+    global _WORKER_SIM, _WORKER_MONITOR, _WORKER_DEFAULT_START, _WORKER_KEY
     assert _WORKER_CONFIG is not None
-    if _WORKER_SIM is not None and track_spec == _WORKER_TRACK_KEY:
+    key = (track_spec, _WORKER_CONFIG.seed if seed is None else int(seed))
+    if _WORKER_SIM is not None and key == _WORKER_KEY:
         return
     if _WORKER_SIM is not None:
         _WORKER_SIM.close()
-    sim, monitor, start = _build_simulation(_WORKER_CONFIG, track_spec)
+    sim, monitor, start = _build_simulation(_WORKER_CONFIG, track_spec, seed)
     _WORKER_SIM = sim
     _WORKER_MONITOR = monitor
     _WORKER_DEFAULT_START = start
-    _WORKER_TRACK_KEY = track_spec
+    _WORKER_KEY = key
 
 
 def _evaluate_task(
-    task: tuple[list[float], float | None, TrackSpec | None],
+    task: tuple[list[float], float | None, TrackSpec | None, int | None],
 ) -> RolloutResult:
-    vector, start_s, track_spec = task
-    _ensure_track(track_spec)
+    vector, start_s, track_spec, seed = task
+    _ensure_track(track_spec, seed)
     assert _WORKER_SIM is not None
     assert _WORKER_MONITOR is not None
     assert _WORKER_CONFIG is not None
@@ -111,9 +113,10 @@ class RolloutPool:
         vectors: Iterable[np.ndarray],
         start_s: float | None = None,
         track_spec: TrackSpec | None = None,
+        seed: int | None = None,
     ) -> list[RolloutResult]:
-        tasks: list[tuple[list[float], float | None, TrackSpec | None]] = [
-            (np.asarray(vector, dtype=float).tolist(), start_s, track_spec)
+        tasks: list[tuple[list[float], float | None, TrackSpec | None, int | None]] = [
+            (np.asarray(vector, dtype=float).tolist(), start_s, track_spec, seed)
             for vector in vectors
         ]
         return list(self._pool.map(_evaluate_task, tasks))
