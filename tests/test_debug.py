@@ -68,12 +68,18 @@ def test_gap_debug_frame_exposes_candidates_and_score() -> None:
             (candidate.score for candidate in candidates),
             reverse=True,
         )
+        # Le contrôleur délègue le scoring à StructuredGapPolicy (B1) :
+        # score = clearance_weight*clearance + range_weight*portée lissée
+        #        + gap_width_weight*2*free_fraction - pénalités (direction).
+        params = controller.policy.params
         for candidate in candidates:
-            assert math.isclose(
-                candidate.score,
-                candidate.clearance_m - candidate.angle_change_penalty_m,
-                abs_tol=1e-6,
+            expected = (
+                params.clearance_weight * candidate.clearance_m
+                + params.range_weight * candidate.smoothed_range_m
+                + params.gap_width_weight * 2.0 * candidate.free_fraction
+                - candidate.angle_change_penalty_m
             )
+            assert math.isclose(candidate.score, expected, abs_tol=1e-6)
         table = payload["tables"][0]
         assert table["selected_row"] == 0
         assert table["rows"][0][4] == round(candidates[0].score, 4)
