@@ -1,10 +1,10 @@
 """Contrôleur « trou le plus dégagé » pour le dashboard.
 
 Ce module est une **façade** : la logique de conduite vit dans
-``algorithms/learned_gap.py`` (``StructuredGapPolicy``, la version B1
+``algorithms/gap_policy.py`` (``StructuredGapPolicy``, la version B1
 entraînable par CMA-ES). Ici, on se contente de :
 
-1. construire la politique avec ses paramètres par défaut (``B1_DEFAULT``) ;
+1. construire la politique B1 avec ses paramètres par défaut (``B1_DEFAULT``) ;
 2. adapter sa signature ``act(observation)`` au contrat du registre
    ``update(observation, speed_limit)`` — le ``speed_limit`` du tableau de
    bord est volontairement ignoré, comme pour ``LearnedGapController`` ;
@@ -40,7 +40,7 @@ from algorithms.debug import (
     Series,
     Table,
 )
-from algorithms.learned_gap import StructuredGapPolicy
+from algorithms.gap_policy import StructuredGapPolicy
 
 
 @dataclass(frozen=True)

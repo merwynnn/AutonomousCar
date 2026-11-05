@@ -9,7 +9,9 @@ file:
 
 ``b1``
     A parameterised version of the furthest-gap controller. CMA-ES tunes the
-    scan processing, scoring and speed schedule directly.
+    scan processing, scoring and speed schedule directly. The implementation
+    lives in ``algorithms/gap_policy.py`` (``StructuredGapPolicy``) and is
+    re-exported here for import compatibility.
 
 ``b2``
     A learned beam scorer. A small per-beam network scores downsampled lidar
@@ -31,117 +33,24 @@ from pathlib import Path
 import numpy as np
 from onboard.api import Actuation, Observation
 
-WEIGHTS_PATH = Path(__file__).with_name("weights") / "policy.npz"
-
-# ---------------------------------------------------------------------------
-# Shared parameter helpers
-
-
-@dataclass(frozen=True)
-class ParamSpec:
-    name: str
-    low: float
-    high: float
-    default: float
-
-
-def _coerce_odd(value: float, upper: int | None = None) -> int:
-    count = max(1, int(round(value)))
-    if count % 2 == 0:
-        count += 1
-    if upper is not None and count > upper:
-        count = upper if upper % 2 == 1 else max(1, upper - 1)
-    return count
-
-
-def _clip(value: float, low: float, high: float) -> float:
-    return float(min(high, max(low, value)))
-
-
-def _sigmoid(value: float) -> float:
-    value = _clip(value, -60.0, 60.0)
-    return float(1.0 / (1.0 + np.exp(-value)))
-
-
-def _unit_to_params(vector: np.ndarray, specs: tuple[ParamSpec, ...]) -> np.ndarray:
-    """Map an unconstrained/unit vector to physical parameter bounds."""
-
-    vector = np.asarray(vector, dtype=float)
-    low = np.array([spec.low for spec in specs], dtype=float)
-    high = np.array([spec.high for spec in specs], dtype=float)
-    return low + np.clip(vector, 0.0, 1.0) * (high - low)
-
-
-def _params_to_unit(params: np.ndarray, specs: tuple[ParamSpec, ...]) -> np.ndarray:
-    low = np.array([spec.low for spec in specs], dtype=float)
-    high = np.array([spec.high for spec in specs], dtype=float)
-    return np.clip((np.asarray(params, dtype=float) - low) / (high - low), 0.0, 1.0)
-
-
-# ---------------------------------------------------------------------------
-# B1: parameterised furthest-gap controller
-
-B1_SPECS: tuple[ParamSpec, ...] = (
-    ParamSpec("front_sector_deg", 55.0, 135.0, 100.0),
-    ParamSpec("clearance_window_deg", 20.0, 120.0, 60.0),
-    ParamSpec("min_gap_m", 0.20, 1.20, 0.60),
-    ParamSpec("smoothing_beams", 1.0, 11.0, 7.0),
-    ParamSpec("angle_change_weight", 0.0, 1.5, 0.45),
-    ParamSpec("clearance_weight", 0.0, 2.0, 1.0),
-    ParamSpec("range_weight", 0.0, 1.0, 0.0),
-    ParamSpec("gap_width_weight", 0.0, 2.0, 0.50),
-    ParamSpec("center_bias_weight", 0.0, 1.0, 0.0),
-    ParamSpec("aim_blend", 0.0, 1.0, 0.0),
-    ParamSpec("max_steering_rad", 0.25, 0.49, 0.49),
-    ParamSpec("steer_smoothing", 2.0, 30.0, 10.0),
-    ParamSpec("steer_gain", 0.50, 2.0, 1.0),
-    ParamSpec("base_speed_mps", 0.80, 4.0, 2.20),
-    ParamSpec("clearance_slow_1_m", 0.20, 1.0, 0.55),
-    ParamSpec("clearance_slow_1_speed", 0.30, 2.0, 0.50),
-    ParamSpec("clearance_slow_2_m", 0.50, 2.0, 0.90),
-    ParamSpec("clearance_slow_2_speed", 0.80, 3.0, 0.90),
-    ParamSpec("gap_width_speed_gain", 0.0, 4.0, 1.0),
-    ParamSpec("curvature_speed_gain", 0.0, 4.0, 0.80),
-    ParamSpec("speed_smoothing", 2.0, 20.0, 8.0),
-    ParamSpec("throttle_max_speed", 2.0, 5.5, 4.0),
-    ParamSpec("speed_min_mps", 0.20, 1.0, 0.40),
+from algorithms.gap_policy import (
+    B1_DEFAULT,
+    B1_HIGH,
+    B1_LOW,
+    B1_SPECS,
+    B1Params,
+    ParamSpec,
+    StructuredGapPolicy,
+    _clip,
+    _coerce_odd,
+    _front_scan,
+    _params_to_unit,
+    _sigmoid,
+    _unit_to_params,
 )
 
-B1_DEFAULT = np.array([spec.default for spec in B1_SPECS], dtype=float)
-B1_LOW = np.array([spec.low for spec in B1_SPECS], dtype=float)
-B1_HIGH = np.array([spec.high for spec in B1_SPECS], dtype=float)
+WEIGHTS_PATH = Path(__file__).with_name("weights") / "policy.npz"
 
-
-@dataclass
-class B1Params:
-    front_sector_deg: float
-    clearance_window_deg: float
-    min_gap_m: float
-    smoothing_beams: float
-    angle_change_weight: float
-    clearance_weight: float
-    range_weight: float
-    gap_width_weight: float
-    center_bias_weight: float
-    aim_blend: float
-    max_steering_rad: float
-    steer_smoothing: float
-    steer_gain: float
-    base_speed_mps: float
-    clearance_slow_1_m: float
-    clearance_slow_1_speed: float
-    clearance_slow_2_m: float
-    clearance_slow_2_speed: float
-    gap_width_speed_gain: float
-    curvature_speed_gain: float
-    speed_smoothing: float
-    throttle_max_speed: float
-    speed_min_mps: float
-
-    @classmethod
-    def from_vector(cls, vector: np.ndarray | None = None) -> B1Params:
-        values = B1_DEFAULT if vector is None else _unit_to_params(vector, B1_SPECS)
-        return cls(**{spec.name: float(values[i]) for i, spec in enumerate(B1_SPECS)})
 
 
 # ---------------------------------------------------------------------------
@@ -411,21 +320,6 @@ class ScanFeatures:
     right_free: np.ndarray
 
 
-def _front_scan(observation: Observation, front_sector_rad: float) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-    scan = observation.lidar_current
-    if scan is None:
-        return None
-    angles = np.asarray(scan.angles_rad, dtype=float)
-    ranges = np.asarray(scan.ranges_m, dtype=float)
-    valid = np.asarray(scan.valid, dtype=bool) & np.isfinite(ranges) & (ranges > 0.05)
-    if angles.size == 0 or ranges.size != angles.size or valid.size != angles.size:
-        return None
-    front = valid & (np.abs(angles) <= front_sector_rad)
-    if not np.any(front):
-        return None
-    return angles, ranges, valid
-
-
 def _resample_front(
     angles: np.ndarray,
     ranges: np.ndarray,
@@ -515,161 +409,6 @@ def beam_features(
 
 # ---------------------------------------------------------------------------
 # Runtime policies
-
-
-class StructuredGapPolicy:
-    """B1: parameterised furthest-gap controller."""
-
-    def __init__(self, vector: np.ndarray | None = None) -> None:
-        self.params = B1Params.from_vector(vector)
-        self.reset()
-
-    def reset(self) -> None:
-        self.steering = 0.0
-        self.last_angle = 0.0
-        self.speed = 0.0
-        self.last_debug: dict[str, float] = {}
-
-    def score_surface(self, observation: Observation) -> dict[str, np.ndarray | float | int] | None:
-        """Compute the full-resolution beam score surface.
-
-        Exposed for training and debugging: the B2 warm start regresses its
-        per-beam features onto this surface instead of imitating a single
-        action, which preserves the safety ordering B1 learned.
-        """
-
-        p = self.params
-        front_sector = np.radians(p.front_sector_deg)
-        scan = _front_scan(observation, front_sector)
-        if scan is None:
-            return None
-        angles, ranges, valid = scan
-        front = valid & (np.abs(angles) <= front_sector)
-        if not np.any(front):
-            return None
-
-        open_range = float(np.nanmax(ranges[front]))
-        work = np.where(front, ranges, open_range)
-
-        kernel_count = _coerce_odd(p.smoothing_beams, angles.size)
-        if kernel_count > 1:
-            kernel = np.ones(kernel_count) / kernel_count
-            pad = kernel_count // 2
-            padded = np.concatenate([work[-pad:], work, work[:pad]])
-            work = np.convolve(padded, kernel, mode="same")[pad:-pad]
-
-        step = abs(float(np.median(np.diff(angles)))) if angles.size > 1 else 0.01
-        window = _coerce_odd(np.radians(p.clearance_window_deg) / max(step, 1e-6), angles.size)
-        pad = window // 2
-        padded_work = np.concatenate([work[-pad:], work, work[:pad]]) if pad else work
-        windows = np.lib.stride_tricks.sliding_window_view(padded_work, window)
-        clearance = windows.min(axis=1)
-
-        threshold = max(p.min_gap_m, 0.75 * float(np.max(clearance[front])))
-        free = front & (work >= threshold)
-        padded_free = (
-            np.concatenate([free[-pad:], free, free[:pad]]).astype(float) if pad else free.astype(float)
-        )
-        free_windows = np.lib.stride_tricks.sliding_window_view(padded_free, window)
-        free_fraction = free_windows.mean(axis=1)
-
-        scores = (
-            p.clearance_weight * clearance
-            + p.range_weight * work
-            + p.gap_width_weight * 2.0 * free_fraction
-            - p.angle_change_weight * np.abs(angles - self.last_angle)
-            - p.center_bias_weight * np.abs(angles)
-        )
-        scores = np.where(front, scores, -np.inf)
-        return {
-            "angles": angles,
-            "front": front,
-            "work": work,
-            "clearance": clearance,
-            "free": free,
-            "free_fraction": free_fraction,
-            "scores": scores,
-            "threshold": threshold,
-            "window": window,
-            "step": step,
-            "front_sector": front_sector,
-        }
-
-    def act(self, observation: Observation) -> Actuation:
-        p = self.params
-        surface = self.score_surface(observation)
-        if surface is None:
-            self.last_debug = {"valid": 0.0}
-            return Actuation(throttle=0.0, steering=self.steering)
-        angles = np.asarray(surface["angles"], dtype=float)
-        clearance = np.asarray(surface["clearance"], dtype=float)
-        free = np.asarray(surface["free"], dtype=bool)
-        scores = np.asarray(surface["scores"], dtype=float)
-        window = int(surface["window"])
-        step = float(surface["step"])
-        dt = max(observation.dt, 1e-4)
-
-        best = int(np.argmax(scores))
-        if not np.isfinite(scores[best]):
-            return Actuation(throttle=0.0, steering=0.0)
-
-        best_bearing = float(angles[best])
-        self.last_angle = best_bearing
-        best_clearance = float(clearance[best])
-
-        if free[best]:
-            lo = best
-            hi = best
-            while lo > 0 and free[lo - 1]:
-                lo -= 1
-            while hi < free.size - 1 and free[hi + 1]:
-                hi += 1
-            gap_left = float(min(angles[lo], angles[hi]))
-            gap_right = float(max(angles[lo], angles[hi]))
-            gap_width = float(abs(angles[hi] - angles[lo]))
-            gap_center = 0.5 * (gap_left + gap_right)
-        else:
-            gap_width = float(window * step)
-            gap_left = best_bearing - gap_width / 2.0
-            gap_right = best_bearing + gap_width / 2.0
-            gap_center = best_bearing
-
-        desired = p.aim_blend * gap_center + (1.0 - p.aim_blend) * best_bearing
-        target = _clip(p.steer_gain * desired, -p.max_steering_rad, p.max_steering_rad)
-        alpha = min(1.0, p.steer_smoothing * dt)
-        self.steering = _clip(
-            self.steering + (target - self.steering) * alpha,
-            -p.max_steering_rad,
-            p.max_steering_rad,
-        )
-
-        speed = p.base_speed_mps
-        if best_clearance < p.clearance_slow_1_m:
-            speed = min(speed, p.clearance_slow_1_speed)
-        elif best_clearance < p.clearance_slow_2_m:
-            speed = min(speed, p.clearance_slow_2_speed)
-        speed = min(p.base_speed_mps, speed + p.gap_width_speed_gain * gap_width)
-        measured_speed = max(float(observation.state.speed_mps), 0.2)
-        curvature = abs(float(observation.state.yaw_rate_rad_s)) / measured_speed
-        speed = min(speed, p.base_speed_mps / (1.0 + p.curvature_speed_gain * curvature))
-        speed = _clip(speed, p.speed_min_mps, p.base_speed_mps)
-        alpha = min(1.0, p.speed_smoothing * dt)
-        self.speed += (speed - self.speed) * alpha
-        throttle = _clip(self.speed / max(p.throttle_max_speed, 1e-6), 0.0, 1.0)
-
-        self.last_debug = {
-            "valid": 1.0,
-            "best_bearing_rad": best_bearing,
-            "target_bearing_rad": desired,
-            "steering_target_rad": target,
-            "clearance_m": best_clearance,
-            "gap_width_rad": gap_width,
-            "target_speed_mps": self.speed,
-            "throttle": throttle,
-            "steering_rad": self.steering,
-            "score": float(scores[best]),
-        }
-        return Actuation(throttle=throttle, steering=self.steering)
 
 
 class BeamScorerPolicy:
