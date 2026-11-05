@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased — dashboard training monitor
+
+- Added a **Training** toolbar hyperlink that opens `/training.html` in a new
+  browser tab (`target="_blank"`), keeping training graphs out of the main
+  dashboard view.
+- The popup starts/stops CMA-ES runs (stage, generations, popsize, workers,
+  seed, budget, random tracks) and polls live status plus a new per-generation
+  history file (`data/training/<stage>_history.jsonl` written by
+  `training.progress.RunReporter`).
+- Charts (SVG, no new dependencies): lap time and score per generation vs
+  all-time best, contacts, search sigma and wall time per generation, plus
+  stat cards for best lap/contacts/score/progress.
+- **View best <stage> car in dashboard** loads the selected stage's best
+  checkpoint of the current run (`data/training/<stage>_best.npz`, updated
+  live by the runner) into the live `learned_gap` controller (`load_weights`)
+  and resets the run. Stage tabs carry explanations of b1 / b2a / b2b, and the
+  charts include an "About these graphs" explainer.
+- New REST endpoints: `/api/training/runs`, `/api/training/status`,
+  `/api/training/history`, `/api/training/start`, `/api/training/stop`,
+  `/api/training/watch-best`; new WebSocket command `training.watch_best` and
+  server message `training.result`.
+
+## 2026-11-04 — CMA-ES-evolved gap controller
+
+- Added `algorithms/learned_gap.py`, a portable NumPy-only controller with a
+  structured gap policy (B1) and a learned per-beam scorer with a speed head
+  (B2). It loads `algorithms/weights/policy.npz` and falls back to safe
+  defaults if the file is missing or corrupt.
+- Added **Learned gap (CMA-ES)** to `algorithms/registry.py`, selectable in the
+  dashboard; **Reload algo** picks up newly exported weights.
+- Added the host-only `training/` package: one-lap rollout harness, per-physics
+  substep contact detection, multiprocessing pool, B1→B2 supervised warm start,
+  CMA-ES runner, atomic export, preflight and live progress/ETA reporting, and
+  `training.watch` for a live terminal view.
+- Added optional `train` dependency (`cma>=4.5`); the simulator, dashboard and
+  Pi runtime do not need it.
+- Added `Simulation.physics_step_hook` so training can count wall/obstacle
+  contacts at physics resolution rather than control-tick resolution.
+- Shipped robustness-first policy: **15.63 s, 0 contacts**, 1 lap, realistic
+  sensors, seed 42 (baseline furthest-gap: 25.55 s). Verified at lidar
+  sub-rays 1 and 3 (15.63 s / 15.67 s), **6/6** fixed random tracks and
+  **27/30** fresh random sweeps. The faster 9.10 s B2 was rejected because it
+  contacted walls on held-out tracks.
+- Added a safety envelope and low-speed B1 fallback for the fast B2 policy,
+  plus a stuck-recovery reverse and clearance/curvature speed caps. The robust
+  default uses the B1 speed schedule so throttle actually varies.
+- Added random-track training with random object density, lane width and
+  object size. Every promoted candidate is re-validated on the reference
+  track before export.
+- Random tracks now vary crate/pole size (`object_scale`,
+  `object_scale_jitter`) and clamp each footprint inside the lane. The
+  dashboard track panel exposes an **Object size** slider.
+- Added `tests/test_learned_gap.py`, a pose-independence regression test,
+  random-track size tests, ADR-004 and the experiment record
+  `docs/experiments/EXP-2026-11-04-cmaes-gap.md`.
+
 ## 2026-11-02 — Lidar motion compensation
 
 - Added `onboard.scan_motion.ScanMotionCompensator`, a portable rigid 2D warp

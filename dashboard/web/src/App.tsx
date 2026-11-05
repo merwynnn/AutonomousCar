@@ -69,6 +69,7 @@ function Icon({ name }: { name: string }) {
     grid: <path d="M4 4h16v16H4zM4 9h16M4 15h16M9 4v16M15 4v16" fill="none" stroke="currentColor" strokeWidth="1.2" />,
     left: <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
     right: <path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
+    chart: <path d="M4 4v16h16M7 15l4-5 3 3 5-7" fill="none" stroke="currentColor" strokeWidth="1.5" />,
   };
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -549,7 +550,12 @@ function DetailsPanel({
   speed: number;
   onSpeed: (speed: number) => void;
   onOpenTune: () => void;
-  onGenerateTrack: (seed: number, density: number, width: number) => void;
+  onGenerateTrack: (
+    seed: number,
+    density: number,
+    width: number,
+    objectScale: number,
+  ) => void;
   onDefaultTrack: () => void;
   onCollapse: () => void;
 }) {
@@ -843,7 +849,12 @@ function TrackDetails({
   onDefaultTrack,
 }: {
   hello: HelloMessage;
-  onGenerateTrack: (seed: number, density: number, width: number) => void;
+  onGenerateTrack: (
+    seed: number,
+    density: number,
+    width: number,
+    objectScale: number,
+  ) => void;
   onDefaultTrack: () => void;
 }) {
   const track = hello.track;
@@ -851,12 +862,19 @@ function TrackDetails({
   const [seed, setSeed] = useState(meta.seed);
   const [density, setDensity] = useState(meta.object_density);
   const [width, setWidth] = useState(meta.width_m);
+  const [objectScale, setObjectScale] = useState(meta.object_scale);
 
   useEffect(() => {
     setSeed(meta.seed);
     setDensity(meta.object_density);
     setWidth(meta.width_m);
-  }, [meta.seed, meta.object_density, meta.width_m]);
+    setObjectScale(meta.object_scale);
+  }, [
+    meta.seed,
+    meta.object_density,
+    meta.width_m,
+    meta.object_scale,
+  ]);
 
   return (
     <>
@@ -906,11 +924,25 @@ function TrackDetails({
             <strong>{width.toFixed(2)} m</strong>
           </div>
         </label>
+        <label className="details-field">
+          <span>Object size</span>
+          <div className="details-slider">
+            <input
+              type="range"
+              min="1.0"
+              max="1.8"
+              step="0.05"
+              value={objectScale}
+              onChange={(event) => setObjectScale(Number(event.target.value))}
+            />
+            <strong>{objectScale.toFixed(2)}×</strong>
+          </div>
+        </label>
         <div className="button-row details-actions">
           <button
             type="button"
             className="primary"
-            onClick={() => onGenerateTrack(seed, density, width)}
+            onClick={() => onGenerateTrack(seed, density, width, objectScale)}
             title="Generate a random closed track with collidable obstacles"
           >
             Generate
@@ -925,9 +957,10 @@ function TrackDetails({
           </button>
         </div>
         <p className="small-note">
-          Object density 0 = empty circuit, 1 = maximum crates/poles. Generated
-          tracks stay inside the 15 × 8 m arena. <strong>Default</strong> restores
-          the reference test track.
+          Object density 0 = empty circuit, 1 = maximum crates/poles. Object
+          size scales the nominal crate/pole footprint and keeps it inside the
+          lane. Generated tracks stay inside the 15 × 8 m arena.{' '}
+          <strong>Default</strong> restores the reference test track.
         </p>
       </PropertyGroup>
       <PropertyGroup title="Geometry">
@@ -1127,7 +1160,7 @@ function ViewportHud({
         <strong>{scanAgeMs === null ? '—' : scanAgeMs.toFixed(0)}<em> ms</em></strong>
       </div>
       <div className="viewport-hints">
-        <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
+        <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> drive (Manual)</span>
         <span><kbd>Space</kbd> run / pause</span>
         <span><kbd>R</kbd> reset</span>
         <span><kbd>C</kbd> view</span>
@@ -1152,7 +1185,7 @@ const DRIVE_KEYS: Record<string, DriveKey> = {
 };
 
 export default function App() {
-  const { status, hello, state, scan, send, configResult, trackResult, controllerResult } =
+  const { status, hello, state, scan, send, configResult, trackResult, controllerResult, trainingResult } =
     useTelemetry();
   const [viewMode, setViewMode] = useState<ViewMode>('track');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
@@ -1206,8 +1239,17 @@ export default function App() {
   }, [controllerResult]);
 
   useEffect(() => {
+    if (!trainingResult) return;
+    setToast(trainingResult.message);
+    const timer = window.setTimeout(() => setToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [trainingResult]);
+
+  useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
   }, [controlMode, send]);
+
+
 
   useEffect(() => {
     send({ type: 'control.controller', controller: autoController });
@@ -1217,10 +1259,26 @@ export default function App() {
     send({ type: 'run.set_speed', speed });
   }, [speed, send]);
 
+  // Re-assert the UI state when the socket (re)connects. A page reload can
+  // otherwise inherit a manual mode left behind by a previous client because
+  // the initial messages were sent before the socket was open.
+  useEffect(() => {
+    if (status !== 'open') return;
+    send({ type: 'control.mode', mode: controlMode });
+    send({ type: 'control.controller', controller: autoController });
+    send({ type: 'run.set_speed', speed });
+  }, [status, send, controlMode, autoController, speed]);
+
   useEffect(() => {
     if (controlMode !== 'manual' || tuningOpen) return;
+    let wasActive = false;
     const timer = window.setInterval(() => {
       const keys = keysRef.current;
+      const active = keys.forward || keys.back || keys.left || keys.right;
+      // Do not keep re-asserting manual mode with neutral packets: a stale
+      // tab would otherwise overwrite another client's Auto selection.
+      if (!active && !wasActive) return;
+      wasActive = active;
       const throttle = (keys.forward ? 1 : 0) - (keys.back ? 0.7 : 0);
       // Mirror the manual steering command relative to the simulator's
       // positive-left convention, matching the dashboard's on-screen Q/D feel.
@@ -1233,13 +1291,20 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (tuningOpen) return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
       const driveKey = DRIVE_KEYS[event.code];
       if (driveKey) {
+        // Never change the driving mode implicitly. Manual driving is an
+        // explicit operator choice; a stray Z/Q/S/D must not take over.
+        if (controlMode !== 'manual') {
+          setToast('Switch to Manual to drive');
+          window.setTimeout(() => setToast(null), 2500);
+          return;
+        }
         event.preventDefault();
         keysRef.current[driveKey] = true;
-        setControlMode('manual');
         if (state?.paused) send({ type: 'run.start' });
         return;
       }
@@ -1274,11 +1339,14 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [running, send, state?.paused, tuningOpen]);
+  }, [running, send, state?.paused, tuningOpen, controlMode]);
 
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
   const onReloadControllers = () => send({ type: 'controller.reload' });
+  // The training monitor is a standalone page opened as a real browser tab
+  // (hyperlink semantics), not a popup window and not an in-app view.
+  const trainingTabUrl = '/training.html';
   const openTune = (tab: 'vehicle' | 'sensors') => {
     setTuningTab(tab);
     setTuningOpen(true);
@@ -1296,12 +1364,18 @@ export default function App() {
     setSpeed(value);
     send({ type: 'run.set_speed', speed: value });
   };
-  const onGenerateTrack = (seed: number, density: number, width: number) => {
+  const onGenerateTrack = (
+    seed: number,
+    density: number,
+    width: number,
+    objectScale: number,
+  ) => {
     send({
       type: 'track.generate',
       seed: Math.round(seed),
       object_density: density,
       width_m: width,
+      object_scale: objectScale,
     });
   };
   const onDefaultTrack = () => send({ type: 'track.default' });
@@ -1466,6 +1540,16 @@ export default function App() {
             title="Re-import algorithms/*.py and rebuild controllers without resetting the run"
             onClick={onReloadControllers}
           />
+          <a
+            className="tool-button"
+            href={trainingTabUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open the CMA-ES training monitor in a new browser tab"
+          >
+            <Icon name="chart" />
+            <span>Training</span>
+          </a>
         </div>
       </div>
 

@@ -72,13 +72,38 @@ It supports `Ctrl+Z`/`Ctrl+Y` undo/redo, live apply and save-to-YAML. The steeri
 quick-tune strip exposes `rate_deg_s`, latency, max angle and deadband.
 
 The **Test track** details panel generates random smooth tracks with seed, lane
-width and object density. **Default** restores the reference test track.
+width, object density and object size. Object size scales the nominal
+crate/pole footprint; per-object jitter mixes small and larger obstacles while
+keeping each footprint inside the lane. **Default** restores the reference test
+track.
 
 ![Random track generator](assets/dashboard-random-track.png)
 
 ![Tuning console](assets/dashboard-tuning.png)
 
 ![Gap solver debug](assets/dashboard-gap-debug.png)
+
+### Training monitor
+
+The toolbar **Training** button is a hyperlink to `/training.html` and opens
+the CMA-ES monitor in a **new browser tab** (`target="_blank"`, same browser,
+not a popup window), so live training graphs never crowd the main dashboard.
+The training tab can start and stop training runs
+(stage `b1`/`b2a`/`b2b` — hover a stage tab for what it means, generations,
+popsize, workers, seed, time budget, random-track toggle) and polls the
+backend once per second. It shows a progress bar with ETA, stat cards (best
+lap, contacts, score, progress, sigma) and SVG charts of lap time, score,
+contacts, sigma and wall time per generation against the all-time best, with
+an "About these graphs" explainer. **View best <stage> car in dashboard**
+hot-loads the selected stage's best checkpoint of the current run
+(`data/training/<stage>_best.npz`, updated live as the run improves) into the
+live `learned_gap` controller (via `load_weights`) and resets the run, so the
+best car of the current training step can be watched one car at a time in the
+Track view.
+
+Training runs are subprocesses of `python -m training.cma_opt`; the dashboard
+only reads the `data/training/<stage>_status.json` and `<stage>_history.jsonl`
+files the runner writes.
 
 ## Toolbar
 
@@ -140,16 +165,19 @@ than a consumer web dashboard:
 
 ## Protocol
 
-REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`, `/api/config`.
+REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`,
+`/api/config`, `/api/training/runs`, `/api/training/status?stage=…`,
+`/api/training/history?stage=…`, `/api/training/start` (POST),
+`/api/training/stop` (POST), `/api/training/watch-best` (POST).
 
 WebSocket `/ws/telemetry`:
 
 - server: `hello`, `state`, `scan`, `config.result`, `track.result`,
-  `controller.result`;
+  `controller.result`, `training.result`;
 - client: `run.start`, `run.pause`, `run.reset`, `run.step`,
   `run.set_speed`, `control.mode`, `control.controller`, `drive.command`,
   `config.reload`, `config.apply`, `controller.reload`, `track.generate`,
-  `track.default`, `ping`.
+  `track.default`, `training.watch_best`, `ping`.
 
 `hello.controllers` advertises the registry. `state.debug` carries the active
 controller's optional `DebugFrame`; it is `null` in manual mode or when the

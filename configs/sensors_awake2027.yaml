@@ -66,7 +66,7 @@ ultrasonic:
       frame_id: sonar_fl
       mount:
         position_m:
-          - 0.205
+          - 0.180
           - 0.07
           - 0.0
         rpy_deg:
@@ -77,7 +77,7 @@ ultrasonic:
       frame_id: sonar_fr
       mount:
         position_m:
-          - 0.205
+          - 0.180
           - -0.07
           - 0.0
         rpy_deg:
@@ -88,7 +88,7 @@ ultrasonic:
       frame_id: sonar_rl
       mount:
         position_m:
-          - -0.205
+          - -0.180
           - 0.07
           - 0.0
         rpy_deg:
@@ -99,7 +99,7 @@ ultrasonic:
       frame_id: sonar_rr
       mount:
         position_m:
-          - -0.205
+          - -0.180
           - -0.07
           - 0.0
         rpy_deg:

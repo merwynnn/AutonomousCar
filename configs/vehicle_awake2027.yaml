@@ -6,10 +6,10 @@ description: >
 scale: 0.1
 
 dimensions:
-  length_m: 0.42
-  width_m: 0.19
-  height_m: 0.18
-  ground_clearance_m: 0.012
+  length_m: 0.376
+  width_m: 0.182
+  height_m: 0.14
+  ground_clearance_m: 0.005
 
 mass_kg: 2.25
 center_of_mass_m:
@@ -32,15 +32,15 @@ structure:
     position_m:
       - 0.0
       - 0.0
-      - -0.042
+      - -0.053
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.34
-      - 0.15
-      - 0.018
+      - 0.299
+      - 0.153
+      - 0.014
     color: '#20262c'
     opacity: 1.0
     visible: true
@@ -50,15 +50,15 @@ structure:
     position_m:
       - 0.0
       - 0.0
-      - 0.002
+      - -0.018
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.395
-      - 0.178
-      - 0.052
+      - 0.347
+      - 0.182
+      - 0.040
     color: '#2b5f78'
     opacity: 1.0
     visible: true
@@ -66,17 +66,17 @@ structure:
   - name: electronics_tray
     shape: box
     position_m:
-      - -0.055
+      - -0.048
       - 0.0
-      - 0.035
+      - 0.007
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.16
-      - 0.15
-      - 0.018
+      - 0.141
+      - 0.153
+      - 0.014
     color: '#1a1f24'
     opacity: 1.0
     visible: true
@@ -84,17 +84,17 @@ structure:
   - name: cabin
     shape: box
     position_m:
-      - -0.065
+      - -0.057
       - 0.0
-      - 0.052
+      - 0.020
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.15
-      - 0.125
-      - 0.032
+      - 0.132
+      - 0.128
+      - 0.025
     color: '#171c21'
     opacity: 1.0
     visible: true
@@ -104,7 +104,7 @@ structure:
     position_m:
       - 0.105
       - 0.0
-      - 0.07
+      - 0.034
     rpy_deg:
       - 0.0
       - 0.0
@@ -112,7 +112,7 @@ structure:
     size_m:
       - 0.018
       - 0.018
-      - 0.04
+      - 0.031
     color: '#3a4148'
     opacity: 1.0
     visible: true
@@ -120,17 +120,17 @@ structure:
   - name: front_bumper
     shape: box
     position_m:
-      - 0.205
+      - 0.180
       - 0.0
-      - -0.02
+      - -0.036
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.018
-      - 0.17
-      - 0.035
+      - 0.016
+      - 0.174
+      - 0.027
     color: '#1f2429'
     opacity: 1.0
     visible: true
@@ -138,17 +138,17 @@ structure:
   - name: rear_bumper
     shape: box
     position_m:
-      - -0.205
+      - -0.180
       - 0.0
-      - -0.02
+      - -0.036
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.018
-      - 0.17
-      - 0.035
+      - 0.016
+      - 0.174
+      - 0.027
     color: '#1f2429'
     opacity: 1.0
     visible: true
@@ -156,17 +156,17 @@ structure:
   - name: wing
     shape: box
     position_m:
-      - -0.19
+      - -0.167
       - 0.0
-      - 0.06
+      - 0.027
     rpy_deg:
       - 0.0
       - 0.0
       - 0.0
     size_m:
-      - 0.03
-      - 0.165
-      - 0.008
+      - 0.026
+      - 0.169
+      - 0.006
     color: '#171c21'
     opacity: 1.0
     visible: true

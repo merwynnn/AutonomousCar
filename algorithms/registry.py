@@ -14,6 +14,7 @@ from typing import Any
 from onboard.api import Actuation, Observation
 
 from algorithms.gap_follow import FurthestGapController
+from algorithms.learned_gap import LearnedGapController
 from algorithms.wall_follow import WallFollowController
 
 
@@ -50,6 +51,11 @@ CONTROLLERS: dict[str, ControllerSpec] = {
         id="wall_follow",
         label="Wall follow",
         factory=WallFollowController,
+    ),
+    "learned_gap": ControllerSpec(
+        id="learned_gap",
+        label="Learned gap (CMA-ES)",
+        factory=LearnedGapController,
     ),
 }
 

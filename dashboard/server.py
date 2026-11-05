@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from algorithms import registry as controller_registry
-from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from onboard.api import Actuation, Observation
@@ -42,6 +42,7 @@ from simulator.track import build_test_track
 from simulator.vehicle import VehicleState
 
 from dashboard.spec import sensor_payload, track_payload, vehicle_payload
+from dashboard.training_api import TrainingError, TrainingManager
 
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
 REFERENCE_SCENARIO = CONFIG_DIR / "sim" / "awake_2027.yaml"
@@ -64,6 +65,8 @@ class DashboardSimulation:
         self.track_seed = 2027
         self.track_density = 0.25
         self.track_width_m = 0.9
+        self.track_object_scale = 1.25
+        self.track_object_scale_jitter = 0.30
         self.sim = self._build_sim()
         self.paused = True
         self.finished = False
@@ -384,6 +387,8 @@ class DashboardSimulation:
                 "seed": self.track_seed,
                 "object_density": round(self.track_density, 3),
                 "width_m": round(self.track_width_m, 3),
+                "object_scale": round(self.track_object_scale, 3),
+                "object_scale_jitter": round(self.track_object_scale_jitter, 3),
             },
             "race": {"laps": self.scenario.race.laps},
             "warnings": warnings,
@@ -405,6 +410,7 @@ class DashboardSimulation:
                 "manual_driving": True,
                 "live_reload": True,
                 "car_studio": True,
+                "training": True,
             },
         }
 
@@ -575,14 +581,20 @@ class DashboardSimulation:
         seed = int(message.get("seed", 2027))
         density = float(message.get("object_density", 0.25))
         width = float(message.get("width_m", 0.9))
+        object_scale = float(message.get("object_scale", 1.25))
+        object_scale_jitter = float(message.get("object_scale_jitter", 0.30))
         track = build_random_track(
             seed=seed,
             width_m=width,
             object_density=density,
+            object_scale=object_scale,
+            object_scale_jitter=object_scale_jitter,
         )
         self.track_seed = seed
         self.track_density = max(0.0, min(1.0, density))
         self.track_width_m = max(0.8, min(1.0, width))
+        self.track_object_scale = max(0.5, min(2.0, object_scale))
+        self.track_object_scale_jitter = max(0.0, min(1.0, object_scale_jitter))
         self._swap_track(track, "random", f"Random track generated (seed {seed}).")
 
     def _default_track(self) -> None:
@@ -590,6 +602,8 @@ class DashboardSimulation:
         self.track_seed = 2027
         self.track_density = 0.25
         self.track_width_m = 0.9
+        self.track_object_scale = 1.0
+        self.track_object_scale_jitter = 0.0
         self._swap_track(track, "default", "Default test track restored.")
 
     # ---------------------------------------------------------------- control
@@ -666,12 +680,13 @@ class DashboardSimulation:
             self.controller_error = None
             self._reset_controllers()
         elif kind == "drive.command":
-            self.control_mode = "manual"
+            # Driving mode is changed only by the explicit ``control.mode``
+            # command (the Auto/Manual buttons). A stale manual tab sending
+            # drive packets must never take over another client's Auto mode.
+            throttle = max(-1.0, min(1.0, float(message.get("throttle", 0.0))))
+            steering = max(-0.55, min(0.55, float(message.get("steering", 0.0))))
             self.controller_error = None
-            self.manual = Actuation(
-                throttle=max(-1.0, min(1.0, float(message.get("throttle", 0.0)))),
-                steering=max(-0.55, min(0.55, float(message.get("steering", 0.0)))),
-            )
+            self.manual = Actuation(throttle=throttle, steering=steering)
             self.manual_time = time.monotonic()
         elif kind == "config.reload":
             self._reload_pending = True
@@ -683,8 +698,41 @@ class DashboardSimulation:
             self._pending_track = message
         elif kind == "track.default":
             self._pending_track = {"type": "track.default"}
+        elif kind == "training.watch_best":
+            ok, message_text = self.watch_training_best(str(message.get("stage", "")))
+            self._broadcast(
+                {
+                    "type": "training.result",
+                    "ok": ok,
+                    "message": message_text,
+                }
+            )
         elif kind == "ping":
             pass
+
+    # -------------------------------------------------------------- training
+    def watch_training_best(self, stage: str) -> tuple[bool, str]:
+        """Drive the live simulator with a training run's best policy."""
+
+        best = training_manager.best_path(stage)
+        if best is None:
+            return False, f"No best policy for stage {stage!r} yet."
+        controller = self.controllers.get("learned_gap")
+        loader = getattr(controller, "load_weights", None)
+        if not callable(loader):
+            return False, "The learned_gap controller is not available."
+        try:
+            loader(best)
+        except Exception as exc:  # noqa: BLE001
+            message = f"Could not load {best}: {exc}"
+            self._set_controller_error(message)
+            return False, message
+        self.auto_controller = "learned_gap"
+        self.controller_error = None
+        self.reset_run()
+        self._broadcast(self.hello_message())
+        self._broadcast(self.state_message())
+        return True, f"Watching best {stage} policy ({best.name}) in the simulator."
 
     # ------------------------------------------------------------- transport
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
@@ -785,6 +833,7 @@ class DashboardSimulation:
 
 
 manager = DashboardSimulation()
+training_manager = TrainingManager()
 
 
 @contextlib.asynccontextmanager
@@ -858,6 +907,40 @@ def car_mjcf() -> Response:
 @app.get("/api/track")
 def track() -> dict[str, Any]:
     return track_payload(manager.sim.track)
+
+
+@app.get("/api/training/runs")
+def training_runs() -> dict[str, Any]:
+    return training_manager.status()
+
+
+@app.get("/api/training/status")
+def training_status(stage: str | None = None) -> dict[str, Any]:
+    return training_manager.status(stage)
+
+
+@app.get("/api/training/history")
+def training_history(stage: str, limit: int = 2000) -> dict[str, Any]:
+    return {"stage": stage, "records": training_manager.history(stage, limit)}
+
+
+@app.post("/api/training/start")
+def training_start(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return training_manager.start(payload)
+    except TrainingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/training/stop")
+def training_stop(payload: dict[str, Any]) -> dict[str, Any]:
+    return training_manager.stop(str(payload.get("stage", "")))
+
+
+@app.post("/api/training/watch-best")
+def training_watch_best(payload: dict[str, Any]) -> dict[str, Any]:
+    ok, message = manager.watch_training_best(str(payload.get("stage", "")))
+    return {"ok": ok, "message": message}
 
 
 @app.websocket("/ws/telemetry")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -93,6 +94,7 @@ class Simulation:
         hardware: HardwareConfig | None = None,
         track: TrackGeometry | None = None,
         estimator_config: EstimatorTuning | None = None,
+        physics_step_hook: Callable[[World], None] | None = None,
     ) -> None:
         self.bundle: ScenarioBundle = load_bundle(scenario_path or DEFAULT_SCENARIO)
         self.scenario = self.bundle.scenario
@@ -117,6 +119,7 @@ class Simulation:
 
         cfg = self.scenario.simulation
         self.physics_dt = 1.0 / cfg.physics_hz
+        self.physics_step_hook = physics_step_hook
         self.substeps = max(1, round(cfg.physics_hz / cfg.control_hz))
         self.control_dt = self.substeps * self.physics_dt
         self.scan_every = max(1, round(1.0 / (self.sensors.lidar.rate_hz * self.control_dt)))
@@ -405,6 +408,8 @@ class Simulation:
         self.world.set_actuation(command)
         for substep in range(self.substeps):
             self.world.step()
+            if self.physics_step_hook is not None:
+                self.physics_step_hook(self.world)
             now = self.sim_time + (substep + 1) * self.physics_dt
             if (
                 now + 1e-9 >= self._next_imu_time

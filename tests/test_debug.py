@@ -71,7 +71,7 @@ def test_gap_debug_frame_exposes_candidates_and_score() -> None:
         for candidate in candidates:
             assert math.isclose(
                 candidate.score,
-                candidate.clearance_m - candidate.centering_penalty_m,
+                candidate.clearance_m - candidate.angle_change_penalty_m,
                 abs_tol=1e-6,
             )
         table = payload["tables"][0]

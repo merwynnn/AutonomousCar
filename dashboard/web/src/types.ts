@@ -232,6 +232,8 @@ export interface HelloMessage {
     seed: number;
     object_density: number;
     width_m: number;
+    object_scale: number;
+    object_scale_jitter: number;
   };
   race: { laps: number };
   warnings: string[];
@@ -455,6 +457,12 @@ export interface ControllerResultMessage {
   message: string;
 }
 
+export interface TrainingResultMessage {
+  type: 'training.result';
+  ok: boolean;
+  message: string;
+}
+
 export interface DebugLayers {
   scan: boolean;
   trail: boolean;
@@ -473,4 +481,5 @@ export type ServerMessage =
   | ScanMessage
   | ConfigResultMessage
   | TrackResultMessage
-  | ControllerResultMessage;
+  | ControllerResultMessage
+  | TrainingResultMessage;

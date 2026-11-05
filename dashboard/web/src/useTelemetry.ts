@@ -7,6 +7,7 @@ import type {
   ServerMessage,
   StateMessage,
   TrackResultMessage,
+  TrainingResultMessage,
 } from './types';
 
 export type ConnectionStatus = 'connecting' | 'open' | 'closed' | 'error';
@@ -26,6 +27,7 @@ export interface Telemetry {
   configResult: ConfigResultMessage | null;
   trackResult: TrackResultMessage | null;
   controllerResult: ControllerResultMessage | null;
+  trainingResult: TrainingResultMessage | null;
   send: (message: object) => void;
 }
 
@@ -41,6 +43,7 @@ export function useTelemetry(): Telemetry {
   const [trackResult, setTrackResult] = useState<TrackResultMessage | null>(null);
   const [controllerResult, setControllerResult] =
     useState<ControllerResultMessage | null>(null);
+  const [trainingResult, setTrainingResult] = useState<TrainingResultMessage | null>(null);
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectRef = useRef<number | null>(null);
@@ -89,6 +92,9 @@ export function useTelemetry(): Telemetry {
             case 'controller.result':
               setControllerResult(message);
               break;
+            case 'training.result':
+              setTrainingResult(message);
+              break;
           }
         } catch {
           // Ignore malformed frames; the next frame will arrive shortly.
@@ -133,6 +139,7 @@ export function useTelemetry(): Telemetry {
     configResult,
     trackResult,
     controllerResult,
+    trainingResult,
     send,
   };
 }

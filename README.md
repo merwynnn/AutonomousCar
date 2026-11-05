@@ -82,7 +82,10 @@ algorithms/
   registry.py               dashboard-selectable controllers
   gap_follow.py             lidar-only demo controller
   wall_follow.py            lidar-only demo controller
+  learned_gap.py            CMA-ES-evolved gap controller
+  weights/policy.npz        current best evolved policy
   template.py               safe stop placeholder
+training/                   host-only CMA-ES rollout search and reporting
 dashboard/
   server.py                 FastAPI REST + WebSocket adapter
   spec.py                   car, sensor and track JSON payloads
@@ -136,6 +139,59 @@ uv run python -m simulator.cli \
 ```
 
 Switch the scenario with `AWAKE_SCENARIO=/path/to/scenario.yaml`.
+
+The dashboard also lists **Learned gap (CMA-ES)**, which loads
+`algorithms/weights/policy.npz`. To reproduce or improve it:
+
+```bash
+uv sync --extra dev --extra train
+
+# warm-start B2 from the committed B1 policy
+uv run python -m training.warmstart --laps 8 --iterations 0 --speed-cap 2.7 \
+  --out data/training/b2a_init.npz
+
+# preflight (lap, contacts, rough ETA), then the monitored search
+uv run python -m training.cma_opt --stage b2a --preflight --workers 6 \
+  --popsize 16 --init data/training/b2a_init.npz
+uv run python -m training.cma_opt --stage b2a --generations 60 --popsize 16 \
+  --sigma0 0.18 --workers 6 --init data/training/b2a_init.npz
+uv run python -m training.watch --stage b2a
+
+# randomised tracks, object density and object sizes
+uv run python -m training.cma_opt --stage b2a --generations 40 --popsize 12 \
+  --sigma0 0.08 --workers 6 --init algorithms/weights/policy.npz \
+  --random-track --reference-track-prob 0.25 \
+  --object-density-range 0.15 0.75 --object-scale-range 1.10 1.60 \
+  --track-width-range 0.85 1.00 --out data/training/policy_random.npz
+```
+
+Every promoted candidate is still re-validated on the reference track before
+it can be exported, so random-track training cannot silently replace the
+reference lap with a lucky random circuit.
+
+Robust random-track B1 recipe and held-out success sweep:
+
+```bash
+uv run python -m training.cma_opt --stage b1 --generations 40 --popsize 12 \
+  --sigma0 0.04 --workers 6 --init algorithms/weights/policy_b1.npz \
+  --out data/training/policy_robust.npz \
+  --random-best-out data/training/policy_robust_random.npz \
+  --random-track --reference-track-prob 0.0 --max-time 60 \
+  --object-density-range 0.0 0.9 --object-scale-range 1.0 1.8 \
+  --track-width-range 0.85 1.0 --object-scale-jitter 0.40 --track-seed 2027
+
+uv run python -m training.evaluate --policy algorithms/weights/policy.npz \
+  --random-sweep 10 --max-time 60 --track-seed 123
+```
+
+One subtlety: with one track per generation CMA-ES can overfit the training
+sequence (we observed a 9.95 s reference policy that was 0/10 on fresh tracks).
+Multi-track validation per candidate is the next robustness improvement.
+
+Training is host-only. Logs, checkpoints and status files go to the
+git-ignored `data/training/`; only the chosen weights are committed. The
+dashboard's **Reload algo** action picks up a newly exported `policy.npz`
+without restarting the server.
 
 ## 3. The car is data
 

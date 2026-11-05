@@ -19,6 +19,20 @@ ARENA_CENTER = (ARENA_WIDTH_M / 2.0, ARENA_HEIGHT_M / 2.0)
 WALL_RADIUS_M = 0.08
 
 
+def _max_curvature(points: np.ndarray) -> float:
+    """Discrete maximum curvature of a closed polyline (1/m)."""
+
+    x = np.asarray(points[:, 0], dtype=float)
+    y = np.asarray(points[:, 1], dtype=float)
+    dx = np.gradient(x)
+    dy = np.gradient(y)
+    ddx = np.gradient(dx)
+    ddy = np.gradient(dy)
+    numerator = np.abs(dx * ddy - dy * ddx)
+    denominator = np.maximum((dx * dx + dy * dy) ** 1.5, 1e-9)
+    return float(np.max(numerator / denominator))
+
+
 def _start_distance(centerline: np.ndarray) -> float:
     """Start on the straightest section, away from sharp random corners."""
 
@@ -45,16 +59,25 @@ def build_random_track(
     width_m: float = 0.9,
     object_density: float = 0.25,
     samples: int = 280,
+    object_scale: float = 1.25,
+    object_scale_jitter: float = 0.30,
+    max_curvature_per_m: float = 1.60,
 ) -> TrackGeometry:
     """Generate a smooth closed-loop track inside the competition arena.
 
     ``object_density`` is 0..1: 0 gives an empty track, 1 gives the maximum
-    number of crates/poles. Obstacles sit just inside the wall so they do not
-    block the full lane.
+    number of crates/poles. ``object_scale`` scales the nominal crate/pole
+    size; ``object_scale_jitter`` (0..1) randomises each object by that
+    fraction, so a track mixes small and noticeably larger obstacles. Objects
+    sit just inside the wall and are clamped so their footprint stays on the
+    track. ``max_curvature_per_m`` dampens the shape harmonics until every
+    corner is physically drivable, avoiding near-impossible hairpins.
     """
 
     width_m = max(0.8, min(1.0, float(width_m)))
     object_density = max(0.0, min(1.0, float(object_density)))
+    object_scale = max(0.5, min(2.0, float(object_scale)))
+    object_scale_jitter = max(0.0, min(1.0, float(object_scale_jitter)))
     rng = np.random.default_rng(seed)
     angles = np.linspace(0.0, 2.0 * math.pi, samples, endpoint=False)
     radius_x = 4.8 + rng.uniform(-0.25, 0.25)
@@ -67,12 +90,23 @@ def build_random_track(
         + amplitude[1] * np.sin(3.0 * angles + phase[1])
         + amplitude[2] * np.sin(5.0 * angles + phase[2])
     )
-    centerline = np.column_stack(
-        [
-            ARENA_CENTER[0] + radius_x * np.cos(angles) * warp,
-            ARENA_CENTER[1] + radius_y * np.sin(angles) * warp,
-        ]
+    max_curvature_per_m = max(0.2, float(max_curvature_per_m))
+    base_offset = np.column_stack(
+        [radius_x * np.cos(angles), radius_y * np.sin(angles)]
     )
+    alpha = 1.0
+    centerline = np.zeros_like(base_offset)
+    for _ in range(24):
+        radial = 1.0 + alpha * (warp - 1.0)
+        centerline = np.column_stack(
+            [
+                ARENA_CENTER[0] + base_offset[:, 0] * radial,
+                ARENA_CENTER[1] + base_offset[:, 1] * radial,
+            ]
+        )
+        if _max_curvature(centerline) <= max_curvature_per_m:
+            break
+        alpha *= 0.82
     inner = offset_polyline(centerline, width_m / 2.0)
     outer = offset_polyline(centerline, -width_m / 2.0)
 
@@ -109,35 +143,47 @@ def build_random_track(
         for index, fraction in enumerate(fractions):
             point_index = int((fraction * len(centerline)) % len(centerline))
             side = -1.0 if index % 2 == 0 else 1.0
-            offset = side * max(0.1, wall_inner - rng.uniform(0.08, 0.16))
+            scale = object_scale * (
+                1.0 + rng.uniform(-object_scale_jitter, object_scale_jitter)
+                if object_scale_jitter
+                else 1.0
+            )
+            if index % 3 == 0:
+                length = 0.13 * scale
+                width = 0.06 * scale
+                height = 0.20 * scale
+                lateral_half = width / 2.0
+                radius = 0.0
+                name = f"crate_{index:02d}"
+                kind = "box"
+            else:
+                length = 0.0
+                width = 0.0
+                height = 0.28 * scale
+                radius = 0.025 * scale
+                lateral_half = radius
+                name = f"pole_{index:02d}"
+                kind = "cylinder"
+            # Keep the full footprint inside the clear lane, not just centre.
+            max_offset = max(0.05, wall_inner - lateral_half - 0.01)
+            desired = max(0.1, wall_inner - rng.uniform(0.08, 0.16))
+            offset = side * max(0.05, min(desired, max_offset))
             x = float(centerline[point_index, 0] + normals[point_index, 0] * offset)
             y = float(centerline[point_index, 1] + normals[point_index, 1] * offset)
             yaw = float(math.atan2(tangents[point_index, 1], tangents[point_index, 0]))
-            if index % 3 == 0:
-                obstacles.append(
-                    Obstacle(
-                        name=f"crate_{index:02d}",
-                        kind="box",
-                        x=x,
-                        y=y,
-                        yaw=yaw,
-                        length=0.13,
-                        width=0.06,
-                        height=0.20,
-                    )
+            obstacles.append(
+                Obstacle(
+                    name=name,
+                    kind=kind,
+                    x=x,
+                    y=y,
+                    yaw=yaw,
+                    length=length,
+                    width=width,
+                    height=height,
+                    radius=radius,
                 )
-            else:
-                obstacles.append(
-                    Obstacle(
-                        name=f"pole_{index:02d}",
-                        kind="cylinder",
-                        x=x,
-                        y=y,
-                        yaw=yaw,
-                        height=0.28,
-                        radius=0.025,
-                    )
-                )
+            )
 
     return TrackGeometry(
         centerline=centerline,
