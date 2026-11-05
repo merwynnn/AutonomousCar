@@ -83,6 +83,24 @@ track.
 
 ![Gap solver debug](assets/dashboard-gap-debug.png)
 
+### Training monitor
+
+The **Training** toolbar button opens `/training.html` in a **separate popup
+window**, so live training graphs never crowd the main dashboard. The popup
+can start and stop CMA-ES runs (stage `b1`/`b2a`/`b2b`, generations, popsize,
+workers, seed, time budget, random-track toggle) and polls the backend once
+per second. It shows a progress bar with ETA, stat cards (best lap, contacts,
+score, progress, sigma) and SVG charts of lap time, score, contacts, sigma and
+wall time per generation against the all-time best. **View best car in
+simulator** hot-loads `data/training/<stage>_best.npz` into the live
+`learned_gap` controller (via `load_weights`) and resets the run, so the best
+car of the current training step can be watched in the main 3D view one car at
+a time.
+
+Training runs are subprocesses of `python -m training.cma_opt`; the dashboard
+only reads the `data/training/<stage>_status.json` and `<stage>_history.jsonl`
+files the runner writes.
+
 ## Toolbar
 
 - Run, pause, step and reset.
@@ -143,16 +161,19 @@ than a consumer web dashboard:
 
 ## Protocol
 
-REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`, `/api/config`.
+REST: `/api/health`, `/api/status`, `/api/car`, `/api/car/mjcf`, `/api/track`,
+`/api/config`, `/api/training/runs`, `/api/training/status?stage=…`,
+`/api/training/history?stage=…`, `/api/training/start` (POST),
+`/api/training/stop` (POST), `/api/training/watch-best` (POST).
 
 WebSocket `/ws/telemetry`:
 
 - server: `hello`, `state`, `scan`, `config.result`, `track.result`,
-  `controller.result`;
+  `controller.result`, `training.result`;
 - client: `run.start`, `run.pause`, `run.reset`, `run.step`,
   `run.set_speed`, `control.mode`, `control.controller`, `drive.command`,
   `config.reload`, `config.apply`, `controller.reload`, `track.generate`,
-  `track.default`, `ping`.
+  `track.default`, `training.watch_best`, `ping`.
 
 `hello.controllers` advertises the registry. `state.debug` carries the active
 controller's optional `DebugFrame`; it is `null` in manual mode or when the

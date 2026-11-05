@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from algorithms import registry as controller_registry
-from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from onboard.api import Actuation, Observation
@@ -42,6 +42,7 @@ from simulator.track import build_test_track
 from simulator.vehicle import VehicleState
 
 from dashboard.spec import sensor_payload, track_payload, vehicle_payload
+from dashboard.training_api import TrainingError, TrainingManager
 
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
 REFERENCE_SCENARIO = CONFIG_DIR / "sim" / "awake_2027.yaml"
@@ -409,6 +410,7 @@ class DashboardSimulation:
                 "manual_driving": True,
                 "live_reload": True,
                 "car_studio": True,
+                "training": True,
             },
         }
 
@@ -696,8 +698,41 @@ class DashboardSimulation:
             self._pending_track = message
         elif kind == "track.default":
             self._pending_track = {"type": "track.default"}
+        elif kind == "training.watch_best":
+            ok, message_text = self.watch_training_best(str(message.get("stage", "")))
+            self._broadcast(
+                {
+                    "type": "training.result",
+                    "ok": ok,
+                    "message": message_text,
+                }
+            )
         elif kind == "ping":
             pass
+
+    # -------------------------------------------------------------- training
+    def watch_training_best(self, stage: str) -> tuple[bool, str]:
+        """Drive the live simulator with a training run's best policy."""
+
+        best = training_manager.best_path(stage)
+        if best is None:
+            return False, f"No best policy for stage {stage!r} yet."
+        controller = self.controllers.get("learned_gap")
+        loader = getattr(controller, "load_weights", None)
+        if not callable(loader):
+            return False, "The learned_gap controller is not available."
+        try:
+            loader(best)
+        except Exception as exc:  # noqa: BLE001
+            message = f"Could not load {best}: {exc}"
+            self._set_controller_error(message)
+            return False, message
+        self.auto_controller = "learned_gap"
+        self.controller_error = None
+        self.reset_run()
+        self._broadcast(self.hello_message())
+        self._broadcast(self.state_message())
+        return True, f"Watching best {stage} policy ({best.name}) in the simulator."
 
     # ------------------------------------------------------------- transport
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
@@ -798,6 +833,7 @@ class DashboardSimulation:
 
 
 manager = DashboardSimulation()
+training_manager = TrainingManager()
 
 
 @contextlib.asynccontextmanager
@@ -871,6 +907,40 @@ def car_mjcf() -> Response:
 @app.get("/api/track")
 def track() -> dict[str, Any]:
     return track_payload(manager.sim.track)
+
+
+@app.get("/api/training/runs")
+def training_runs() -> dict[str, Any]:
+    return training_manager.status()
+
+
+@app.get("/api/training/status")
+def training_status(stage: str | None = None) -> dict[str, Any]:
+    return training_manager.status(stage)
+
+
+@app.get("/api/training/history")
+def training_history(stage: str, limit: int = 2000) -> dict[str, Any]:
+    return {"stage": stage, "records": training_manager.history(stage, limit)}
+
+
+@app.post("/api/training/start")
+def training_start(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return training_manager.start(payload)
+    except TrainingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/training/stop")
+def training_stop(payload: dict[str, Any]) -> dict[str, Any]:
+    return training_manager.stop(str(payload.get("stage", "")))
+
+
+@app.post("/api/training/watch-best")
+def training_watch_best(payload: dict[str, Any]) -> dict[str, Any]:
+    ok, message = manager.watch_training_best(str(payload.get("stage", "")))
+    return {"ok": ok, "message": message}
 
 
 @app.websocket("/ws/telemetry")

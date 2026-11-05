@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — dashboard training monitor
+
+- Added a **Training** window: the toolbar button opens `/training.html` in a
+  separate popup so progress graphs never crowd the main dashboard.
+- The popup starts/stops CMA-ES runs (stage, generations, popsize, workers,
+  seed, budget, random tracks) and polls live status plus a new per-generation
+  history file (`data/training/<stage>_history.jsonl` written by
+  `training.progress.RunReporter`).
+- Charts (SVG, no new dependencies): lap time and score per generation vs
+  all-time best, contacts, search sigma and wall time per generation, plus
+  stat cards for best lap/contacts/score/progress.
+- **View best car in simulator** loads `data/training/<stage>_best.npz` into
+  the live `learned_gap` controller (`load_weights`) and resets the run.
+- New REST endpoints: `/api/training/runs`, `/api/training/status`,
+  `/api/training/history`, `/api/training/start`, `/api/training/stop`,
+  `/api/training/watch-best`; new WebSocket command `training.watch_best` and
+  server message `training.result`.
+
 ## 2026-11-04 — CMA-ES-evolved gap controller
 
 - Added `algorithms/learned_gap.py`, a portable NumPy-only controller with a

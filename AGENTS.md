@@ -44,6 +44,9 @@ Algorithms (algorithms/)
     └── Observation -> Actuation controllers (onboard.api + NumPy only)
 Training (training/, host only)
     └── CMA-ES rollout search, warm start, export and progress reporting
+Dashboard training monitor (dashboard/training_api.py + web/training.html)
+    └── starts/stops `training.cma_opt` subprocesses, exposes run status and
+        per-generation history over REST; the popup window renders charts
 ```
 
 - The dashboard is a renderer and operator console. It never runs physics.

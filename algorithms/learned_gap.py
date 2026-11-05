@@ -1006,6 +1006,11 @@ class LearnedGapController:
             self.fallback = None
             self.meta = {"source": "fallback", "error": str(exc)}
 
+    def load_weights(self, weights_path: Path | str) -> None:
+        """Hot-swap the policy weights, e.g. a training run's best checkpoint."""
+        self.weights_path = Path(weights_path)
+        self._load()
+
     def reset(self) -> None:
         self.policy.reset()
         if self.fallback is not None:

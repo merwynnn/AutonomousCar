@@ -457,6 +457,12 @@ export interface ControllerResultMessage {
   message: string;
 }
 
+export interface TrainingResultMessage {
+  type: 'training.result';
+  ok: boolean;
+  message: string;
+}
+
 export interface DebugLayers {
   scan: boolean;
   trail: boolean;
@@ -475,4 +481,5 @@ export type ServerMessage =
   | ScanMessage
   | ConfigResultMessage
   | TrackResultMessage
-  | ControllerResultMessage;
+  | ControllerResultMessage
+  | TrainingResultMessage;

@@ -69,6 +69,7 @@ function Icon({ name }: { name: string }) {
     grid: <path d="M4 4h16v16H4zM4 9h16M4 15h16M9 4v16M15 4v16" fill="none" stroke="currentColor" strokeWidth="1.2" />,
     left: <path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
     right: <path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" strokeWidth="1.7" />,
+    chart: <path d="M4 4v16h16M7 15l4-5 3 3 5-7" fill="none" stroke="currentColor" strokeWidth="1.5" />,
   };
   return (
     <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -1184,7 +1185,7 @@ const DRIVE_KEYS: Record<string, DriveKey> = {
 };
 
 export default function App() {
-  const { status, hello, state, scan, send, configResult, trackResult, controllerResult } =
+  const { status, hello, state, scan, send, configResult, trackResult, controllerResult, trainingResult } =
     useTelemetry();
   const [viewMode, setViewMode] = useState<ViewMode>('track');
   const [cameraMode, setCameraMode] = useState<CameraMode>('orbit');
@@ -1236,6 +1237,13 @@ export default function App() {
     const timer = window.setTimeout(() => setToast(null), 4500);
     return () => window.clearTimeout(timer);
   }, [controllerResult]);
+
+  useEffect(() => {
+    if (!trainingResult) return;
+    setToast(trainingResult.message);
+    const timer = window.setTimeout(() => setToast(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [trainingResult]);
 
   useEffect(() => {
     send({ type: 'control.mode', mode: controlMode });
@@ -1336,6 +1344,8 @@ export default function App() {
   const onReset = () => send({ type: 'run.reset' });
   const onReload = () => send({ type: 'config.reload' });
   const onReloadControllers = () => send({ type: 'controller.reload' });
+  const onOpenTraining = () =>
+    window.open('/training.html', 'awake-training', 'width=1180,height=860');
   const openTune = (tab: 'vehicle' | 'sensors') => {
     setTuningTab(tab);
     setTuningOpen(true);
@@ -1528,6 +1538,12 @@ export default function App() {
             label="Reload algo"
             title="Re-import algorithms/*.py and rebuild controllers without resetting the run"
             onClick={onReloadControllers}
+          />
+          <ToolButton
+            icon="chart"
+            label="Training"
+            title="Open the CMA-ES training monitor in a separate window"
+            onClick={onOpenTraining}
           />
         </div>
       </div>

@@ -65,6 +65,15 @@ class RunReporter:
     def text_path(self) -> Path:
         return self.data_dir / f"{self.stage}_status.txt"
 
+    @property
+    def history_path(self) -> Path:
+        return self.data_dir / f"{self.stage}_history.jsonl"
+
+    def _append_history(self, record: dict[str, Any]) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        with self.history_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
     def _write(self, text: str, payload: dict[str, Any]) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         for path, content in ((self.text_path, text + "\n"),):
@@ -83,6 +92,9 @@ class RunReporter:
 
     def start(self) -> None:
         elapsed = time.perf_counter() - self.started
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        # A new run replaces any previous history for this stage.
+        self.history_path.write_text("", encoding="utf-8")
         text = (
             f"stage {self.stage} | starting | {self.generations} generations x "
             f"{self.popsize} candidates / {self.workers} workers | "
@@ -111,6 +123,19 @@ class RunReporter:
         )
 
     def initial(self, result: Any, rollout_seconds: float) -> None:
+        self._append_history(
+            {
+                "generation": -1,
+                "phase": "initial",
+                "lap_s": result.lap_time_s,
+                "contacts": result.contacts,
+                "progress_m": result.progress_m,
+                "score": result.score,
+                "fitness": result.fitness,
+                "rollout_seconds": rollout_seconds,
+                "updated_at": time.time(),
+            }
+        )
         lap = result.lap_time_s
         lap_text = f"{lap:.2f} s" if lap is not None else "DNF"
         rough_generation = rollout_seconds * self.popsize / max(self.workers, 1)
@@ -191,6 +216,25 @@ class RunReporter:
             + (f" | track {track_note}" if track_note else "")
         )
         print(text, flush=True)
+        self._append_history(
+            {
+                "generation": generation,
+                "phase": "running",
+                "lap_s": lap,
+                "contacts": result.contacts,
+                "progress_m": result.progress_m,
+                "score": result.score,
+                "fitness": result.fitness,
+                "best_lap_s": best_lap,
+                "best_contacts": best_contacts,
+                "best_generation": best_generation,
+                "best_score": best_score,
+                "sigma": sigma,
+                "generation_seconds": generation_seconds,
+                "track": track_note or None,
+                "updated_at": time.time(),
+            }
+        )
         self._write(
             text,
             {
