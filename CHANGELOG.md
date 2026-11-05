@@ -2,8 +2,9 @@
 
 ## Unreleased — dashboard training monitor
 
-- Added a **Training** tab in the dashboard viewport (toolbar button and `C`
-  key) showing the CMA-ES monitor inline instead of a separate popup window.
+- Added a **Training** toolbar hyperlink that opens `/training.html` in a new
+  browser tab (`target="_blank"`), keeping training graphs out of the main
+  dashboard view.
 - The popup starts/stops CMA-ES runs (stage, generations, popsize, workers,
   seed, budget, random tracks) and polls live status plus a new per-generation
   history file (`data/training/<stage>_history.jsonl` written by

@@ -11,7 +11,6 @@ import {
   type TrainingStatus,
 } from './api';
 import { LineChart, StatCard } from './charts';
-import './training.css';
 
 const STAGES = ['b1', 'b2a', 'b2b'] as const;
 

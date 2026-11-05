@@ -257,6 +257,10 @@ kbd {
   min-width: 8px;
 }
 
+a.tool-button {
+  text-decoration: none;
+}
+
 .tool-button {
   display: inline-flex;
   align-items: center;
