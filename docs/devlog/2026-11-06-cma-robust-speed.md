@@ -54,3 +54,15 @@ Goal: beat the 9.5 s reference lap while staying clean on any generated track
 - Campaign 7: CMA-ES over the learned B2a beam scorer (48 dims, evolved
   safety envelope), warm-started from the champion B1 by DAgger imitation
   of its score surface, trained with worst-of-6.
+
+## Campaign 7 result (B2a)
+
+- Warm start from the champion B1 by DAgger imitation (68% beam agreement,
+  11.50 s clean reference lap).
+- 3 h of worst-of-6 CMA-ES (48 dims, evolved safety envelope): best promoted
+  **9.82 s clean**, final objective winner validates at 9.88–9.90 s.
+- Held-out robustness on identical sweeps: **7/10 and 8/10 clean, 8/8
+  sensor seeds** — strictly better than the B1 champion (6/10, 5/10) at the
+  same speed.
+- **Shipped** as `algorithms/weights/policy.npz` (b2, hidden 0); the robust
+  B1 stays in `policy_b1.npz` as the dashboard fallback base.
