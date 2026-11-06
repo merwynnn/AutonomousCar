@@ -42,6 +42,30 @@ from training.vec import RolloutPool
 DATA_DIR = Path("data/training")
 
 
+def _usable_cpus() -> int:
+    """Cores this process may actually use.
+
+    ``os.cpu_count()`` reports physical cores and ignores container CPU
+    quotas and affinity masks.  In a Jupyter/container slice, spawning one
+    worker per physical core oversubscribes the CPU quota and can exhaust
+    memory (each worker owns a MuJoCo world), which gets the parent OOM-
+    killed.  Prefer the affinity mask, then the cgroup v2 CPU quota.
+    """
+
+    try:
+        count = len(os.sched_getaffinity(0))
+    except AttributeError:  # macOS and friends
+        count = os.cpu_count() or 1
+    try:
+        with open("/sys/fs/cgroup/cpu.max", encoding="utf-8") as handle:
+            quota, period = handle.read().split()[:2]
+        if quota != "max":
+            count = min(count, max(1, int(quota) // max(int(period), 1)))
+    except (OSError, ValueError):
+        pass
+    return max(1, count)
+
+
 def _bounds_for(stage: str, hidden: int) -> tuple[np.ndarray, np.ndarray]:
     if stage == "b1":
         return B1_LOW * 0.0 + 0.0, B1_HIGH * 0.0 + 1.0
@@ -668,8 +692,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     if args.workers <= 0:
-        # Auto-detect: one rollout worker per usable CPU core.
-        args.workers = max(1, os.cpu_count() or 1)
+        # Auto-detect: one rollout worker per usable CPU core (affinity and
+        # cgroup quota aware).
+        args.workers = _usable_cpus()
     args.reference_track_prob = max(0.0, min(1.0, args.reference_track_prob))
     args.object_density_range = tuple(sorted(args.object_density_range))
     args.object_scale_range = tuple(sorted(args.object_scale_range))
