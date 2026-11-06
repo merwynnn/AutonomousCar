@@ -345,10 +345,19 @@ def run(args: argparse.Namespace) -> int:
                 )
             results = per_track_results[0]
             generation_seconds = time.perf_counter() - generation_started
-            fitnesses = [
-                float(np.mean([track_results[i].fitness for track_results in per_track_results]))
-                for i in range(len(solutions))
-            ]
+            if args.fitness_aggregation == "worst":
+                # Worst-of-K: a candidate only scores well if it is clean and
+                # fast on EVERY track of its generation.  This is a robustness-
+                # first lexicographic objective across fresh random tracks.
+                fitnesses = [
+                    float(np.max([tr[i].fitness for tr in per_track_results]))
+                    for i in range(len(solutions))
+                ]
+            else:
+                fitnesses = [
+                    float(np.mean([tr[i].fitness for tr in per_track_results]))
+                    for i in range(len(solutions))
+                ]
             es.tell(solutions, fitnesses)
 
             best_index = int(np.argmin(fitnesses))
@@ -384,12 +393,28 @@ def run(args: argparse.Namespace) -> int:
                 if (
                     validated.contacts == 0
                     and validated.lap_time_s is not None
-                    and validated.fitness < best_fitness
+                    and fitnesses[best_index] < best_fitness
                 ):
-                    best_fitness = float(validated.fitness)
+                    best_fitness = float(fitnesses[best_index])
                     best_vector = solutions[best_index].copy()
                     best_meta = _meta_from_result(
                         args.stage, generation, validated, default_start, args
+                    )
+                    # Always persist the objective winner (multi-track scale).
+                    # The lap-time-gated exports below can otherwise discard a
+                    # more robust candidate whose reference lap is slightly
+                    # slower.
+                    save_policy(
+                        DATA_DIR / f"{args.stage}_objective_best.npz",
+                        policy_type,
+                        best_vector,
+                        hidden,
+                        {
+                            **best_meta,
+                            "objective_fitness": best_fitness,
+                            "aggregation": args.fitness_aggregation,
+                            "tracks_per_generation": args.tracks_per_generation,
+                        },
                     )
                     _maybe_export(
                         Path(args.out), policy_type, best_vector, hidden, best_meta
@@ -581,6 +606,12 @@ def main() -> None:
             "numbers are kept within a generation) to avoid overfitting one "
             "noise realization"
         ),
+    )
+    parser.add_argument(
+        "--fitness-aggregation",
+        choices=("mean", "worst"),
+        default="mean",
+        help="how to combine the per-track scores of multi-track generations",
     )
     parser.add_argument(
         "--reference-track-prob",
