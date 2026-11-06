@@ -441,6 +441,12 @@ def run(args: argparse.Namespace) -> int:
                             "tracks_per_generation": args.tracks_per_generation,
                         },
                     )
+                    print(
+                        f"*** NEW BEST (gen {generation}): reference lap "
+                        f"{validated.lap_time_s:.2f} s, clean, saved to "
+                        f"{DATA_DIR / (args.stage + '_objective_best.npz')} ***",
+                        flush=True,
+                    )
                     _maybe_export(
                         Path(args.out), policy_type, best_vector, hidden, best_meta
                     )
