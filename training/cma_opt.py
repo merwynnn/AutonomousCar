@@ -494,6 +494,13 @@ def run(args: argparse.Namespace) -> int:
             if args.budget_seconds and time.perf_counter() - started > args.budget_seconds:
                 reason = "wall-clock budget"
                 break
+            if (
+                args.stop_after_stall > 0
+                and generation - int(best_meta.get("generation", -1))
+                >= args.stop_after_stall
+            ):
+                reason = "no promotion stall"
+                break
             stop = es.stop()
             if stop:
                 reason = f"CMA-ES stop: {stop}"
@@ -645,6 +652,12 @@ def main() -> None:
         type=float,
         default=0.30,
         help="per-object size variation around the sampled scale",
+    )
+    parser.add_argument(
+        "--stop-after-stall",
+        type=int,
+        default=0,
+        help="stop when this many generations pass without a promotion (0=off)",
     )
     parser.add_argument("--budget-seconds", type=float, default=0.0)
     parser.add_argument(

@@ -141,6 +141,13 @@ B1_SPECS: tuple[ParamSpec, ...] = (
     # valeur par défaut) ------------------------------------------------------
     ParamSpec("clearance_speed_gain", 0.0, 6.0, 0.0),  # cap continu dégagement->vitesse
     ParamSpec("steer_anticipation_gain", 0.0, 4.0, 0.0),  # ralentir AVANT le virage
+    # --- Vitesse « ligne droite libre » : sur une piste étroite, les murs
+    # sont toujours à moins d'un mètre des faisceaux, donc tous les caps
+    # fondés sur le dégagement bloquent la vitesse même en ligne droite.
+    # La longueur de corridor libre dans la direction visée distingue une
+    # vraie impasse d'un couloir qui continue --------------------------------
+    ParamSpec("free_path_speed_gain", 0.0, 8.0, 0.0),  # cap sqrt(longueur libre)
+    ParamSpec("corridor_half_width_m", 0.10, 0.30, 0.15),  # demi-largeur du couloir
 )
 
 B1_DEFAULT = np.array([spec.default for spec in B1_SPECS], dtype=float)
@@ -182,6 +189,8 @@ class B1Params:
     speed_min_mps: float
     clearance_speed_gain: float
     steer_anticipation_gain: float
+    free_path_speed_gain: float
+    corridor_half_width_m: float
 
     @classmethod
     def from_vector(cls, vector: np.ndarray | None = None) -> B1Params:
@@ -339,6 +348,8 @@ class StructuredGapPolicy:
         scores = np.where(front, scores, -np.inf)
         return {
             "angles": angles,
+            "ranges": ranges,
+            "valid": valid,
             "front": front,
             "work": work,
             "clearance": clearance,
@@ -368,6 +379,8 @@ class StructuredGapPolicy:
             self.last_debug = {"valid": 0.0}
             return Actuation(throttle=0.0, steering=self.steering)
         angles = np.asarray(surface["angles"], dtype=float)
+        ranges = np.asarray(surface["ranges"], dtype=float)
+        valid = np.asarray(surface["valid"], dtype=bool)
         clearance = np.asarray(surface["clearance"], dtype=float)
         free = np.asarray(surface["free"], dtype=bool)
         scores = np.asarray(surface["scores"], dtype=float)
@@ -449,6 +462,31 @@ class StructuredGapPolicy:
             )
         if p.clearance_speed_gain > 0.0:
             speed = min(speed, p.clearance_speed_gain * best_clearance)
+        # Longueur de corridor libre dans la direction visée : distance
+        # parcourue avant qu'un retour lidar ne bloque un couloir de demi-
+        # largeur ``corridor_half_width_m`` centré sur l'axe visé. C'est la
+        # mesure « il y a de la place devant » qui manque au simple
+        # dégagement : des murs parallèles à 0,4 m donnent un dégagement
+        # faible mais une longueur libre grande.
+        free_path_m = 0.0
+        if p.free_path_speed_gain > 0.0:
+            rel = angles - desired
+            longitudinal = ranges * np.cos(rel)
+            lateral = np.abs(ranges * np.sin(rel))
+            # Zone morte longitudinale : les murs juste à côté du lidar ne
+            # bloquent pas la route devant (la carrosserie passe à côté).
+            ahead = valid & (longitudinal > 0.30)
+            if np.any(ahead):
+                blocking = ahead & (lateral < p.corridor_half_width_m)
+                if np.any(blocking):
+                    free_path_m = float(np.min(longitudinal[blocking]))
+                else:
+                    free_path_m = float(np.max(ranges[valid]))
+            else:
+                free_path_m = float(np.max(ranges[valid])) if np.any(valid) else 0.0
+            speed = min(
+                speed, p.free_path_speed_gain * np.sqrt(max(free_path_m, 0.0))
+            )
         speed = _clip(speed, p.speed_min_mps, p.base_speed_mps)
         # Lissage passe-bas, puis conversion en throttle normalisé.
         alpha = min(1.0, p.speed_smoothing * dt)
@@ -466,6 +504,7 @@ class StructuredGapPolicy:
             "target_speed_mps": self.speed,
             "throttle": throttle,
             "steering_rad": self.steering,
+            "free_path_m": free_path_m,
             "score": float(scores[best]),
         }
         return Actuation(throttle=throttle, steering=self.steering)
