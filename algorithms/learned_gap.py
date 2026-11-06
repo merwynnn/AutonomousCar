@@ -86,6 +86,13 @@ B2_SCALARS: tuple[ParamSpec, ...] = (
     ParamSpec("speed_min_mps", 0.20, 1.00, 0.40),
     ParamSpec("speed_max_mps", 1.50, 4.00, 3.20),
     ParamSpec("clearance_window_deg", 10.0, 120.0, 55.0),
+    # Enveloppe de sécurité évoluable : bornés en dur auparavant, ces gains
+    # plafonnaient la vitesse à ~0.15 + 2.2 x dégagement (~2.7 m/s sur la
+    # piste étroite) quelle que soit la tête apprise. Ils font maintenant
+    # partie du génome pour que CMA-ES puisse les relâcher.
+    ParamSpec("min_clearance_m", 0.15, 0.60, 0.30),
+    ParamSpec("clearance_speed_gain", 0.5, 6.0, 2.2),
+    ParamSpec("steer_slow_gain", 0.0, 0.60, 0.25),
 )
 
 B2_SCALAR_DEFAULT = np.array([spec.default for spec in B2_SCALARS], dtype=float)
@@ -250,6 +257,9 @@ def b2_from_b1(b1_vector: np.ndarray, hidden: int = 0) -> np.ndarray:
             speed_min,
             speed_max,
             params.clearance_window_deg,
+            0.30,
+            2.2,
+            0.25,
         ],
         dtype=float,
     )
@@ -444,6 +454,11 @@ class BeamScorerPolicy:
         # The scalar layout and the scan window are fixed for a loaded policy.
         # Precompute them once: this is the hot path on a small onboard CPU.
         self.scalars = _unit_to_params(self.params.scalars, B2_SCALARS)
+        # Envelope gains are evolved: override the class defaults with the
+        # genome values so CMA-ES can relax the hard-coded speed ceiling.
+        self.min_clearance_m = float(self.scalars[10])
+        self.clearance_speed_gain = float(self.scalars[11])
+        self.steer_slow_gain = float(self.scalars[12])
         self.front_sector = float(np.radians(self.scalars[0]))
         self.gap_threshold = float(self.scalars[1])
         self.max_range = float(self.scalars[2])
