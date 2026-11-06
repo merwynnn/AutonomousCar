@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pickle
 import time
 from pathlib import Path
@@ -666,6 +667,9 @@ def main() -> None:
         help="evaluate the initial policy and print the estimated budget, then exit",
     )
     args = parser.parse_args()
+    if args.workers <= 0:
+        # Auto-detect: one rollout worker per usable CPU core.
+        args.workers = max(1, os.cpu_count() or 1)
     args.reference_track_prob = max(0.0, min(1.0, args.reference_track_prob))
     args.object_density_range = tuple(sorted(args.object_density_range))
     args.object_scale_range = tuple(sorted(args.object_scale_range))
