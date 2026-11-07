@@ -19,6 +19,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = REPO_ROOT / "data" / "training"
+RESULTS_DIR = DATA_DIR / "results"
 STAGES = ("b1", "b2a", "b2b")
 
 STARTABLE_FIELDS = {
@@ -32,6 +33,10 @@ STARTABLE_FIELDS = {
     "hidden": int,
     "budget_seconds": float,
     "random_track": bool,
+    "tracks_per_generation": int,
+    "stop_after_stall": int,
+    "fitness_aggregation": str,
+    "vary_sensor_seed": bool,
 }
 
 
@@ -73,6 +78,31 @@ class TrainingManager:
                 "the 'train' extra is not installed; run `uv sync --extra train`"
             )
         command = [sys.executable, "-m", "training.cma_opt", "--stage", stage]
+        init_result = params.get("init_result")
+        if init_result:
+            init_path = self._result_policy_path(str(init_result))
+            if init_path is None:
+                raise TrainingError(f"unknown result {init_result!r}")
+            policy_type = self._policy_type(init_path)
+            if stage == "b1" and policy_type != "b1":
+                raise TrainingError(
+                    f"result {init_result!r} is a {policy_type} policy; "
+                    "stage b1 can only warm-start from b1 results "
+                    "(b2a/b2b can start from b1 or b2)"
+                )
+            command.extend(["--init", str(init_path)])
+        run_name = params.get("run_name") or (
+            f"{stage}_{time.strftime('%Y%m%d_%H%M%S')}"
+        )
+        safe = "".join(c for c in str(run_name) if c.isalnum() or c in "-_")
+        if not safe:
+            raise TrainingError("run_name must contain letters or digits")
+        run_dir = RESULTS_DIR / safe
+        # Dashboard runs keep their best reference-lap policy inside their own
+        # library directory: they never auto-overwrite the shipped weights
+        # (algorithms/weights/policy.npz), which are validated for robustness.
+        command.extend(["--run-name", safe])
+        command.extend(["--out", str(run_dir / "best_reference_lap.npz")])
         for field, kind in STARTABLE_FIELDS.items():
             if field not in params or params[field] is None:
                 continue
@@ -108,7 +138,63 @@ class TrainingManager:
             "pid": process.pid,
             "log": str(log_path),
             "command": command,
+            "init_result": init_result or None,
         }
+
+    # ------------------------------------------------------- results library
+    def _result_dir(self, name: str) -> Path:
+        safe = "".join(c for c in name if c.isalnum() or c in "-_")
+        return RESULTS_DIR / safe
+
+    def _result_policy_path(self, name: str) -> Path | None:
+        run_dir = self._result_dir(name)
+        for candidate in ("objective_best.npz", "best_reference_lap.npz"):
+            path = run_dir / candidate
+            if path.exists():
+                return path
+        return None
+
+    def _policy_type(self, path: Path) -> str:
+        import numpy as np
+
+        try:
+            with np.load(path, allow_pickle=False) as data:
+                return str(np.asarray(data["policy_type"]).item())
+        except Exception:  # noqa: BLE001 - unreadable file: treat as unknown
+            return "unknown"
+
+    def list_results(self) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        if not RESULTS_DIR.exists():
+            return results
+        for meta_path in sorted(RESULTS_DIR.glob("*/meta.json")):
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            policy = self._result_policy_path(meta.get("run_name", meta_path.parent.name))
+            if policy is None:
+                continue
+            results.append(
+                {
+                    "name": meta_path.parent.name,
+                    "stage": meta.get("stage"),
+                    "policy_type": self._policy_type(policy),
+                    "best_lap_s": meta.get("best_lap_s"),
+                    "best_contacts": meta.get("best_contacts"),
+                    "generations": meta.get("generations"),
+                    "wall_time_s": meta.get("wall_time_s"),
+                    "aggregation": meta.get("aggregation"),
+                    "init": meta.get("init"),
+                    "created": meta_path.stat().st_mtime,
+                    "path": str(policy),
+                }
+            )
+        results.sort(key=lambda item: item["created"], reverse=True)
+        return results
+
+    def result_path(self, name: str) -> Path | None:
+        return self._result_policy_path(name)
 
     def stop(self, stage: str) -> dict[str, Any]:
         run = self._active.get(stage)

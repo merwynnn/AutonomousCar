@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import pickle
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,7 @@ from training.progress import RunReporter
 from training.vec import RolloutPool
 
 DATA_DIR = Path("data/training")
+RESULTS_DIR = DATA_DIR / "results"
 
 
 def _usable_cpus() -> int:
@@ -441,6 +443,23 @@ def run(args: argparse.Namespace) -> int:
                             "tracks_per_generation": args.tracks_per_generation,
                         },
                     )
+                    # Named-run library: every promotion is also mirrored under
+                    # data/training/results/<run_name>/ so finished runs are
+                    # never overwritten by the next one and stay selectable
+                    # from the dashboard.
+                    run_dir = RESULTS_DIR / args.run_name
+                    save_policy(
+                        run_dir / "objective_best.npz",
+                        policy_type,
+                        best_vector,
+                        hidden,
+                        {
+                            **best_meta,
+                            "run_name": args.run_name,
+                            "aggregation": args.fitness_aggregation,
+                            "tracks_per_generation": args.tracks_per_generation,
+                        },
+                    )
                     print(
                         f"*** NEW BEST (gen {generation}): reference lap "
                         f"{validated.lap_time_s:.2f} s, clean, saved to "
@@ -559,6 +578,35 @@ def run(args: argparse.Namespace) -> int:
         "workers": args.workers,
         "wall_time_s": time.perf_counter() - started,
     }
+    # Final library entry for this named run: meta + the best reference-lap
+    # policy, kept under a stable directory name for later selection.
+    run_dir = RESULTS_DIR / args.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "run_name": args.run_name,
+                "stage": args.stage,
+                "reason": reason,
+                "generations": int(best_meta.get("generations", 0)),
+                "best_lap_s": best_meta.get("clean_lap_time_s"),
+                "best_contacts": best_meta.get("contacts"),
+                "init": str(args.init) if args.init else None,
+                "seed": args.seed,
+                "popsize": args.popsize,
+                "workers": args.workers,
+                "wall_time_s": meta["wall_time_s"],
+                "aggregation": args.fitness_aggregation,
+                "tracks_per_generation": args.tracks_per_generation,
+                "note": best_meta.get("note"),
+            },
+            sort_keys=True,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    if Path(args.out).exists() and args.out != WEIGHTS_PATH:
+        shutil.copyfile(Path(args.out), run_dir / "best_reference_lap.npz")
     (DATA_DIR / f"{args.stage}_best.npz").parent.mkdir(parents=True, exist_ok=True)
     save_policy(DATA_DIR / f"{args.stage}_best.npz", policy_type, best_vector, hidden, meta)
     if best_random_meta is not None:
@@ -690,6 +738,15 @@ def main() -> None:
         default=0,
         help="stop when this many generations pass without a promotion (0=off)",
     )
+    parser.add_argument(
+        "--run-name",
+        default=None,
+        help=(
+            "library name for this run's saved results "
+            "(default: <stage>_<date>_<time>); results are kept under "
+            "data/training/results/<run-name>/ and are never overwritten"
+        ),
+    )
     parser.add_argument("--budget-seconds", type=float, default=0.0)
     parser.add_argument(
         "--preflight",
@@ -701,6 +758,8 @@ def main() -> None:
         # Auto-detect: one rollout worker per usable CPU core (affinity and
         # cgroup quota aware).
         args.workers = _usable_cpus()
+    if not args.run_name:
+        args.run_name = f"{args.stage}_{time.strftime('%Y%m%d_%H%M%S')}"
     args.reference_track_prob = max(0.0, min(1.0, args.reference_track_prob))
     args.object_density_range = tuple(sorted(args.object_density_range))
     args.object_scale_range = tuple(sorted(args.object_scale_range))

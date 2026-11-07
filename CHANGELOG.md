@@ -15,8 +15,18 @@
 - **View best <stage> car in dashboard** loads the selected stage's best
   checkpoint of the current run (`data/training/<stage>_best.npz`, updated
   live by the runner) into the live `learned_gap` controller (`load_weights`)
-  and resets the run. Stage tabs carry explanations of b1 / b2a / b2b, and the
-  charts include an "About these graphs" explainer.
+  and resets the run. The **Training type** dropdown (replacing the stage
+  tabs) carries explanations of b1 / b2a / b2b, and the charts include an
+  "About these graphs" explainer.
+- **Saved results library**: every finished run is kept under its own name in
+  `data/training/results/<run-name>/` and never overwritten. The training
+  window lists saved runs (type, best lap, contacts, generations, wall
+  time), can **Watch** any of them in the live simulator, and can warm-start
+  a new run from a selected result via the **Start from** dropdown (or train
+  from scratch). Dashboard-started runs keep their best policy inside their
+  own library directory instead of auto-overwriting the shipped weights.
+- New REST endpoints: `/api/training/results` (library listing) and
+  `/api/training/watch-result` (load a saved policy into the simulator).
 - New REST endpoints: `/api/training/runs`, `/api/training/status`,
   `/api/training/history`, `/api/training/start`, `/api/training/stop`,
   `/api/training/watch-best`; new WebSocket command `training.watch_best` and

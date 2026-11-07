@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   fetchHistory,
-  fetchRuns,
+  fetchResults,
   fetchStatus,
   startRun,
   stopRun,
   watchBest,
+  watchResult,
   type HistoryRecord,
   type StartParams,
+  type TrainingResult,
   type TrainingStatus,
 } from './api';
 import { LineChart, StatCard } from './charts';
@@ -37,7 +39,8 @@ export default function TrainingApp() {
   const [stage, setStage] = useState<string>('b1');
   const [status, setStatus] = useState<TrainingStatus | null>(null);
   const [records, setRecords] = useState<HistoryRecord[]>([]);
-  const [knownStages, setKnownStages] = useState<string[]>([...STAGES]);
+  const [results, setResults] = useState<TrainingResult[]>([]);
+  const [startFrom, setStartFrom] = useState<string>('');
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<StartParams, 'stage'>>({
     generations: 100,
@@ -50,14 +53,14 @@ export default function TrainingApp() {
 
   const refresh = useCallback(async (selected: string) => {
     try {
-      const [nextStatus, history, runs] = await Promise.all([
+      const [nextStatus, history, library] = await Promise.all([
         fetchStatus(selected),
         fetchHistory(selected),
-        fetchRuns(),
+        fetchResults(),
       ]);
       setStatus(nextStatus);
       setRecords(history.records);
-      setKnownStages(runs.runs.map((run) => run.stage));
+      setResults(library.results);
     } catch {
       // Backend may be restarting; the next poll recovers.
     }
@@ -74,8 +77,22 @@ export default function TrainingApp() {
   const onStart = async () => {
     setMessage(null);
     try {
-      await startRun({ ...form, stage });
-      setMessage(`Started ${stage} training run.`);
+      await startRun({ ...form, stage, init_result: startFrom || null });
+      setMessage(
+        startFrom
+          ? `Started ${stage} training warm-started from "${startFrom}".`
+          : `Started ${stage} training run from scratch.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const onWatchResult = async (name: string) => {
+    setMessage(null);
+    try {
+      const result = await watchResult(name);
+      setMessage(result.message);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     }
@@ -128,19 +145,22 @@ export default function TrainingApp() {
           <strong>Training</strong>
           <em>CMA-ES POLICY SEARCH</em>
         </div>
-        <div className="training-stage-tabs">
-          {STAGES.map((name) => (
-            <button
-              key={name}
-              type="button"
-              className={`stage-tab ${stage === name ? 'active' : ''} ${knownStages.includes(name) ? '' : 'unknown'}`}
-              title={STAGE_INFO[name]}
-              onClick={() => setStage(name)}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
+        <label className="training-type-select" title={STAGE_INFO[stage]}>
+          <span>Training type</span>
+          <select
+            value={stage}
+            onChange={(e) => {
+              setStage(e.target.value);
+              setStartFrom('');
+            }}
+          >
+            {STAGES.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
         <span className="training-stage-info" title={STAGE_INFO[stage]}>
           {STAGE_INFO[stage]}
         </span>
@@ -151,6 +171,23 @@ export default function TrainingApp() {
 
       <section className="training-controls panel">
         <div className="control-grid">
+          <label className="start-from-select">
+            <span>Start from</span>
+            <select
+              value={startFrom}
+              disabled={running}
+              onChange={(e) => setStartFrom(e.target.value)}
+            >
+              <option value="">From scratch</option>
+              {results
+                .filter((r) => (stage === 'b1' ? r.policy_type === 'b1' : true))
+                .map((r) => (
+                  <option key={r.name} value={r.name}>
+                    {r.name} — {r.policy_type ?? r.stage}, {formatLap(r.best_lap_s)}s
+                  </option>
+                ))}
+            </select>
+          </label>
           <label>
             <span>Generations</span>
             <input
@@ -230,6 +267,48 @@ export default function TrainingApp() {
             View best {stage} car in dashboard
           </button>
         </div>
+      </section>
+
+      <section className="training-results panel">
+        <h3>Saved results</h3>
+        {results.length === 0 ? (
+          <p className="training-results-empty">
+            No saved runs yet — every finished training run is kept here under its own
+            name (data/training/results/). Warm-start a new run from any of them or
+            watch one in the simulator.
+          </p>
+        ) : (
+          <table className="training-results-table">
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Type</th>
+                <th>Best lap</th>
+                <th>Contacts</th>
+                <th>Gens</th>
+                <th>Wall time</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((r) => (
+                <tr key={r.name}>
+                  <td title={r.init ? `warm start: ${r.init}` : undefined}>{r.name}</td>
+                  <td>{r.policy_type ?? r.stage ?? '—'}</td>
+                  <td>{formatLap(r.best_lap_s)} s</td>
+                  <td>{r.best_contacts === null || r.best_contacts === undefined ? '—' : String(r.best_contacts)}</td>
+                  <td>{r.generations ?? '—'}</td>
+                  <td>{formatDuration(r.wall_time_s)}</td>
+                  <td>
+                    <button type="button" onClick={() => void onWatchResult(r.name)}>
+                      Watch
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
 
       <section className="training-progress panel">

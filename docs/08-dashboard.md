@@ -88,22 +88,34 @@ track.
 The toolbar **Training** button is a hyperlink to `/training.html` and opens
 the CMA-ES monitor in a **new browser tab** (`target="_blank"`, same browser,
 not a popup window), so live training graphs never crowd the main dashboard.
-The training tab can start and stop training runs
-(stage `b1`/`b2a`/`b2b` — hover a stage tab for what it means, generations,
-popsize, workers, seed, time budget, random-track toggle) and polls the
-backend once per second. It shows a progress bar with ETA, stat cards (best
-lap, contacts, score, progress, sigma) and SVG charts of lap time, score,
-contacts, sigma and wall time per generation against the all-time best, with
-an "About these graphs" explainer. **View best <stage> car in dashboard**
-hot-loads the selected stage's best checkpoint of the current run
-(`data/training/<stage>_best.npz`, updated live as the run improves) into the
-live `learned_gap` controller (via `load_weights`) and resets the run, so the
-best car of the current training step can be watched one car at a time in the
-Track view.
+The training tab can start and stop training runs and polls the backend once
+per second. The **Training type** dropdown selects the stage
+(`b1`/`b2a`/`b2b`, hover for what it means); it replaced the old three stage
+tabs. The **Start from** dropdown selects the warm start: *From scratch* or
+any policy from the **Saved results** library. It shows a progress bar with
+ETA, stat cards (best lap, contacts, score, progress, sigma) and SVG charts
+of lap time, score, contacts, sigma and wall time per generation against the
+all-time best, with an "About these graphs" explainer. **View best <stage>
+car in dashboard** hot-loads the selected stage's best checkpoint of the
+current run (`data/training/<stage>_best.npz`, updated live as the run
+improves) into the live `learned_gap` controller (via `load_weights`) and
+resets the run, so the best car of the current training step can be watched
+one car at a time in the Track view.
+
+### Saved results library
+
+Every finished training run is kept under its own name in
+`data/training/results/<run-name>/` (`objective_best.npz`,
+`best_reference_lap.npz`, `meta.json`) — runs never overwrite each other or
+the shipped weights. The **Saved results** table lists them (type, best lap,
+contacts, generations, wall time) with a **Watch** button that loads the
+selected policy into the live simulator, and the **Start from** dropdown
+warm-starts a new run from any of them (b1 runs can only start from b1
+results; b2a/b2b accept b1 or b2 policies and convert them automatically).
 
 Training runs are subprocesses of `python -m training.cma_opt`; the dashboard
 only reads the `data/training/<stage>_status.json` and `<stage>_history.jsonl`
-files the runner writes.
+files the runner writes, plus `GET /api/training/results` for the library.
 
 ## Toolbar
 

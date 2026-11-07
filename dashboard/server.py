@@ -717,14 +717,19 @@ class DashboardSimulation:
         best = training_manager.best_path(stage)
         if best is None:
             return False, f"No best policy for stage {stage!r} yet."
+        return self.watch_policy_file(best)
+
+    def watch_policy_file(self, path: Path) -> tuple[bool, str]:
+        """Drive the live simulator with any saved policy file (.npz)."""
+
         controller = self.controllers.get("learned_gap")
         loader = getattr(controller, "load_weights", None)
         if not callable(loader):
             return False, "The learned_gap controller is not available."
         try:
-            loader(best)
+            loader(path)
         except Exception as exc:  # noqa: BLE001
-            message = f"Could not load {best}: {exc}"
+            message = f"Could not load {path}: {exc}"
             self._set_controller_error(message)
             return False, message
         self.auto_controller = "learned_gap"
@@ -732,7 +737,7 @@ class DashboardSimulation:
         self.reset_run()
         self._broadcast(self.hello_message())
         self._broadcast(self.state_message())
-        return True, f"Watching best {stage} policy ({best.name}) in the simulator."
+        return True, f"Watching policy {path.name} in the simulator."
 
     # ------------------------------------------------------------- transport
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
@@ -940,6 +945,21 @@ def training_stop(payload: dict[str, Any]) -> dict[str, Any]:
 @app.post("/api/training/watch-best")
 def training_watch_best(payload: dict[str, Any]) -> dict[str, Any]:
     ok, message = manager.watch_training_best(str(payload.get("stage", "")))
+    return {"ok": ok, "message": message}
+
+
+@app.get("/api/training/results")
+def training_results() -> dict[str, Any]:
+    return {"results": training_manager.list_results()}
+
+
+@app.post("/api/training/watch-result")
+def training_watch_result(payload: dict[str, Any]) -> dict[str, Any]:
+    name = str(payload.get("name", ""))
+    path = training_manager.result_path(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"unknown result {name!r}")
+    ok, message = manager.watch_policy_file(path)
     return {"ok": ok, "message": message}
 
 

@@ -58,6 +58,26 @@ export interface StartParams {
   seed: number;
   budget_seconds: number;
   random_track: boolean;
+  init_result?: string | null;
+  run_name?: string | null;
+  tracks_per_generation?: number;
+  fitness_aggregation?: string;
+  vary_sensor_seed?: boolean;
+  stop_after_stall?: number;
+}
+
+export interface TrainingResult {
+  name: string;
+  stage: string | null;
+  policy_type: string | null;
+  best_lap_s: number | null;
+  best_contacts: number | null;
+  generations: number | null;
+  wall_time_s: number | null;
+  aggregation: string | null;
+  init: string | null;
+  created: number;
+  path: string;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -102,5 +122,17 @@ export function watchBest(stage: string): Promise<{ ok: boolean; message: string
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ stage }),
+  });
+}
+
+export function fetchResults(): Promise<{ results: TrainingResult[] }> {
+  return request('/api/training/results');
+}
+
+export function watchResult(name: string): Promise<{ ok: boolean; message: string }> {
+  return request('/api/training/watch-result', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
   });
 }

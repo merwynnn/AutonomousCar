@@ -46,38 +46,6 @@
   align-self: center;
 }
 
-.training-stage-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.training-stage-info {
-  color: var(--dim);
-  font-size: 10px;
-  max-width: 46ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stage-tab {
-  background: var(--chrome-2);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  padding: 3px 12px;
-  font-family: var(--mono);
-}
-
-.stage-tab.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--text-strong);
-}
-
-.stage-tab.unknown {
-  opacity: 0.55;
-}
-
 .training-phase {
   margin-left: auto;
   font-family: var(--mono);
@@ -327,4 +295,82 @@
   padding: 6px 10px;
   font-family: var(--mono);
   font-size: 11px;
+}
+
+/* Training type + start-from selects (replaced the three stage tabs) */
+.training-type-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.training-type-select span,
+.start-from-select span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted, #8b939c);
+}
+
+.training-type-select select,
+.start-from-select select {
+  background: var(--panel, #1b1f24);
+  color: var(--text, #dfe3e8);
+  border: 1px solid var(--border, #2c333b);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 13px;
+  min-width: 120px;
+}
+
+.start-from-select {
+  grid-column: span 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.start-from-select select {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Saved results library */
+.training-results h3 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted, #8b939c);
+}
+
+.training-results-empty {
+  margin: 0;
+  color: var(--muted, #8b939c);
+  font-size: 13px;
+}
+
+.training-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.training-results-table th,
+.training-results-table td {
+  text-align: left;
+  padding: 4px 10px 4px 0;
+  border-bottom: 1px solid var(--border, #2c333b);
+}
+
+.training-results-table th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted, #8b939c);
+}
+
+.training-results-table button {
+  font-size: 12px;
+  padding: 2px 10px;
 }
