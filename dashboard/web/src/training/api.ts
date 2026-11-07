@@ -129,6 +129,12 @@ export function fetchResults(): Promise<{ results: TrainingResult[] }> {
   return request('/api/training/results');
 }
 
+export function fetchResultHistory(
+  name: string,
+): Promise<{ name: string; records: HistoryRecord[] }> {
+  return request(`/api/training/result-history?name=${encodeURIComponent(name)}&limit=20000`);
+}
+
 export function watchResult(name: string): Promise<{ ok: boolean; message: string }> {
   return request('/api/training/watch-result', {
     method: 'POST',

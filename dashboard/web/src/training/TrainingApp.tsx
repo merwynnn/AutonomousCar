@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   fetchHistory,
+  fetchResultHistory,
   fetchResults,
   fetchStatus,
   startRun,
@@ -41,6 +42,8 @@ export default function TrainingApp() {
   const [records, setRecords] = useState<HistoryRecord[]>([]);
   const [results, setResults] = useState<TrainingResult[]>([]);
   const [startFrom, setStartFrom] = useState<string>('');
+  const [selectedResult, setSelectedResult] = useState<string | null>(null);
+  const [resultRecords, setResultRecords] = useState<HistoryRecord[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<StartParams, 'stage'>>({
     generations: 100,
@@ -73,6 +76,24 @@ export default function TrainingApp() {
   }, [stage, refresh]);
 
   const running = status?.process_running ?? false;
+
+  useEffect(() => {
+    if (!selectedResult) {
+      setResultRecords([]);
+      return;
+    }
+    let cancelled = false;
+    void fetchResultHistory(selectedResult)
+      .then((payload) => {
+        if (!cancelled) setResultRecords(payload.records);
+      })
+      .catch(() => {
+        if (!cancelled) setResultRecords([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedResult]);
 
   const onStart = async () => {
     setMessage(null);
@@ -119,9 +140,37 @@ export default function TrainingApp() {
   };
 
   const genRecords = useMemo(
-    () => records.filter((r) => r.phase === 'running' && r.generation >= 0),
-    [records],
+    () =>
+      selectedResult
+        ? resultRecords.filter((r) => r.phase === 'running' && r.generation >= 0)
+        : records.filter((r) => r.phase === 'running' && r.generation >= 0),
+    [selectedResult, resultRecords, records],
   );
+
+  const lastRecord = resultRecords[resultRecords.length - 1];
+  const selectedMeta = results.find((r) => r.name === selectedResult);
+  const viewStatus: TrainingStatus | null = selectedResult
+    ? {
+        stage: selectedMeta?.stage ?? '—',
+        phase: 'saved',
+        process_running: false,
+        best_available: true,
+        best_path: selectedMeta?.path ?? null,
+        generation: lastRecord?.generation ?? -1,
+        generations: resultRecords.length,
+        percent: resultRecords.length
+          ? (((lastRecord?.generation ?? 0) + 1) / resultRecords.length) * 100
+          : 0,
+        elapsed_s: undefined,
+        best_lap_s: selectedMeta?.best_lap_s ?? null,
+        best_contacts: selectedMeta?.best_contacts ?? null,
+        best_generation: lastRecord?.best_generation ?? null,
+        best_score: lastRecord?.best_score ?? null,
+        generation_lap_s: lastRecord?.lap_s ?? null,
+        sigma: lastRecord?.sigma,
+        track: lastRecord?.track ?? undefined,
+      }
+    : status;
 
   const charts = useMemo(() => {
     return {
@@ -135,7 +184,7 @@ export default function TrainingApp() {
     };
   }, [genRecords]);
 
-  const percent = status?.percent ?? 0;
+  const percent = viewStatus?.percent ?? 0;
 
   return (
     <div className="training-shell">
@@ -164,8 +213,12 @@ export default function TrainingApp() {
         <span className="training-stage-info" title={STAGE_INFO[stage]}>
           {STAGE_INFO[stage]}
         </span>
-        <span className={`training-phase phase-${status?.phase ?? 'idle'}`}>
-          {running ? 'RUNNING' : (status?.phase ?? 'idle').toUpperCase()}
+        <span className={`training-phase phase-${viewStatus?.phase ?? 'idle'}`}>
+          {selectedResult
+            ? `SAVED RUN: ${selectedResult}`
+            : running
+              ? 'RUNNING'
+              : (status?.phase ?? 'idle').toUpperCase()}
         </span>
       </header>
 
@@ -270,7 +323,18 @@ export default function TrainingApp() {
       </section>
 
       <section className="training-results panel">
-        <h3>Saved results</h3>
+        <h3>
+          Saved results
+          {selectedResult ? (
+            <button
+              type="button"
+              className="live-button"
+              onClick={() => setSelectedResult(null)}
+            >
+              Back to live
+            </button>
+          ) : null}
+        </h3>
         {results.length === 0 ? (
           <p className="training-results-empty">
             No saved runs yet — every finished training run is kept here under its own
@@ -292,7 +356,12 @@ export default function TrainingApp() {
             </thead>
             <tbody>
               {results.map((r) => (
-                <tr key={r.name}>
+                <tr
+                  key={r.name}
+                  className={selectedResult === r.name ? 'selected' : ''}
+                  onClick={() => setSelectedResult(r.name)}
+                  title="Click to replay this run's training graphs"
+                >
                   <td title={r.init ? `warm start: ${r.init}` : undefined}>{r.name}</td>
                   <td>{r.policy_type ?? r.stage ?? '—'}</td>
                   <td>{formatLap(r.best_lap_s)} s</td>
@@ -318,22 +387,26 @@ export default function TrainingApp() {
         <div className="progress-meta">
           <span>{percent.toFixed(1)}%</span>
           <span>
-            gen {(status?.generation ?? -1) + 1}/{status?.generations ?? '?'}
+            gen {(viewStatus?.generation ?? -1) + 1}/{viewStatus?.generations ?? '?'}
           </span>
-          <span>elapsed {formatDuration(status?.elapsed_s)}</span>
-          <span>ETA {status?.eta_text ?? formatDuration(status?.eta_s)}</span>
-          <span>avg gen {formatDuration(status?.average_generation_s)}</span>
-          {status?.track ? <span>track {status.track}</span> : null}
+          {selectedResult ? null : <span>elapsed {formatDuration(status?.elapsed_s)}</span>}
+          {selectedResult ? null : (
+            <span>ETA {status?.eta_text ?? formatDuration(status?.eta_s)}</span>
+          )}
+          {selectedResult ? null : (
+            <span>avg gen {formatDuration(status?.average_generation_s)}</span>
+          )}
+          {viewStatus?.track ? <span>track {viewStatus.track}</span> : null}
         </div>
       </section>
 
       <section className="training-stats">
-        <StatCard label="Best lap" value={formatLap(status?.best_lap_s)} unit="s" hint={`generation ${status?.best_generation ?? '—'}`} />
-        <StatCard label="Best contacts" value={status?.best_contacts === null || status?.best_contacts === undefined ? '—' : String(status.best_contacts)} />
-        <StatCard label="Best score" value={status?.best_score === null || status?.best_score === undefined ? '—' : status.best_score.toFixed(1)} />
+        <StatCard label="Best lap" value={formatLap(viewStatus?.best_lap_s)} unit="s" hint={`generation ${viewStatus?.best_generation ?? '—'}`} />
+        <StatCard label="Best contacts" value={viewStatus?.best_contacts === null || viewStatus?.best_contacts === undefined ? '—' : String(viewStatus.best_contacts)} />
+        <StatCard label="Best score" value={viewStatus?.best_score === null || viewStatus?.best_score === undefined ? '—' : viewStatus.best_score.toFixed(1)} />
         <StatCard label="Best progress" value={status?.best_progress_m === undefined ? '—' : status.best_progress_m.toFixed(1)} unit="m" />
-        <StatCard label="Sigma" value={status?.sigma === undefined ? '—' : status.sigma.toFixed(4)} />
-        <StatCard label="Gen best lap" value={formatLap(status?.generation_lap_s)} unit="s" />
+        <StatCard label="Sigma" value={viewStatus?.sigma === undefined ? '—' : viewStatus.sigma.toFixed(4)} />
+        <StatCard label="Gen best lap" value={formatLap(viewStatus?.generation_lap_s)} unit="s" />
       </section>
 
       <section className="training-charts">
@@ -378,7 +451,15 @@ export default function TrainingApp() {
           series={[{ label: 'generation seconds', color: '#8b939c', points: charts.seconds }]}
         />
         <div className="chart-card chart-empty">
-          <span>{genRecords.length === 0 ? 'No generations yet — start a run to see progress.' : `${genRecords.length} generations recorded for stage ${stage}.`}</span>
+          <span>
+            {selectedResult
+              ? genRecords.length === 0
+                ? `No generation history found for "${selectedResult}" (runs trained before this feature keep only their policies).`
+                : `Replaying ${genRecords.length} generations of saved run "${selectedResult}".`
+              : genRecords.length === 0
+                ? 'No generations yet — start a run to see progress.'
+                : `${genRecords.length} generations recorded for stage ${stage}.`}
+          </span>
           {status?.log ? <span className="chart-log">log {status.log}</span> : null}
         </div>
       </section>

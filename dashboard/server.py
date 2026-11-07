@@ -953,6 +953,11 @@ def training_results() -> dict[str, Any]:
     return {"results": training_manager.list_results()}
 
 
+@app.get("/api/training/result-history")
+def training_result_history(name: str, limit: int = 20000) -> dict[str, Any]:
+    return {"name": name, "records": training_manager.result_history(name, limit)}
+
+
 @app.post("/api/training/watch-result")
 def training_watch_result(payload: dict[str, Any]) -> dict[str, Any]:
     name = str(payload.get("name", ""))

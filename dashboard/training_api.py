@@ -196,6 +196,27 @@ class TrainingManager:
     def result_path(self, name: str) -> Path | None:
         return self._result_policy_path(name)
 
+    def result_history(self, name: str, limit: int = 2000) -> list[dict[str, Any]]:
+        """Generation history of a saved run (data/training/results/<name>/)."""
+
+        path = self._result_dir(name) / "history.jsonl"
+        if not path.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            return []
+        return records[-limit:]
+
     def stop(self, stage: str) -> dict[str, Any]:
         run = self._active.get(stage)
         if run is None or run.process.poll() is not None:

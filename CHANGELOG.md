@@ -25,7 +25,13 @@
   a new run from a selected result via the **Start from** dropdown (or train
   from scratch). Dashboard-started runs keep their best policy inside their
   own library directory instead of auto-overwriting the shipped weights.
-- New REST endpoints: `/api/training/results` (library listing) and
+- **Saved-run replay**: each run's generation history is mirrored into its
+  library directory (`history.jsonl`); clicking a saved run in the training
+  window replays its exact training graphs (lap, score, contacts, sigma,
+  wall time) and stat cards. Runs trained from a script or another computer
+  can be dropped into `data/training/results/` and replayed the same way.
+- New REST endpoints: `/api/training/results` (library listing),
+  `/api/training/result-history` (a saved run's generation history) and
   `/api/training/watch-result` (load a saved policy into the simulator).
 - New REST endpoints: `/api/training/runs`, `/api/training/status`,
   `/api/training/history`, `/api/training/start`, `/api/training/stop`,

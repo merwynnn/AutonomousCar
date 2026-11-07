@@ -44,6 +44,15 @@ DATA_DIR = Path("data/training")
 RESULTS_DIR = DATA_DIR / "results"
 
 
+def _mirror_history(args: argparse.Namespace) -> None:
+    source = DATA_DIR / f"{args.stage}_history.jsonl"
+    if not source.exists():
+        return
+    run_dir = RESULTS_DIR / args.run_name
+    run_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, run_dir / "history.jsonl")
+
+
 def _usable_cpus() -> int:
     """Cores this process may actually use.
 
@@ -540,6 +549,11 @@ def run(args: argparse.Namespace) -> int:
             }
             with (DATA_DIR / f"{args.stage}_checkpoint.pkl").open("wb") as handle:
                 pickle.dump(checkpoint, handle)
+            if generation % 10 == 0:
+                # Crash-safe mirror of the generation history into the run's
+                # library directory, so the dashboard can replay how this run
+                # trained even if it is killed before the final copy.
+                _mirror_history(args)
 
             if args.budget_seconds and time.perf_counter() - started > args.budget_seconds:
                 reason = "wall-clock budget"
@@ -607,6 +621,7 @@ def run(args: argparse.Namespace) -> int:
     )
     if Path(args.out).exists() and args.out != WEIGHTS_PATH:
         shutil.copyfile(Path(args.out), run_dir / "best_reference_lap.npz")
+    _mirror_history(args)
     (DATA_DIR / f"{args.stage}_best.npz").parent.mkdir(parents=True, exist_ok=True)
     save_policy(DATA_DIR / f"{args.stage}_best.npz", policy_type, best_vector, hidden, meta)
     if best_random_meta is not None:

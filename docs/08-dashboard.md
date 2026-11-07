@@ -113,6 +113,15 @@ selected policy into the live simulator, and the **Start from** dropdown
 warm-starts a new run from any of them (b1 runs can only start from b1
 results; b2a/b2b accept b1 or b2 policies and convert them automatically).
 
+Every saved run also keeps its **generation history**
+(`history.jsonl`, mirrored every 10 generations and at the end of the run).
+**Clicking a row replays that run's training graphs** — lap time, score,
+contacts, sigma and wall time per generation plus the stat cards — exactly
+as they were during training; **Back to live** returns to the running stage.
+Runs trained outside the dashboard (script, another computer) appear here
+too: copy their `data/training/results/<run-name>/` folder into this
+repository's `data/training/results/` and it shows up with full history.
+
 Training runs are subprocesses of `python -m training.cma_opt`; the dashboard
 only reads the `data/training/<stage>_status.json` and `<stage>_history.jsonl`
 files the runner writes, plus `GET /api/training/results` for the library.

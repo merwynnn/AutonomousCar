@@ -374,3 +374,18 @@
   font-size: 12px;
   padding: 2px 10px;
 }
+
+/* Saved-run replay */
+.training-results h3 .live-button {
+  margin-left: 12px;
+  font-size: 11px;
+  padding: 2px 10px;
+}
+
+.training-results-table tr {
+  cursor: pointer;
+}
+
+.training-results-table tr.selected td {
+  background: rgba(117, 174, 214, 0.12);
+}
