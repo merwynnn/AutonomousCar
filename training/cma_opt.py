@@ -760,6 +760,8 @@ def main() -> None:
         args.workers = _usable_cpus()
     if not args.run_name:
         args.run_name = f"{args.stage}_{time.strftime('%Y%m%d_%H%M%S')}"
+    # Path safety: the run name becomes a directory under data/training/results.
+    args.run_name = "".join(c for c in args.run_name if c.isalnum() or c in "-_.")
     args.reference_track_prob = max(0.0, min(1.0, args.reference_track_prob))
     args.object_density_range = tuple(sorted(args.object_density_range))
     args.object_scale_range = tuple(sorted(args.object_scale_range))

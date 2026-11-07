@@ -94,7 +94,7 @@ class TrainingManager:
         run_name = params.get("run_name") or (
             f"{stage}_{time.strftime('%Y%m%d_%H%M%S')}"
         )
-        safe = "".join(c for c in str(run_name) if c.isalnum() or c in "-_")
+        safe = "".join(c for c in str(run_name) if c.isalnum() or c in "-_.")
         if not safe:
             raise TrainingError("run_name must contain letters or digits")
         run_dir = RESULTS_DIR / safe
@@ -143,7 +143,7 @@ class TrainingManager:
 
     # ------------------------------------------------------- results library
     def _result_dir(self, name: str) -> Path:
-        safe = "".join(c for c in name if c.isalnum() or c in "-_")
+        safe = "".join(c for c in name if c.isalnum() or c in "-_.")
         return RESULTS_DIR / safe
 
     def _result_policy_path(self, name: str) -> Path | None:
